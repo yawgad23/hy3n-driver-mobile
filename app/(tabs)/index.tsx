@@ -17,6 +17,7 @@ import {
 // react-native-maps removed — not compatible with Expo Go
 // Using custom animated map background instead
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Constants from "expo-constants";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
@@ -99,6 +100,8 @@ const MOCK_DRIVERS = [
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
+  // Ensure header never overlaps the status bar — use the larger of safe area inset or statusBarHeight
+  const safeTop = Math.max(insets.top, Constants.statusBarHeight ?? 0);
   // No map ref needed — using pure RN animated background
   const [userLocation] = useState<[number, number]>(DEFAULT_LOCATION);
   const [destination, setDestination] = useState<Location | null>(null);
@@ -814,7 +817,7 @@ export default function HomeScreen() {
       </View>
 
       {/* Header */}
-      <View style={{ position: "absolute", top: insets.top + 8, left: 16, right: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between", zIndex: 10 }}>
+      <View style={{ position: "absolute", top: safeTop + 12, left: 16, right: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between", zIndex: 10 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: GOLD, alignItems: "center", justifyContent: "center" }}>
             <Text style={{ color: "#000", fontWeight: "bold", fontSize: 14 }}>H</Text>
