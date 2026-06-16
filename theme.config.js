@@ -1,24 +1,27 @@
 /** @type {const} */
-// Exact colors from HY3N web app index.css
 const themeColors = {
-  // Primary: Ghanaian Gold (43 56% 52%)
+  // Primary gold - HY3N brand
   primary: { light: '#D4AF37', dark: '#D4AF37' },
-  // Background: Very dark (0 0% 4%)
-  background: { light: '#0A0A0A', dark: '#0A0A0A' },
-  // Surface/Card: Dark (0 0% 7%)
-  surface: { light: '#121212', dark: '#121212' },
-  // Foreground: Light text (45 30% 95%)
-  foreground: { light: '#F2EEE4', dark: '#F2EEE4' },
-  // Muted: Medium gray (0 0% 55%)
-  muted: { light: '#8C8C8C', dark: '#8C8C8C' },
-  // Border: Dark border (0 0% 16%)
-  border: { light: '#292929', dark: '#292929' },
-  // Success: Ghana Green (153 100% 21%)
+  // Background - near black
+  background: { light: '#F5F5F5', dark: '#0A0A0A' },
+  // Surface - card background
+  surface: { light: '#FFFFFF', dark: '#111111' },
+  // Card - slightly lighter than surface
+  card: { light: '#FFFFFF', dark: '#1A1A1A' },
+  // Foreground - text
+  foreground: { light: '#0A0A0A', dark: '#FAFAFA' },
+  // Muted - secondary text
+  muted: { light: '#6B7280', dark: '#9CA3AF' },
+  // Border
+  border: { light: '#E5E7EB', dark: '#2A2A2A' },
+  // Ghana green
   success: { light: '#006B3F', dark: '#006B3F' },
-  // Warning: Orange/Gold
-  warning: { light: '#D4AF37', dark: '#D4AF37' },
-  // Error: Ghana Red (4 84% 44%)
+  // Warning
+  warning: { light: '#F59E0B', dark: '#FBBF24' },
+  // Error / destructive - Ghana red
   error: { light: '#CE1126', dark: '#CE1126' },
+  // Secondary - dark card
+  secondary: { light: '#F3F4F6', dark: '#1A1A1A' },
 };
 
 module.exports = { themeColors };

@@ -77,11 +77,24 @@ export const RIDE_CATEGORIES: RideCategory[] = [
   }
 ];
 
+export const FREE_WAITING_MINUTES = 3;
+
 export const PAYMENT_METHODS = [
   { id: "cash", name: "Cash", icon: "Banknote" },
-  { id: "card", name: "Card", icon: "CreditCard" },
+  { id: "mobile_money", name: "MoMo", icon: "Smartphone" },
   { id: "wallet", name: "Wallet", icon: "Wallet" },
-  { id: "mobile", name: "Mobile Money", icon: "Smartphone" }
+  { id: "card", name: "Card", icon: "CreditCard" },
+];
+
+export const POPULAR_DESTINATIONS = [
+  { name: "Kotoka International Airport", address: "Airport Rd, Accra", lat: 5.6052, lng: -0.1668 },
+  { name: "Accra Mall", address: "Tetteh Quarshie Interchange, Accra", lat: 5.6362, lng: -0.1769 },
+  { name: "University of Ghana", address: "Legon, Accra", lat: 5.6502, lng: -0.1869 },
+  { name: "Labadi Beach", address: "La, Accra", lat: 5.5558, lng: -0.1469 },
+  { name: "Osu Oxford Street", address: "Osu, Accra", lat: 5.5558, lng: -0.1769 },
+  { name: "Tema Station", address: "Accra Central", lat: 5.5502, lng: -0.2069 },
+  { name: "West Hills Mall", address: "Weija, Accra", lat: 5.5752, lng: -0.3169 },
+  { name: "Achimota Mall", address: "Achimota, Accra", lat: 5.6252, lng: -0.2269 },
 ];
 
 export function calculateFare(
