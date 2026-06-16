@@ -1,23 +1,14 @@
 /** @type {const} */
 const themeColors = {
-  // Primary: Ghanaian Gold
-  primary: { light: '#D4AF37', dark: '#D4AF37' },
-  // Background: Very dark (almost black)
-  background: { light: '#0A0A0A', dark: '#0A0A0A' },
-  // Surface/Card: Dark gray
-  surface: { light: '#1C1C1C', dark: '#1C1C1C' },
-  // Foreground: Light text
-  foreground: { light: '#F5F5F5', dark: '#F5F5F5' },
-  // Muted: Medium gray
-  muted: { light: '#8D8D8D', dark: '#8D8D8D' },
-  // Border: Dark border
-  border: { light: '#2A2A2A', dark: '#2A2A2A' },
-  // Success: Ghana Green
-  success: { light: '#006B3F', dark: '#006B3F' },
-  // Warning: Orange/Gold
-  warning: { light: '#D4AF37', dark: '#D4AF37' },
-  // Error: Ghana Red
-  error: { light: '#CE1126', dark: '#CE1126' },
+  primary: { light: '#0a7ea4', dark: '#0a7ea4' },
+  background: { light: '#ffffff', dark: '#151718' },
+  surface: { light: '#f5f5f5', dark: '#1e2022' },
+  foreground: { light: '#11181C', dark: '#ECEDEE' },
+  muted: { light: '#687076', dark: '#9BA1A6' },
+  border: { light: '#E5E7EB', dark: '#334155' },
+  success: { light: '#22C55E', dark: '#4ADE80' },
+  warning: { light: '#F59E0B', dark: '#FBBF24' },
+  error: { light: '#EF4444', dark: '#F87171' },
 };
 
 module.exports = { themeColors };
