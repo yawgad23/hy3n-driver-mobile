@@ -39,3 +39,12 @@
 - [x] Dark theme with Ghana green (#006B3F) + gold (#D4AF37) + red (#CE1126) colors
 - [x] All screens match web app from GitHub repo (https://github.com/yawgad23/Hy3N)
 - [x] TypeScript 0 errors
+
+## Remaining for App Store
+- [x] Phone OTP login (Firebase Phone Auth)
+- [x] Google Sign-In button (works in production build)
+- [x] Save ride bookings to Firestore on request
+- [x] Real GPS location centering map on user's position
+- [x] EAS Build configuration (eas.json) for App Store submission
+- [x] Bundle ID set to com.hy3n.rider
+- [x] expo-location plugin added to app.config.ts with iOS/Android permissions

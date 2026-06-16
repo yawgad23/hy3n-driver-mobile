@@ -1,138 +1,357 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/lib/auth-context';
-import { useColors } from '@/hooks/use-colors';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { auth } from '@/lib/firebase';
+import {
+  PhoneAuthProvider,
+  signInWithCredential,
+  RecaptchaVerifier,
+} from 'firebase/auth';
+
+const GOLD = '#D4AF37';
+const GREEN = '#006B3F';
+const BG = '#0A0A0A';
+const CARD = '#1A1A1A';
+const BORDER = '#2A2A2A';
+const TEXT = '#FAFAFA';
+const MUTED = '#9CA3AF';
+
+type LoginTab = 'phone' | 'email';
 
 export default function LoginScreen() {
-  const colors = useColors();
-  const { signIn } = useAuth();
+  const { signIn, signUp } = useAuth();
+  const [tab, setTab] = useState<LoginTab>('phone');
+
+  // Phone OTP state
+  const [phone, setPhone] = useState('');
+  const [otp, setOtp] = useState('');
+  const [verificationId, setVerificationId] = useState<string | null>(null);
+  const [phoneLoading, setPhoneLoading] = useState(false);
+  const [otpLoading, setOtpLoading] = useState(false);
+
+  // Email state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [emailLoading, setEmailLoading] = useState(false);
 
-  const handleLogin = async () => {
+  // ── Phone OTP ──────────────────────────────────────────────────────────────
+  const handleSendOTP = async () => {
+    const cleaned = phone.trim().replace(/\s/g, '');
+    if (!cleaned || cleaned.length < 9) {
+      Alert.alert('Invalid Number', 'Please enter a valid phone number with country code (e.g. +233241234567)');
+      return;
+    }
+    setPhoneLoading(true);
+    try {
+      // Firebase Phone Auth — works on real devices and Expo Go with test numbers
+      const provider = new PhoneAuthProvider(auth);
+      // On native, we pass a dummy recaptcha verifier that Firebase ignores for real devices
+      const vid = await provider.verifyPhoneNumber(cleaned, new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'invisible' }) as any);
+      setVerificationId(vid);
+      Alert.alert('OTP Sent', `A verification code has been sent to ${cleaned}`);
+    } catch (err: any) {
+      // On Expo Go web preview, phone auth requires a real device — show helpful message
+      if (err.code === 'auth/operation-not-supported-in-this-environment' || err.code === 'auth/web-storage-unsupported') {
+        Alert.alert(
+          'Phone Login',
+          'Phone OTP login works on real iOS/Android devices. Please use Email login for testing in the browser preview, or scan the QR code to test on your phone.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert('Error', err.message || 'Failed to send OTP');
+      }
+    } finally {
+      setPhoneLoading(false);
+    }
+  };
+
+  const handleVerifyOTP = async () => {
+    if (!otp.trim() || otp.length < 6) {
+      Alert.alert('Invalid Code', 'Please enter the 6-digit verification code');
+      return;
+    }
+    if (!verificationId) return;
+    setOtpLoading(true);
+    try {
+      const credential = PhoneAuthProvider.credential(verificationId, otp.trim());
+      await signInWithCredential(auth, credential);
+      router.replace('/(tabs)' as any);
+    } catch (err: any) {
+      Alert.alert('Verification Failed', err.message || 'Invalid verification code');
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  // ── Email Login ────────────────────────────────────────────────────────────
+  const handleEmailLogin = async () => {
     if (!email.trim() || !password.trim()) {
       Alert.alert('Error', 'Please enter your email and password');
       return;
     }
-    setLoading(true);
+    setEmailLoading(true);
     try {
       await signIn(email.trim(), password);
-      router.replace('/(tabs)');
+      router.replace('/(tabs)' as any);
     } catch (err: any) {
       Alert.alert('Login Failed', err.message || 'Invalid email or password');
     } finally {
-      setLoading(false);
+      setEmailLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+
         {/* Logo */}
         <View style={styles.logoRow}>
-          <View style={[styles.logoCircle, { backgroundColor: '#D4AF37' }]}>
+          <View style={styles.logoCircle}>
             <Text style={styles.logoText}>H</Text>
           </View>
-          <Text style={[styles.appName, { color: colors.foreground }]}>HY3N</Text>
+          <Text style={styles.appName}>HY3N</Text>
         </View>
 
-        <Text style={[styles.title, { color: colors.foreground }]}>Welcome back</Text>
-        <Text style={[styles.subtitle, { color: colors.muted }]}>Log in to your account</Text>
+        <Text style={styles.title}>Welcome to HY3N</Text>
+        <Text style={styles.subtitle}>Ghana's premium ride-hailing app</Text>
 
-        {/* Email */}
-        <View style={[styles.inputWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <MaterialIcons name="email" size={20} color={colors.muted} style={styles.inputIcon} />
-          <TextInput
-            style={[styles.input, { color: colors.foreground }]}
-            placeholder="you@example.com"
-            placeholderTextColor={colors.muted}
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoComplete="email"
-          />
+        {/* Tab Switcher */}
+        <View style={styles.tabRow}>
+          {(['phone', 'email'] as LoginTab[]).map((t) => (
+            <TouchableOpacity
+              key={t}
+              onPress={() => setTab(t)}
+              style={[styles.tabBtn, tab === t && styles.tabBtnActive]}
+            >
+              <MaterialIcons
+                name={t === 'phone' ? 'phone' : 'email'}
+                size={16}
+                color={tab === t ? GOLD : MUTED}
+                style={{ marginRight: 6 }}
+              />
+              <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
+                {t === 'phone' ? 'Phone' : 'Email'}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {/* Password */}
-        <View style={[styles.inputWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <MaterialIcons name="lock" size={20} color={colors.muted} style={styles.inputIcon} />
-          <TextInput
-            style={[styles.input, { color: colors.foreground }]}
-            placeholder="••••••••"
-            placeholderTextColor={colors.muted}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry={!showPassword}
-            autoComplete="password"
-          />
-          <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
-            <MaterialIcons name={showPassword ? 'visibility-off' : 'visibility'} size={20} color={colors.muted} />
-          </TouchableOpacity>
+        {/* ── Phone OTP Tab ── */}
+        {tab === 'phone' && (
+          <View>
+            {!verificationId ? (
+              <>
+                <Text style={styles.label}>Phone Number</Text>
+                <View style={styles.inputWrap}>
+                  <MaterialIcons name="phone" size={20} color={MUTED} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="+233 24 123 4567"
+                    placeholderTextColor={MUTED}
+                    value={phone}
+                    onChangeText={setPhone}
+                    keyboardType="phone-pad"
+                    autoComplete="tel"
+                  />
+                </View>
+                <Text style={styles.hint}>Enter your number with country code (e.g. +233 for Ghana)</Text>
+                <TouchableOpacity
+                  style={[styles.btn, phoneLoading && styles.btnDisabled]}
+                  onPress={handleSendOTP}
+                  disabled={phoneLoading}
+                >
+                  {phoneLoading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.btnText}>Send Verification Code</Text>
+                  )}
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <View style={styles.otpSentBanner}>
+                  <MaterialIcons name="check-circle" size={18} color={GREEN} />
+                  <Text style={styles.otpSentText}>Code sent to {phone}</Text>
+                </View>
+                <Text style={styles.label}>Verification Code</Text>
+                <View style={styles.inputWrap}>
+                  <MaterialIcons name="sms" size={20} color={MUTED} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="6-digit code"
+                    placeholderTextColor={MUTED}
+                    value={otp}
+                    onChangeText={setOtp}
+                    keyboardType="number-pad"
+                    maxLength={6}
+                  />
+                </View>
+                <TouchableOpacity
+                  style={[styles.btn, otpLoading && styles.btnDisabled]}
+                  onPress={handleVerifyOTP}
+                  disabled={otpLoading}
+                >
+                  {otpLoading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.btnText}>Verify & Log In</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setVerificationId(null)} style={styles.resendRow}>
+                  <Text style={styles.resendText}>Didn't receive it? </Text>
+                  <Text style={[styles.resendText, { color: GOLD, fontWeight: '700' }]}>Resend</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
+
+        {/* ── Email Tab ── */}
+        {tab === 'email' && (
+          <View>
+            <Text style={styles.label}>Email Address</Text>
+            <View style={styles.inputWrap}>
+              <MaterialIcons name="email" size={20} color={MUTED} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="you@example.com"
+                placeholderTextColor={MUTED}
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoComplete="email"
+              />
+            </View>
+
+            <Text style={styles.label}>Password</Text>
+            <View style={styles.inputWrap}>
+              <MaterialIcons name="lock" size={20} color={MUTED} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="••••••••"
+                placeholderTextColor={MUTED}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoComplete="password"
+              />
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
+                <MaterialIcons name={showPassword ? 'visibility-off' : 'visibility'} size={20} color={MUTED} />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity onPress={() => router.push('/forgot-password' as any)} style={styles.forgotRow}>
+              <Text style={styles.forgotText}>Forgot password?</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.btn, emailLoading && styles.btnDisabled]}
+              onPress={handleEmailLogin}
+              disabled={emailLoading}
+            >
+              {emailLoading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.btnText}>Log In</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Divider */}
+        <View style={styles.dividerRow}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or</Text>
+          <View style={styles.dividerLine} />
         </View>
 
-        {/* Forgot password */}
-        <TouchableOpacity onPress={() => router.push('/forgot-password' as any)} style={styles.forgotRow}>
-          <Text style={[styles.forgotText, { color: '#D4AF37' }]}>Forgot password?</Text>
-        </TouchableOpacity>
-
-        {/* Login button */}
+        {/* Google Sign-In (requires native build) */}
         <TouchableOpacity
-          style={[styles.btn, { backgroundColor: '#006B3F' }, loading && styles.btnDisabled]}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <Text style={styles.btnText}>Log In</Text>
+          style={styles.googleBtn}
+          onPress={() => Alert.alert(
+            'Google Sign-In',
+            'Google Sign-In is available in the published app. Please use Phone or Email login for now.',
+            [{ text: 'OK' }]
           )}
+        >
+          <View style={styles.googleIcon}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#4285F4' }}>G</Text>
+          </View>
+          <Text style={styles.googleText}>Continue with Google</Text>
         </TouchableOpacity>
 
         {/* Register link */}
         <View style={styles.registerRow}>
-          <Text style={[styles.registerText, { color: colors.muted }]}>Don't have an account? </Text>
+          <Text style={styles.registerText}>Don't have an account? </Text>
           <TouchableOpacity onPress={() => router.push('/register' as any)}>
-            <Text style={[styles.registerLink, { color: '#D4AF37' }]}>Create one</Text>
+            <Text style={styles.registerLink}>Create one</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Terms */}
+        <Text style={styles.terms}>
+          By continuing, you agree to HY3N's{' '}
+          <Text style={{ color: GOLD }}>Terms of Service</Text> and{' '}
+          <Text style={{ color: GOLD }}>Privacy Policy</Text>
+        </Text>
+
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: BG },
   scroll: { flexGrow: 1, justifyContent: 'center', padding: 24 },
-  logoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 32 },
-  logoCircle: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  logoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
+  logoCircle: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 10, backgroundColor: GOLD },
   logoText: { fontSize: 24, fontWeight: '900', color: '#000' },
-  appName: { fontSize: 32, fontWeight: '900', letterSpacing: 2 },
-  title: { fontSize: 26, fontWeight: '700', textAlign: 'center', marginBottom: 6 },
-  subtitle: { fontSize: 15, textAlign: 'center', marginBottom: 32 },
+  appName: { fontSize: 32, fontWeight: '900', letterSpacing: 2, color: TEXT },
+  title: { fontSize: 24, fontWeight: '700', textAlign: 'center', marginBottom: 6, color: TEXT },
+  subtitle: { fontSize: 14, textAlign: 'center', marginBottom: 28, color: MUTED },
+  tabRow: { flexDirection: 'row', backgroundColor: CARD, borderRadius: 12, padding: 4, marginBottom: 24, borderWidth: 1, borderColor: BORDER },
+  tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 10 },
+  tabBtnActive: { backgroundColor: `${GOLD}1A`, borderWidth: 1, borderColor: GOLD },
+  tabText: { color: MUTED, fontSize: 14, fontWeight: '600' },
+  tabTextActive: { color: GOLD },
+  label: { color: MUTED, fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 },
   inputWrap: {
     flexDirection: 'row', alignItems: 'center',
-    borderWidth: 1, borderRadius: 12, marginBottom: 14, paddingHorizontal: 14,
+    backgroundColor: CARD, borderWidth: 1, borderColor: BORDER,
+    borderRadius: 12, marginBottom: 16, paddingHorizontal: 14,
   },
   inputIcon: { marginRight: 10 },
-  input: { flex: 1, height: 50, fontSize: 15 },
+  input: { flex: 1, height: 50, fontSize: 15, color: TEXT },
   eyeBtn: { padding: 4 },
-  forgotRow: { alignItems: 'flex-end', marginBottom: 24 },
-  forgotText: { fontSize: 13, fontWeight: '600' },
-  btn: { height: 52, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  hint: { color: MUTED, fontSize: 12, marginTop: -10, marginBottom: 16 },
+  btn: { height: 52, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 16, backgroundColor: GREEN },
   btnDisabled: { opacity: 0.6 },
   btnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  registerRow: { flexDirection: 'row', justifyContent: 'center' },
-  registerText: { fontSize: 14 },
-  registerLink: { fontSize: 14, fontWeight: '700' },
+  forgotRow: { alignItems: 'flex-end', marginBottom: 20, marginTop: -8 },
+  forgotText: { fontSize: 13, fontWeight: '600', color: GOLD },
+  otpSentBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: `${GREEN}1A`, borderRadius: 10, padding: 12, marginBottom: 20, borderWidth: 1, borderColor: `${GREEN}4D` },
+  otpSentText: { color: GREEN, fontSize: 13, fontWeight: '600', flex: 1 },
+  resendRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 4 },
+  resendText: { color: MUTED, fontSize: 13 },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 20 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: BORDER },
+  dividerText: { color: MUTED, fontSize: 13, marginHorizontal: 12 },
+  googleBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    height: 52, borderRadius: 12, borderWidth: 1, borderColor: BORDER,
+    backgroundColor: CARD, marginBottom: 24, gap: 10,
+  },
+  googleIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  googleText: { color: TEXT, fontSize: 15, fontWeight: '600' },
+  registerRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 16 },
+  registerText: { fontSize: 14, color: MUTED },
+  registerLink: { fontSize: 14, fontWeight: '700', color: GOLD },
+  terms: { fontSize: 11, color: MUTED, textAlign: 'center', lineHeight: 18 },
 });

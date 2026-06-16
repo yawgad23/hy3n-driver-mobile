@@ -19,6 +19,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Constants from "expo-constants";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useAuth } from "@/lib/auth-context";
+import { firestoreDB, COLLECTIONS } from "@/lib/firebase";
+import * as Location from "expo-location";
 import {
   RIDE_CATEGORIES,
   POPULAR_DESTINATIONS,
@@ -98,12 +101,26 @@ const MOCK_DRIVERS = [
 ];
 
 export default function HomeScreen() {
+  const { user } = useAuth();
   const insets = useSafeAreaInsets();
-  // Use the safe area top inset directly — on iOS this is the full notch/Dynamic Island height
-  // Add 0 extra padding since insets.top already includes the status bar height
   const safeTop = insets.top > 0 ? insets.top : (Constants.statusBarHeight ?? 44);
-  // No map ref needed — using pure RN animated background
-  const [userLocation] = useState<[number, number]>(DEFAULT_LOCATION);
+  const [userLocation, setUserLocation] = useState<[number, number]>(DEFAULT_LOCATION);
+
+  // Request GPS and center map on user's real position
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          setUserLocation([loc.coords.latitude, loc.coords.longitude]);
+        }
+      } catch (err) {
+        // Fall back to default Accra location if GPS fails
+        console.log('GPS unavailable, using default location');
+      }
+    })();
+  }, []);
   const [destination, setDestination] = useState<Location | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -218,6 +235,28 @@ export default function HomeScreen() {
   const handleBook = async () => {
     if (!destination) return;
     setBookingLoading(true);
+    const rideId = `ride_${Date.now()}`;
+    // Save ride to Firestore
+    if (user) {
+      try {
+        await firestoreDB.create(COLLECTIONS.RIDES, {
+          id: rideId,
+          rider_id: user.uid,
+          category: selectedCategory.name,
+          pickup_address: 'Current Location',
+          destination_address: destination.name,
+          distance,
+          duration,
+          fare: perPersonFare,
+          payment: selectedPayment.name,
+          status: 'searching',
+          scheduled_for: isScheduled ? scheduledFor : null,
+          created_date: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.error('Failed to save ride to Firestore:', err);
+      }
+    }
     await new Promise((r) => setTimeout(r, 1200));
     setActiveRide({
       id: `ride_${Date.now()}`,
