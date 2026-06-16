@@ -4,10 +4,11 @@ const path = require("path");
 
 const config = getDefaultConfig(__dirname);
 
-// Add web fallback for react-native-maps (native-only library)
+// Stub react-native-maps for ALL platforms — we use a pure RN map background instead.
+// This prevents the "RNMapsAirModule could not be found" crash in Expo Go.
 config.resolver = config.resolver || {};
 config.resolver.resolveRequest = (context, moduleName, platform) => {
-  if (platform === "web" && moduleName === "react-native-maps") {
+  if (moduleName === "react-native-maps") {
     return {
       filePath: path.resolve(__dirname, "lib/react-native-maps-web-stub.js"),
       type: "sourceFile",

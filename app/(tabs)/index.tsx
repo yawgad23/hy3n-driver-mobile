@@ -14,7 +14,8 @@ import {
   Share,
   Linking,
 } from "react-native";
-import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
+// react-native-maps removed — not compatible with Expo Go
+// Using custom animated map background instead
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -98,7 +99,7 @@ const MOCK_DRIVERS = [
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
-  const mapRef = useRef<MapView>(null);
+  // No map ref needed — using pure RN animated background
   const [userLocation] = useState<[number, number]>(DEFAULT_LOCATION);
   const [destination, setDestination] = useState<Location | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -209,15 +210,6 @@ export default function HomeScreen() {
     const updated = [loc, ...searchHistory.filter((h) => h.name !== loc.name)].slice(0, 5);
     setSearchHistory(updated);
     await AsyncStorage.setItem("searchHistory", JSON.stringify(updated));
-    if (mapRef.current) {
-      mapRef.current.fitToCoordinates(
-        [
-          { latitude: userLocation[0], longitude: userLocation[1] },
-          { latitude: loc.lat, longitude: loc.lng },
-        ],
-        { edgePadding: { top: 80, right: 40, bottom: 320, left: 40 }, animated: true }
-      );
-    }
   };
 
   const handleBook = async () => {
@@ -272,14 +264,6 @@ export default function HomeScreen() {
     setSplitData(null);
     setIsScheduled(false);
     setScheduledFor(null);
-    if (mapRef.current) {
-      mapRef.current.animateToRegion({
-        latitude: userLocation[0],
-        longitude: userLocation[1],
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
-      }, 500);
-    }
   };
 
   const handleQuickPlace = (place: SavedPlace) => {
@@ -333,14 +317,6 @@ export default function HomeScreen() {
     setAppliedPromo(null);
     setIsScheduled(false);
     setScheduledFor(null);
-    if (mapRef.current) {
-      mapRef.current.animateToRegion({
-        latitude: userLocation[0],
-        longitude: userLocation[1],
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
-      }, 500);
-    }
   };
 
   const renderActiveRide = () => {
@@ -807,62 +783,35 @@ export default function HomeScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
-      {/* Map */}
-      {Platform.OS === "web" ? (
-        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#111", alignItems: "center", justifyContent: "center" }}>
-          <MaterialIcons name="map" size={64} color="#2A2A2A" />
-          <Text style={{ color: "#3A3A3A", marginTop: 12, fontSize: 14 }}>Map loads on device</Text>
-        </View>
-      ) : (
-        <MapView
-          ref={mapRef}
-          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
-          provider={PROVIDER_DEFAULT}
-          initialRegion={{
-            latitude: userLocation[0],
-            longitude: userLocation[1],
-            latitudeDelta: 0.01,
-            longitudeDelta: 0.01,
-          }}
-          customMapStyle={[
-            { elementType: "geometry", stylers: [{ color: "#212121" }] },
-            { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
-            { elementType: "labels.text.fill", stylers: [{ color: "#757575" }] },
-            { elementType: "labels.text.stroke", stylers: [{ color: "#212121" }] },
-            { featureType: "road", elementType: "geometry", stylers: [{ color: "#2c2c2c" }] },
-            { featureType: "road.arterial", elementType: "geometry", stylers: [{ color: "#373737" }] },
-            { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#3c3c3c" }] },
-            { featureType: "water", elementType: "geometry", stylers: [{ color: "#000000" }] },
-            { featureType: "poi", elementType: "geometry", stylers: [{ color: "#181818" }] },
-          ]}
-          showsUserLocation={false}
-          showsMyLocationButton={false}
-          showsCompass={false}
-          showsScale={false}
-          toolbarEnabled={false}
-          zoomControlEnabled={false}
-        >
-          <Marker coordinate={{ latitude: userLocation[0], longitude: userLocation[1] }} anchor={{ x: 0.5, y: 0.5 }}>
-            <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: GREEN, borderWidth: 3, borderColor: "#fff" }} />
-          </Marker>
-          {destination && (
-            <Marker coordinate={{ latitude: destination.lat, longitude: destination.lng }} anchor={{ x: 0.5, y: 0.5 }}>
-              <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: GOLD, borderWidth: 3, borderColor: "#fff" }} />
-            </Marker>
-          )}
-          {destination && (
-            <Polyline
-              coordinates={[
-                { latitude: userLocation[0], longitude: userLocation[1] },
-                { latitude: destination.lat, longitude: destination.lng },
-              ]}
-              strokeColor={GOLD}
-              strokeWidth={3}
-              lineDashPattern={[8, 6]}
-            />
-          )}
-        </MapView>
-      )}
+      {/* Map Background — pure React Native, works on Expo Go, web, and production */}
+      <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#0D1117", overflow: "hidden" }}>
+        {/* Grid lines simulating a dark map */}
+        {Array.from({ length: 18 }).map((_, i) => (
+          <View key={"h" + i} style={{ position: "absolute", left: 0, right: 0, top: (i / 18) * SCREEN_HEIGHT, height: 0.5, backgroundColor: "#1A2030" }} />
+        ))}
+        {Array.from({ length: 10 }).map((_, i) => (
+          <View key={"v" + i} style={{ position: "absolute", top: 0, bottom: 0, left: (i / 10) * SCREEN_WIDTH, width: 0.5, backgroundColor: "#1A2030" }} />
+        ))}
+        {/* Road lines */}
+        <View style={{ position: "absolute", top: "30%", left: 0, right: 0, height: 3, backgroundColor: "#1E2A1E" }} />
+        <View style={{ position: "absolute", top: "55%", left: 0, right: 0, height: 5, backgroundColor: "#1E2A1E" }} />
+        <View style={{ position: "absolute", left: "35%", top: 0, bottom: 0, width: 4, backgroundColor: "#1E2A1E" }} />
+        <View style={{ position: "absolute", left: "65%", top: 0, bottom: 0, width: 2, backgroundColor: "#1E2A1E" }} />
+        {/* Accent road (green tint for Ghana) */}
+        <View style={{ position: "absolute", top: "42%", left: 0, right: 0, height: 2, backgroundColor: "#0D2A1A" }} />
+        {/* Location dot */}
+        <View style={{ position: "absolute", top: "45%", left: "48%", width: 16, height: 16, borderRadius: 8, backgroundColor: GREEN, borderWidth: 3, borderColor: "#fff", shadowColor: GREEN, shadowOpacity: 0.8, shadowRadius: 8 }} />
+        {/* Destination dot (shown when destination selected) */}
+        {destination && (
+          <View style={{ position: "absolute", top: "25%", left: "60%", width: 16, height: 16, borderRadius: 8, backgroundColor: GOLD, borderWidth: 3, borderColor: "#fff" }} />
+        )}
+        {/* Route line (shown when destination selected) */}
+        {destination && (
+          <View style={{ position: "absolute", top: "26%", left: "52%", width: 80, height: 2, backgroundColor: GOLD, transform: [{ rotate: "30deg" }] }} />
+        )}
+        {/* Accra label */}
+        <Text style={{ position: "absolute", top: "38%", left: "42%", color: "#2A3A2A", fontSize: 11, fontWeight: "600", letterSpacing: 2 }}>ACCRA</Text>
+      </View>
 
       {/* Header */}
       <View style={{ position: "absolute", top: insets.top + 8, left: 16, right: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between", zIndex: 10 }}>
