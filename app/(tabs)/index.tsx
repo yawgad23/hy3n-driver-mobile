@@ -21,7 +21,7 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "@/lib/auth-context";
 import { firestoreDB, COLLECTIONS } from "@/lib/firebase";
-import * as Location from "expo-location";
+import * as ExpoLocation from "expo-location";
 import {
   RIDE_CATEGORIES,
   POPULAR_DESTINATIONS,
@@ -110,9 +110,9 @@ export default function HomeScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
+        const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
         if (status === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          const loc = await ExpoLocation.getCurrentPositionAsync({ accuracy: ExpoLocation.Accuracy.Balanced });
           setUserLocation([loc.coords.latitude, loc.coords.longitude]);
         }
       } catch (err) {
