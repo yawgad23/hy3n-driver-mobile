@@ -1,6 +1,9 @@
-import { useEffect, useState, useCallback } from "react";
-import { View, Text, TouchableOpacity, ScrollView, TextInput, ActivityIndicator } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, Alert } from "react-native";
+import { useState, useCallback } from "react";
 import { ScreenContainer } from "@/components/screen-container";
+import { MapView } from "@/components/map-view";
+import { DestinationSearchModal } from "@/components/destination-search-modal";
+import { RideBookingSheet } from "@/components/ride-booking-sheet";
 import { RIDE_CATEGORIES } from "@/constants/rides";
 
 interface Location {
@@ -11,50 +14,74 @@ interface Location {
 }
 
 export default function RiderHome() {
-  const [location, setLocation] = useState<[number, number]>([5.6037, -0.1870]);
+  const [userLocation] = useState<[number, number]>([5.6037, -0.187]);
   const [destination, setDestination] = useState<Location | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState(RIDE_CATEGORIES[0]);
   const [distance, setDistance] = useState<number | null>(null);
   const [duration, setDuration] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [activeRide, setActiveRide] = useState<any>(null);
 
-  // Mock distance/duration calculation
-  const calculateDistance = useCallback(() => {
-    if (!destination) return;
-    setLoading(true);
-    // Simulate API call
+  const savedPlaces: Location[] = [
+    { name: "Home", address: "123 Main St, Accra", lat: 5.6037, lng: -0.187 },
+    { name: "Work", address: "Business Hub, Osu", lat: 5.6247, lng: -0.1870 },
+  ];
+
+  const handleSelectDestination = useCallback((location: Location) => {
+    setDestination(location);
+    // Simulate distance/duration calculation
     setTimeout(() => {
       setDistance(18.4);
       setDuration(41);
-      setLoading(false);
     }, 500);
-  }, [destination]);
+  }, []);
 
-  useEffect(() => {
-    calculateDistance();
-  }, [destination, calculateDistance]);
+  const handleBook = useCallback((rideData: any) => {
+    setLoading(true);
+    // Simulate booking API call
+    setTimeout(() => {
+      setLoading(false);
+      setActiveRide(rideData);
+      setDestination(null);
+      Alert.alert("Success", `${rideData.category} ride booked! Looking for drivers...`);
+    }, 1500);
+  }, []);
 
-  const calculateFare = () => {
-    if (!distance || !duration) return 0;
-    const distanceFare = selectedCategory.basePrice + (distance * selectedCategory.pricePerKm);
-    const timeFare = duration * selectedCategory.pricePerMin;
-    const subtotal = distanceFare + timeFare;
-    return Math.max(subtotal, selectedCategory.minFare);
+  const handleCancelBooking = () => {
+    setDestination(null);
+    setDistance(null);
+    setDuration(null);
   };
 
-  const fare = calculateFare();
+  const handleCancelRide = () => {
+    Alert.alert(
+      "Cancel Ride",
+      "Are you sure you want to cancel this ride?",
+      [
+        { text: "Keep Ride", style: "cancel" },
+        {
+          text: "Cancel Ride",
+          style: "destructive",
+          onPress: () => {
+            setActiveRide(null);
+            Alert.alert("Cancelled", "Your ride has been cancelled");
+          },
+        },
+      ]
+    );
+  };
 
   return (
     <ScreenContainer className="p-0">
-      {/* Full Screen Map Background */}
-      <View className="absolute inset-0 bg-background">
-        <View className="flex-1 bg-secondary items-center justify-center">
-          <Text className="text-muted text-sm">Map View</Text>
-        </View>
-      </View>
+      {/* Full Screen Map */}
+      <MapView
+        userLat={userLocation[0]}
+        userLng={userLocation[1]}
+        destLat={destination?.lat}
+        destLng={destination?.lng}
+      />
 
-      {/* Header - Positioned over map */}
+      {/* Header - Over Map */}
       <View className="absolute top-0 left-0 right-0 z-30 pt-4 px-4 pb-4 flex-row items-center justify-between">
         <View className="flex-row items-center gap-2">
           <View className="w-8 h-8 rounded-full bg-primary/10 items-center justify-center">
@@ -68,7 +95,7 @@ export default function RiderHome() {
       </View>
 
       {/* Nearby Cars Indicator */}
-      {!destination && (
+      {!destination && !activeRide && (
         <View className="absolute top-28 left-4 z-10 bg-card/90 border border-border rounded-xl px-3 py-2">
           <View className="flex-row items-center gap-2">
             <View className="w-2 h-2 bg-success rounded-full" />
@@ -77,114 +104,107 @@ export default function RiderHome() {
         </View>
       )}
 
-      {/* Bottom Sheet - Search/Booking */}
-      <View className="absolute bottom-0 left-0 right-0 z-20 bg-card border-t border-border rounded-t-3xl p-4">
-        {!destination ? (
-          <>
-            {/* Where To Button */}
-            <TouchableOpacity
-              onPress={() => setSearchOpen(true)}
-              className="w-full bg-secondary rounded-2xl p-4 flex-row items-center gap-4 mb-4"
-            >
-              <View className="w-12 h-12 rounded-xl bg-primary items-center justify-center">
-                <Text className="text-lg">🔍</Text>
-              </View>
-              <View className="flex-1">
-                <Text className="font-bold text-lg text-foreground">Where to?</Text>
-                <Text className="text-sm text-muted">Enter your destination</Text>
-              </View>
-              <Text className="text-lg">📍</Text>
-            </TouchableOpacity>
+      {/* Active Ride Display */}
+      {activeRide && (
+        <View className="absolute bottom-0 left-0 right-0 z-20 bg-card border-t border-border rounded-t-3xl p-4">
+          <View className="mb-4 pb-4 border-b border-border">
+            <Text className="text-xs text-muted mb-1">Ride Booked</Text>
+            <Text className="text-lg font-bold text-foreground">{activeRide.category}</Text>
+            <Text className="text-xs text-muted mt-1">{activeRide.destination.name}</Text>
+          </View>
 
-            {/* Saved Places */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
-              <TouchableOpacity className="mr-3 px-4 py-2.5 bg-secondary rounded-xl flex-row items-center gap-2">
-                <Text className="text-lg">🏠</Text>
-                <View>
-                  <Text className="text-sm font-semibold text-foreground">Home</Text>
-                  <Text className="text-xs text-muted">Set location</Text>
-                </View>
-              </TouchableOpacity>
-              <TouchableOpacity className="mr-3 px-4 py-2.5 bg-secondary rounded-xl flex-row items-center gap-2">
-                <Text className="text-lg">💼</Text>
-                <View>
-                  <Text className="text-sm font-semibold text-foreground">Work</Text>
-                  <Text className="text-xs text-muted">Set location</Text>
-                </View>
-              </TouchableOpacity>
-            </ScrollView>
-          </>
-        ) : (
-          <ScrollView showsVerticalScrollIndicator={false} className="max-h-96">
-            {/* Route Summary */}
-            <View className="mb-5 p-4 bg-secondary rounded-xl">
-              <View className="flex-row gap-3 mb-3">
-                <View className="items-center gap-1 mt-1">
-                  <View className="w-3 h-3 rounded-full border-2 border-success" />
-                  <View className="w-0.5 h-8 bg-border" />
-                  <Text className="text-lg">📍</Text>
-                </View>
-                <View className="flex-1 gap-3">
-                  <View>
-                    <Text className="text-xs text-muted">Pickup</Text>
-                    <Text className="text-sm font-medium text-foreground">Current Location</Text>
-                  </View>
-                  <View>
-                    <Text className="text-xs text-muted">Destination</Text>
-                    <Text className="text-sm font-medium text-foreground">{destination.name}</Text>
-                  </View>
-                </View>
-              </View>
-
-              {/* Distance & Duration */}
-              {distance && duration && (
-                <View className="flex-row justify-center gap-4 pt-3 border-t border-border">
-                  <View className="items-center gap-1">
-                    <Text className="text-xs text-muted">Distance</Text>
-                    <Text className="text-sm font-bold text-foreground">{distance.toFixed(1)} km</Text>
-                  </View>
-                  <View className="items-center gap-1">
-                    <Text className="text-xs text-muted">Duration</Text>
-                    <Text className="text-sm font-bold text-foreground">~{duration} min</Text>
-                  </View>
-                </View>
-              )}
+          <View className="flex-row gap-4 mb-4 pb-4 border-b border-border">
+            <View className="flex-1">
+              <Text className="text-xs text-muted mb-1">Distance</Text>
+              <Text className="text-sm font-semibold text-foreground">{activeRide.distance.toFixed(1)} km</Text>
             </View>
+            <View className="flex-1">
+              <Text className="text-xs text-muted mb-1">Duration</Text>
+              <Text className="text-sm font-semibold text-foreground">{activeRide.duration} min</Text>
+            </View>
+            <View className="flex-1">
+              <Text className="text-xs text-muted mb-1">Fare</Text>
+              <Text className="text-sm font-semibold text-primary">GH₵ {activeRide.fare.toFixed(2)}</Text>
+            </View>
+          </View>
 
-            {/* Ride Categories */}
-            <View className="mb-5">
-              <Text className="text-xs text-muted uppercase tracking-wider mb-2 font-medium">Choose Ride</Text>
-              <View className="gap-2">
-                {RIDE_CATEGORIES.map((category) => {
-                  const categoryFare = calculateFare();
-                  return (
+          <View className="bg-surface rounded-xl p-3 mb-4">
+            <Text className="text-xs text-muted mb-2">Looking for drivers...</Text>
+            <View className="flex-row items-center gap-2">
+              <View className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+              <View className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: "0.2s" }} />
+              <View className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: "0.4s" }} />
+            </View>
+          </View>
+
+          <TouchableOpacity
+            onPress={handleCancelRide}
+            className="bg-error/10 border border-error/30 rounded-xl py-3 items-center"
+          >
+            <Text className="text-sm font-semibold text-error">Cancel Ride</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Booking Sheet or Search Button */}
+      {!activeRide && (
+        <View className="absolute bottom-0 left-0 right-0 z-20">
+          {destination && distance && duration ? (
+            <RideBookingSheet
+              destination={destination}
+              distance={distance}
+              duration={duration}
+              onBook={handleBook}
+              onCancel={handleCancelBooking}
+              loading={loading}
+            />
+          ) : (
+            <View className="bg-card border-t border-border rounded-t-3xl p-4">
+              {/* Where To Button */}
+              <TouchableOpacity
+                onPress={() => setSearchOpen(true)}
+                className="w-full bg-secondary rounded-2xl p-4 flex-row items-center gap-4 mb-4"
+              >
+                <View className="w-12 h-12 rounded-xl bg-primary items-center justify-center">
+                  <Text className="text-lg">🔍</Text>
+                </View>
+                <View className="flex-1">
+                  <Text className="font-bold text-lg text-foreground">Where to?</Text>
+                  <Text className="text-sm text-muted">Enter your destination</Text>
+                </View>
+                <Text className="text-lg">📍</Text>
+              </TouchableOpacity>
+
+              {/* Saved Places */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View className="flex-row gap-2">
+                  {savedPlaces.map((place) => (
                     <TouchableOpacity
-                      key={category.id}
-                      onPress={() => setSelectedCategory(category)}
-                      className={`p-4 rounded-xl border flex-row items-center justify-between ${
-                        selectedCategory.id === category.id
-                          ? "border-primary bg-primary/10"
-                          : "border-border bg-card"
-                      }`}
+                      key={place.name}
+                      onPress={() => handleSelectDestination(place)}
+                      className="flex-row items-center gap-2 px-4 py-2.5 bg-secondary rounded-xl"
                     >
-                      <View className="flex-1">
-                        <Text className="text-sm font-semibold text-foreground">{category.name}</Text>
-                        <Text className="text-xs text-muted">{category.description}</Text>
+                      <Text className="text-lg">{place.name === "Home" ? "🏠" : "💼"}</Text>
+                      <View>
+                        <Text className="text-sm font-semibold text-foreground">{place.name}</Text>
+                        <Text className="text-xs text-muted">Set location</Text>
                       </View>
-                      <Text className="text-lg font-bold text-primary">GH₵{categoryFare.toFixed(2)}</Text>
                     </TouchableOpacity>
-                  );
-                })}
-              </View>
+                  ))}
+                </View>
+              </ScrollView>
             </View>
+          )}
+        </View>
+      )}
 
-            {/* Book Button */}
-            <TouchableOpacity className="w-full bg-primary rounded-xl py-4 items-center mb-4">
-              <Text className="text-primary-foreground font-bold">Book {selectedCategory.name}</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        )}
-      </View>
+      {/* Destination Search Modal */}
+      <DestinationSearchModal
+        visible={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onSelectDestination={handleSelectDestination}
+        savedPlaces={savedPlaces}
+      />
     </ScreenContainer>
   );
 }
