@@ -118,7 +118,7 @@ export default function LoginScreen() {
           <Text style={styles.appName}>HY3N</Text>
         </View>
 
-        <Text style={styles.title}>Welcome to HY3N</Text>
+        <Text style={styles.title}>Akwaaba to HY3N</Text>
         <Text style={styles.subtitle}>Ghana's premium ride-hailing app</Text>
 
         {/* Tab Switcher */}
