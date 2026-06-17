@@ -128,6 +128,45 @@ export const appRouter = router({
           clientReference,
         };
       }),
+
+    /**
+     * Admin: List all commissions for a date range.
+     * Returns all commission records with driver info.
+     * TODO: Implement admin auth check
+     */
+    listForAdmin: publicProcedure
+      .input(z.object({
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+        status: z.string().optional(),
+      }))
+      .query(async ({ input }) => {
+        // Placeholder: In production, verify admin auth here
+        return {
+          commissions: [],
+          note: 'Admin endpoint — implement auth and Firestore query',
+        };
+      }),
+
+    /**
+     * Admin: Override a commission status manually.
+     * Updates the commission record directly.
+     * TODO: Implement admin auth check
+     */
+    overrideStatus: publicProcedure
+      .input(z.object({
+        commissionId: z.string(),
+        newStatus: z.enum(['paid', 'failed', 'processing']),
+        reason: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        // Placeholder: In production, verify admin auth here
+        return {
+          success: true,
+          message: 'Commission status updated',
+          note: 'Admin endpoint — implement auth',
+        };
+      }),
   }),
 });
 

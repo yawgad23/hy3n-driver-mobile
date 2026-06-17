@@ -317,3 +317,12 @@
 - [x] CommissionGate: show USSD prompt instruction (driver approves on phone)
 - [x] CommissionGate: poll for Hubtel payment status (processing → paid/failed)
 - [x] Driver earnings tab: show today's commission status card (paid/processing/failed + retry)
+
+## Hubtel Webhook & Admin Dashboard (Jun 17)
+
+- [x] Server: `POST /api/hubtel/callback` webhook endpoint to receive Hubtel payment confirmations
+- [x] Webhook: verify Hubtel signature and update commission record from `processing` → `paid`/`failed`
+- [x] Admin dashboard: list all drivers' daily commissions with status (paid/processing/failed)
+- [x] Admin dashboard: manual override button to mark commission as paid or failed
+- [x] Admin dashboard: filter by date range and driver name
+- [x] tRPC endpoints: `commission.listForAdmin` and `commission.overrideStatus` (placeholder, needs admin auth)

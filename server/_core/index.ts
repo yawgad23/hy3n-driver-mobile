@@ -5,6 +5,7 @@ import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
+import { registerHubtelWebhook } from "./hubtelWebhook";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 
@@ -57,6 +58,7 @@ async function startServer() {
 
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  registerHubtelWebhook(app);
 
   // Google Places Autocomplete proxy — keeps API key server-side
   app.get("/api/places/autocomplete", async (req, res) => {
@@ -102,6 +104,11 @@ async function startServer() {
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, timestamp: Date.now() });
+  });
+
+  // Hubtel webhook status endpoint
+  app.get("/api/hubtel/status", (_req, res) => {
+    res.json({ status: "ready", webhook: "/api/hubtel/callback" });
   });
 
   app.use(
