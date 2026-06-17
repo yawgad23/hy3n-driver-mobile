@@ -271,9 +271,12 @@ function TripSummaryModal({
 }) {
   const [rating, setRating] = useState(0);
   const [remarks, setRemarks] = useState('');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [foundItem, setFoundItem] = useState(false);
   const [itemDescription, setItemDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const RIDER_TAGS = ['Friendly', 'Ready on time', 'Good communication', 'Clean entry', 'Polite', 'No issues'];
 
   const handleSubmit = async () => {
     if (rating === 0) {
@@ -282,8 +285,9 @@ function TripSummaryModal({
     }
     setSubmitting(true);
     try {
-      await onSubmit({ rating, remarks, foundItem, itemDescription: foundItem ? itemDescription : '' });
-      setRating(0); setRemarks(''); setFoundItem(false); setItemDescription('');
+      const fullRemarks = [remarks.trim(), ...selectedTags].filter(Boolean).join(' · ');
+      await onSubmit({ rating, remarks: fullRemarks, foundItem, itemDescription: foundItem ? itemDescription : '' });
+      setRating(0); setRemarks(''); setSelectedTags([]); setFoundItem(false); setItemDescription('');
       onClose();
     } catch {
       Alert.alert('Error', 'Failed to submit. Please try again.');
@@ -324,8 +328,25 @@ function TripSummaryModal({
                 </TouchableOpacity>
               ))}
             </View>
+            {/* Quick tags */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12, marginBottom: 4 }}>
+              <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 2 }}>
+                {RIDER_TAGS.map((tag) => {
+                  const active = selectedTags.includes(tag);
+                  return (
+                    <TouchableOpacity
+                      key={tag}
+                      onPress={() => setSelectedTags(prev => active ? prev.filter(t => t !== tag) : [...prev, tag])}
+                      style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: active ? `${GOLD}22` : '#1A1A1A', borderWidth: 1, borderColor: active ? GOLD : BORDER }}
+                    >
+                      <Text style={{ color: active ? GOLD : TEXT, fontSize: 13, fontWeight: active ? '600' : '400' }}>{tag}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
             <TextInput
-              style={summaryStyles.remarksInput}
+              style={[summaryStyles.remarksInput, { marginTop: 12 }]}
               placeholder="Optional remarks about the passenger..."
               placeholderTextColor={MUTED}
               value={remarks}

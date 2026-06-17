@@ -10,6 +10,7 @@ import {
   Alert,
   TextInput,
   ActivityIndicator,
+  Share,
 } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -368,6 +369,35 @@ export default function ActivityScreen() {
                   >
                     <MaterialIcons name="replay" size={18} color="#fff" />
                     <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 15 }}>Book Again</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const total = (selectedRide.fare + (selectedRide.tip || 0) + (selectedRide.waiting_fee || 0) - (selectedRide.discount || 0)).toFixed(2);
+                      const lines = [
+                        '🚗 HY3N Trip Receipt',
+                        `Date: ${new Date(selectedRide.created_date).toLocaleString('en-GH', { dateStyle: 'medium', timeStyle: 'short' })}`,
+                        `From: ${selectedRide.pickup_address}`,
+                        `To: ${selectedRide.destination_address}`,
+                        `Category: ${selectedRide.category}`,
+                        selectedRide.distance ? `Distance: ${selectedRide.distance.toFixed(1)} km` : null,
+                        selectedRide.duration ? `Duration: ${selectedRide.duration} min` : null,
+                        `Payment: ${selectedRide.payment}`,
+                        `Fare: GH₵${selectedRide.fare.toFixed(2)}`,
+                        selectedRide.discount && selectedRide.discount > 0 ? `Promo (${selectedRide.promo_code}): -GH₵${selectedRide.discount.toFixed(2)}` : null,
+                        selectedRide.waiting_fee && selectedRide.waiting_fee > 0 ? `Waiting Fee: +GH₵${selectedRide.waiting_fee.toFixed(2)}` : null,
+                        selectedRide.tip && selectedRide.tip > 0 ? `Tip: +GH₵${selectedRide.tip.toFixed(2)}` : null,
+                        `Total Paid: GH₵${total}`,
+                        selectedRide.driver_name ? `Driver: ${selectedRide.driver_name}` : null,
+                        `Trip ID: ${selectedRide.id?.slice(0, 12)}`,
+                        '',
+                        'Thank you for riding with HY3N!',
+                      ].filter(Boolean) as string[];
+                      Share.share({ message: lines.join('\n'), title: 'HY3N Trip Receipt' });
+                    }}
+                    style={{ backgroundColor: `${GOLD}1A`, borderWidth: 1, borderColor: `${GOLD}66`, borderRadius: 14, paddingVertical: 14, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8 }}
+                  >
+                    <MaterialIcons name="share" size={18} color={GOLD} />
+                    <Text style={{ color: GOLD, fontWeight: "600", fontSize: 15 }}>Share Receipt</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => {

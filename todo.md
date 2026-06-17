@@ -182,6 +182,12 @@
 - [x] Notification Center: mark-all-read writes back to Firestore
 - [x] Notification Center: unread badges and dot indicators
 
+## Rating & Receipt Features (Jun 17 — round 2)
+
+- [x] Driver post-trip rating modal: add rider-specific quick tags (Friendly, Ready on time, Good communication, Clean entry, Polite, No issues)
+- [x] Activity tab: star rating badge already shown on trip cards (rider_rating field) — confirmed working
+- [x] Activity tab: Share Receipt button added to trip detail modal (Book Again → Share Receipt → Report Issue)
+
 ## Rating Features Parity (Jun 17)
 
 - [x] Driver app: live average rating display updates after rider submits a rating (Firestore subscribeDoc in driver-auth-context)
