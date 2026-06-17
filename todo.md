@@ -61,7 +61,7 @@
 - [x] Privacy Policy & Terms of Use screen (linked from account)
 
 ### Home Screen
-- [ ] Scheduled trip confirmation toast/banner after booking a scheduled ride
+- [x] Scheduled trip confirmation toast/banner after booking a scheduled ride
 - [x] SOS button visible during active ride (in ride tracker area)
 - [x] In-ride chat with driver (quick message templates + free text)
 
@@ -101,11 +101,11 @@
 - [ ] Cancel policy warning (free within 2 min, GH₵2 fee after)
 - [ ] Cancel ride with reason selection modal
 - [ ] Ride options: AC toggle, pet-friendly, extra luggage
-- [ ] Fare estimate range before booking (show min-max per category)
-- [ ] Share trip with contact (share live tracking link via WhatsApp/SMS)
-- [ ] Driver is nearby alert (push notification + banner when driver is 2 min away)
-- [ ] Ride PIN verification (4-digit PIN rider shows driver before trip starts)
-- [ ] Lost & Found contact button in trip details
+- [x] Fare estimate range before booking (show min-max per category)
+- [x] Share trip with contact (share live tracking link via WhatsApp/SMS)
+- [x] Driver is nearby alert (push notification + banner when driver is 2 min away)
+- [x] Ride PIN verification (4-digit PIN rider shows driver before trip starts)
+- [x] Lost & Found contact button in trip details
 - [ ] Accessibility option (wheelchair-accessible vehicle request)
 
 ## Driver App Feature Parity (vs Web App)
@@ -150,11 +150,11 @@
 - [x] rider_email saved in Firestore ride document on booking so driver app can send to correct address
 
 ### Driver Set Destination
-- [ ] "Set Destination" button on driver home screen (when online, no active trip)
-- [ ] Allows driver to filter incoming requests to only those heading toward their chosen destination
-- [ ] Destination filter applied to incoming ride request listener
-- [ ] Clear destination button to remove filter
-- [ ] Destination shown as active badge on home screen
+- [x] "Set Destination" button on driver home screen (when online, no active trip)
+- [x] Allows driver to filter incoming requests to only those heading toward their chosen destination
+- [x] Destination filter applied to incoming ride request listener
+- [x] Clear destination button to remove filter
+- [x] Destination shown as active badge on home screen
 
 ### History Tab Share Receipt
 - [x] Share Receipt button inside expanded trip card (completed trips only)
@@ -185,10 +185,10 @@
 
 ## Waiting Time System (Jun 17)
 
-- [ ] Driver app: start waiting timer when driver taps "Arrived at Pickup" (driver_arrived status)
-- [ ] Driver app: show countdown — 3 min free, then GH₵X/min charged, live display
-- [ ] Rider app: show waiting timer countdown when driver has arrived at pickup
-- [ ] Trip complete: calculate and save waiting_fee to Firestore ride document
+- [x] Driver app: start waiting timer when driver taps "Arrived at Pickup" (driver_arrived status)
+- [x] Driver app: show countdown — 3 min free, then GH₵X/min charged, live display
+- [x] Rider app: show waiting timer countdown when driver has arrived at pickup
+- [x] Trip complete: calculate and save waiting_fee to Firestore ride document
 
 ## Rating & Receipt Features (Jun 17 — round 2)
 

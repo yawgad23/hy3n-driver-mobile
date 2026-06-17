@@ -16,7 +16,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/lib/auth-context";
-import { firestoreDB } from "@/lib/firebase";
+import { firestoreDB, COLLECTIONS } from "@/lib/firebase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const GOLD = "#D4AF37";
@@ -138,10 +138,42 @@ export default function ActivityScreen() {
 
   const handleSubmitReport = async () => {
     if (!selectedIssue) { Alert.alert("Required", "Please select an issue type"); return; }
+    if (!user) { Alert.alert("Sign in required", "Please sign in again before submitting a report."); return; }
+
     setReportSubmitting(true);
-    await new Promise(r => setTimeout(r, 1500));
-    setReportSubmitting(false);
-    setReportSubmitted(true);
+    try {
+      const description = reportNote.trim();
+      const rideId = reportRide?.id || selectedRide?.id || null;
+
+      await firestoreDB.create(COLLECTIONS.SUPPORT_TICKETS, {
+        user_id: user.uid,
+        ride_id: rideId,
+        category: "Ride issue",
+        subject: selectedIssue,
+        description: description || selectedIssue,
+        status: "open",
+        source: "rider_activity",
+      });
+
+      if (selectedIssue === "Lost item in vehicle" && rideId) {
+        const driverId = (reportRide as any)?.driver_id || (reportRide as any)?.driverId || null;
+        await firestoreDB.create("RideReport", {
+          ride_id: rideId,
+          driver_id: driverId,
+          rider_id: user.uid,
+          report_type: "lost_item",
+          description: description || "Rider reported a lost item in the vehicle.",
+          status: "open",
+          created_date: new Date().toISOString(),
+        });
+      }
+
+      setReportSubmitted(true);
+    } catch (err) {
+      Alert.alert("Unable to submit", "Please try again in a moment.");
+    } finally {
+      setReportSubmitting(false);
+    }
   };
 
   return (
@@ -398,6 +430,20 @@ export default function ActivityScreen() {
                   >
                     <MaterialIcons name="share" size={18} color={GOLD} />
                     <Text style={{ color: GOLD, fontWeight: "600", fontSize: 15 }}>Share Receipt</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setShowDetails(false);
+                      setReportRide(selectedRide);
+                      setSelectedIssue("Lost item in vehicle");
+                      setReportNote("");
+                      setReportSubmitted(false);
+                      setShowReport(true);
+                    }}
+                    style={{ backgroundColor: `${GOLD}14`, borderWidth: 1, borderColor: `${GOLD}66`, borderRadius: 14, paddingVertical: 14, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8 }}
+                  >
+                    <MaterialIcons name="inventory-2" size={18} color={GOLD} />
+                    <Text style={{ color: GOLD, fontWeight: "600", fontSize: 15 }}>Lost Item</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => {

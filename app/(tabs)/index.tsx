@@ -24,6 +24,7 @@ import { useAuth } from "@/lib/auth-context";
 import { firestoreDB, COLLECTIONS } from "@/lib/firebase";
 import { dispatchService, getSurgeMultiplier, generateRidePin, calculateETA, VEHICLE_COLOURS, type RideRequest as DispatchRide } from "@/lib/dispatch";
 import * as ExpoLocation from "expo-location";
+import * as Haptics from "expo-haptics";
 import {
   RIDE_CATEGORIES,
   POPULAR_DESTINATIONS,
@@ -238,6 +239,11 @@ export default function HomeScreen() {
   const [riderWaitSeconds, setRiderWaitSeconds] = useState(0);
   const riderWaitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const riderArrivedAtRef = useRef<number | null>(null);
+  const [showScheduledToast, setShowScheduledToast] = useState(false);
+  const scheduledToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showNearbyAlert, setShowNearbyAlert] = useState(false);
+  const nearbyAlertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nearbyAlertRideRef = useRef<string | null>(null);
 
   // ─── Voice Call ───────────────────────────────────────────────────────────────
   const driverName = activeRide?.driverName || 'Driver';
@@ -391,6 +397,56 @@ export default function HomeScreen() {
   const riderWaitingFeePerMin = RIDE_CATEGORIES.find(c => c.id === activeRide?.category)?.waitingFeePerMin ?? 0.55;
   const riderCurrentWaitingFee = parseFloat((riderBillableWaitMins * riderWaitingFeePerMin).toFixed(2));
 
+  useEffect(() => {
+    const rideKey = activeRide?.firestoreId || activeRide?.id || null;
+    const shouldAlert =
+      activeRide?.status === "driver_arriving" &&
+      typeof activeRide.etaSeconds === "number" &&
+      activeRide.etaSeconds > 0 &&
+      activeRide.etaSeconds <= 120 &&
+      !!rideKey &&
+      nearbyAlertRideRef.current !== rideKey;
+
+    if (shouldAlert) {
+      nearbyAlertRideRef.current = rideKey;
+      setShowNearbyAlert(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      Alert.alert(
+        "Driver nearby",
+        `${activeRide.driverName || "Your driver"} is about ${Math.max(1, Math.ceil((activeRide.etaSeconds || 60) / 60))} minute${Math.max(1, Math.ceil((activeRide.etaSeconds || 60) / 60)) === 1 ? "" : "s"} away. Please head to your pickup point.`
+      );
+      if (nearbyAlertTimerRef.current) clearTimeout(nearbyAlertTimerRef.current);
+      nearbyAlertTimerRef.current = setTimeout(() => setShowNearbyAlert(false), 5000);
+    }
+
+    if (!activeRide) {
+      nearbyAlertRideRef.current = null;
+      setShowNearbyAlert(false);
+    } else if (!["driver_arriving", "driver_arrived"].includes(activeRide.status)) {
+      setShowNearbyAlert(false);
+    }
+
+    return () => {
+      if (nearbyAlertTimerRef.current) {
+        clearTimeout(nearbyAlertTimerRef.current);
+        nearbyAlertTimerRef.current = null;
+      }
+    };
+  }, [activeRide?.firestoreId, activeRide?.id, activeRide?.status, activeRide?.etaSeconds, activeRide?.driverName]);
+
+  useEffect(() => {
+    return () => {
+      if (scheduledToastTimerRef.current) {
+        clearTimeout(scheduledToastTimerRef.current);
+        scheduledToastTimerRef.current = null;
+      }
+      if (nearbyAlertTimerRef.current) {
+        clearTimeout(nearbyAlertTimerRef.current);
+        nearbyAlertTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const distance = destination
     ? Math.sqrt(
         Math.pow((destination.lat - userLocation[0]) * 111, 2) +
@@ -488,24 +544,30 @@ export default function HomeScreen() {
           console.error('Firestore ride creation failed, continuing with local state:', err);
         }
       }
-      setActiveRide({
-        id: firestoreId ?? `ride_${Date.now()}`,
-        firestoreId,
-        category: selectedCategory.name,
-        categoryId: selectedCategory.id,
-        destination,
-        pickup: 'Current Location',
-        distance,
-        duration,
-        fare: surgedFare,
-        payment: selectedPayment.name,
-        paymentId: selectedPayment.id,
-        status: 'searching',
-        scheduled: isScheduled ? scheduledFor : null,
-        splitData,
-        ridePin: pin,
-        surgeMultiplier: SURGE,
-      });
+              setActiveRide({
+          id: firestoreId ?? `ride_${Date.now()}`,
+          firestoreId,
+          category: selectedCategory.name,
+          categoryId: selectedCategory.id,
+          destination,
+          pickup: 'Current Location',
+          distance,
+          duration,
+          fare: surgedFare,
+          payment: selectedPayment.name,
+          paymentId: selectedPayment.id,
+          status: 'searching',
+          scheduled: isScheduled ? scheduledFor : null,
+          splitData,
+          ridePin: pin,
+          surgeMultiplier: SURGE,
+        });
+        if (isScheduled) {
+          setShowScheduledToast(true);
+          if (scheduledToastTimerRef.current) clearTimeout(scheduledToastTimerRef.current);
+          scheduledToastTimerRef.current = setTimeout(() => setShowScheduledToast(false), 3200);
+        }
+
     } finally {
       setBookingLoading(false);
       setRideRated(false);
@@ -610,7 +672,21 @@ export default function HomeScreen() {
 
   const handleShareTrip = async () => {
     if (!activeRide) return;
-    const msg = `I'm in a HY3N ride! 🚗\nPickup: ${activeRide.pickup}\nDestination: ${activeRide.destination.name}${activeRide.eta ? `\nETA: ${activeRide.eta} min` : ''}\nDriver: ${activeRide.driverName || 'Searching...'}\n\nTrack me via HY3N.`;
+    const etaMinutes = activeRide.eta || (activeRide.etaSeconds ? Math.max(1, Math.ceil(activeRide.etaSeconds / 60)) : null);
+    const msg = `I'm in a HY3N ride! 🚗\nPickup: ${activeRide.pickup}\nDestination: ${activeRide.destination.name}${etaMinutes ? `\nETA: ${etaMinutes} min` : ''}\nDriver: ${activeRide.driverName || 'Searching...'}\n\nTrack me via HY3N.`;
+    const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(msg)}`;
+    const webWhatsappUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+
+    try {
+      const supported = await Linking.canOpenURL(whatsappUrl);
+      if (supported) {
+        await Linking.openURL(whatsappUrl);
+        return;
+      }
+      await Linking.openURL(webWhatsappUrl);
+      return;
+    } catch (e) {}
+
     try {
       await Share.share({ message: msg, title: "My HY3N Trip" });
     } catch (e) {}
@@ -634,7 +710,7 @@ export default function HomeScreen() {
     if (!activeRide) return null;
     const isCompleted = activeRide.status === "completed";
     const isSearching = activeRide.status === "searching";
-    const hasDriver = ["matched", "driver_arriving", "in_progress"].includes(activeRide.status);
+    const hasDriver = ["matched", "driver_arriving", "driver_arrived", "in_progress"].includes(activeRide.status);
 
     return (
       <ScrollView style={{ flex: 1, paddingHorizontal: 16, paddingTop: 12 }} showsVerticalScrollIndicator={false}>
@@ -682,6 +758,20 @@ export default function HomeScreen() {
                 )}
               </View>
             </View>
+
+            {showNearbyAlert && (
+              <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, backgroundColor: `${GOLD}1A`, borderRadius: 14, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: `${GOLD}55` }}>
+                <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: `${GOLD}26`, alignItems: "center", justifyContent: "center" }}>
+                  <MaterialIcons name="notifications-active" size={18} color={GOLD} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: GOLD, fontWeight: "700", fontSize: 13, marginBottom: 2 }}>Driver is almost here</Text>
+                  <Text style={{ color: TEXT, fontSize: 12, lineHeight: 18 }}>
+                    {`${activeRide.driverName || "Your driver"} is within ${Math.max(1, Math.ceil(((activeRide.etaSeconds || 60)) / 60))} minute${Math.max(1, Math.ceil(((activeRide.etaSeconds || 60)) / 60)) === 1 ? "" : "s"}. Please be ready at your pickup point.`}
+                  </Text>
+                </View>
+              </View>
+            )}
 
             {/* Driver Card — full profile */}
             <View style={{ backgroundColor: CARD, borderRadius: 16, marginBottom: 10, borderWidth: 0.5, borderColor: BORDER, overflow: "hidden" }}>
@@ -1113,24 +1203,7 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* Ride Options Row */}
-      <TouchableOpacity
-        onPress={() => setShowRideOptions(true)}
-        style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: CARD, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 0.5, borderColor: BORDER }}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          <MaterialIcons name="tune" size={18} color={GOLD} />
-          <View>
-            <Text style={{ color: TEXT, fontWeight: "600", fontSize: 13 }}>Ride Options</Text>
-            <Text style={{ color: MUTED, fontSize: 11 }}>
-              {Object.values(rideOptions).some(Boolean)
-                ? Object.entries(rideOptions).filter(([,v]) => v).map(([k]) => k.replace(/_/g,' ')).join(', ')
-                : 'Extra luggage, wheelchair...'}
-            </Text>
-          </View>
-        </View>
-        <MaterialIcons name="chevron-right" size={20} color={MUTED} />
-      </TouchableOpacity>
+
       {/* Fare Summary */}
       <View style={{ backgroundColor: CARD, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 0.5, borderColor: BORDER }}>
         {/* Surge indicator */}
@@ -1150,9 +1223,11 @@ export default function HomeScreen() {
               <Text style={{ color: MUTED, fontSize: 11, textDecorationLine: "line-through" }}>GH₵{baseFare.toFixed(2)}</Text>
             )}
           </View>
-          <Text style={{ color: GOLD, fontWeight: "bold", fontSize: 30 }}>GH₵{perPersonFare.toFixed(2)}</Text>
+          <Text style={{ color: GOLD, fontWeight: "bold", fontSize: 24 }}>
+            GH₵{Math.max(0, perPersonFare * 0.92).toFixed(2)}–{(perPersonFare * 1.12).toFixed(2)}
+          </Text>
         </View>
-        <Text style={{ color: MUTED, fontSize: 10, marginTop: 4 }}>Includes all taxes & fees</Text>
+        <Text style={{ color: MUTED, fontSize: 10, marginTop: 4 }}>Estimated range based on live traffic, pickup timing, and waiting time</Text>
       </View>
 
       {/* Book Button */}
@@ -1753,42 +1828,22 @@ export default function HomeScreen() {
         </View>
       </Modal>
 
-      {/* Ride Options Modal */}
-      <Modal visible={showRideOptions} transparent animationType="slide">
-        <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.6)" }}>
-          <View style={{ backgroundColor: CARD, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24 }}>
-            <Text style={{ color: TEXT, fontWeight: "800", fontSize: 18, marginBottom: 4 }}>Ride Options</Text>
-            <Text style={{ color: MUTED, fontSize: 13, marginBottom: 16 }}>Customise your ride experience:</Text>
-            {([
-              { key: "extra_luggage", icon: "luggage", label: "Extra Luggage", desc: "Large bags or equipment" },
-              { key: "wheelchair_accessible", icon: "accessible", label: "Wheelchair Accessible", desc: "Accessible vehicle needed" },
-            ] as const).map(({ key, icon, label, desc }) => (
-              <TouchableOpacity
-                key={key}
-                onPress={() => setRideOptions(prev => ({ ...prev, [key]: !prev[key] }))}
-                style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 14, borderBottomWidth: 0.5, borderBottomColor: BORDER }}
-              >
-                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: rideOptions[key] ? `${GOLD}22` : `${BORDER}33`, alignItems: "center", justifyContent: "center" }}>
-                  <MaterialIcons name={icon as any} size={22} color={rideOptions[key] ? GOLD : MUTED} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ color: TEXT, fontSize: 14, fontWeight: "600" }}>{label}</Text>
-                  <Text style={{ color: MUTED, fontSize: 12 }}>{desc}</Text>
-                </View>
-                <View style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: rideOptions[key] ? GOLD : BORDER, backgroundColor: rideOptions[key] ? GOLD : "transparent", alignItems: "center", justifyContent: "center" }}>
-                  {rideOptions[key] && <MaterialIcons name="check" size={14} color="#000" />}
-                </View>
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity
-              onPress={() => setShowRideOptions(false)}
-              style={{ marginTop: 20, paddingVertical: 14, borderRadius: 14, backgroundColor: GOLD, alignItems: "center" }}
-            >
-              <Text style={{ color: "#000", fontWeight: "700", fontSize: 15 }}>Done</Text>
-            </TouchableOpacity>
+      {showScheduledToast && (
+        <View pointerEvents="none" style={{ position: "absolute", top: safeTop + 12, left: 16, right: 16, zIndex: 40 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: CARD, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: `${GOLD}66`, shadowColor: "#000", shadowOpacity: 0.24, shadowRadius: 14, shadowOffset: { width: 0, height: 8 }, elevation: 10 }}>
+            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: `${GOLD}1F`, alignItems: "center", justifyContent: "center" }}>
+              <MaterialIcons name="event-available" size={20} color={GOLD} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: TEXT, fontWeight: "700", fontSize: 14 }}>Scheduled trip confirmed</Text>
+              <Text style={{ color: MUTED, fontSize: 12, marginTop: 2 }}>
+                {scheduledFor ? `Pickup set for ${scheduledFor}. We’ll remind you before the ride starts.` : "Your pickup time has been saved."}
+              </Text>
+            </View>
           </View>
         </View>
-      </Modal>
+      )}
+
     </View>
   );
 }
