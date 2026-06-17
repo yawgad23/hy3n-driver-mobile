@@ -2,13 +2,15 @@ import "@/global.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 import { Platform, View, Image, Animated } from "react-native";
 import "@/lib/_core/nativewind-pressable";
 import { ThemeProvider } from "@/lib/theme-provider";
 import { AuthProvider } from "@/lib/auth-context";
+import * as Notifications from 'expo-notifications';
+import { registerForPushNotificationsAsync, setupNotificationChannels } from '@/lib/notifications';
 import {
   SafeAreaFrameContext,
   SafeAreaInsetsContext,
@@ -136,9 +138,34 @@ export default function RootLayout() {
   const [insets, setInsets] = useState<EdgeInsets>(initialInsets);
   const [frame, setFrame] = useState<Rect>(initialFrame);
   const [splashDone, setSplashDone] = useState(false);
+  const notificationListener = useRef<Notifications.EventSubscription | null>(null);
+  const responseListener = useRef<Notifications.EventSubscription | null>(null);
 
   useEffect(() => {
     initManusRuntime();
+  }, []);
+
+  // Set up push notifications
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    setupNotificationChannels();
+    registerForPushNotificationsAsync();
+
+    // Listen for notifications received while app is foregrounded
+    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+      console.log('[HY3N] Notification received:', notification.request.content.title);
+    });
+
+    // Listen for user tapping a notification
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response.notification.request.content.data;
+      console.log('[HY3N] Notification tapped:', data);
+    });
+
+    return () => {
+      notificationListener.current?.remove();
+      responseListener.current?.remove();
+    };
   }, []);
 
   const handleSafeAreaUpdate = useCallback((metrics: Metrics) => {

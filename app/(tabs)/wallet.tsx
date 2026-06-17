@@ -14,6 +14,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useAuth } from "@/lib/auth-context";
 import { firestoreDB } from "@/lib/firebase";
+import { notifyWalletTopUp } from "@/lib/notifications";
 
 const GOLD = "#D4AF37";
 const GREEN = "#006B3F";
@@ -103,6 +104,7 @@ export default function WalletScreen() {
     await new Promise(r => setTimeout(r, 2000));
     setTopUpLoading(false);
     setTopUpSuccess(true);
+    notifyWalletTopUp(amount);
   };
 
   const txColor = (t: Transaction) => t.type === "credit" ? GREEN : t.type === "refund" ? "#4A90E2" : RED;

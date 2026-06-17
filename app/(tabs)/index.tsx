@@ -32,6 +32,12 @@ import {
   calculateDiscount,
   FREE_WAITING_MINUTES,
 } from "@/constants/rides";
+import {
+  notifyDriverFound,
+  notifyDriverArriving,
+  notifyTripStarted,
+  notifyTripCompleted,
+} from "@/lib/notifications";
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -172,6 +178,7 @@ export default function HomeScreen() {
     if (activeRide.status === "searching") {
       const t = setTimeout(() => {
         const driver = MOCK_DRIVERS[Math.floor(Math.random() * MOCK_DRIVERS.length)];
+        const eta = Math.floor(Math.random() * 5) + 3;
         setActiveRide(prev => prev ? {
           ...prev,
           status: "matched",
@@ -179,26 +186,30 @@ export default function HomeScreen() {
           driverRating: driver.rating,
           driverVehicle: driver.vehicle,
           driverPlate: driver.plate,
-          eta: Math.floor(Math.random() * 5) + 3,
+          eta,
         } : null);
+        notifyDriverFound(driver.name, eta);
       }, 4000);
       return () => clearTimeout(t);
     }
     if (activeRide.status === "matched") {
       const t = setTimeout(() => {
         setActiveRide(prev => prev ? { ...prev, status: "driver_arriving", eta: Math.floor(Math.random() * 3) + 1 } : null);
+        if (activeRide.driverName) notifyDriverArriving(activeRide.driverName);
       }, 5000);
       return () => clearTimeout(t);
     }
     if (activeRide.status === "driver_arriving") {
       const t = setTimeout(() => {
         setActiveRide(prev => prev ? { ...prev, status: "in_progress", eta: prev.duration } : null);
+        notifyTripStarted(activeRide.destination.name);
       }, 6000);
       return () => clearTimeout(t);
     }
     if (activeRide.status === "in_progress") {
       const t = setTimeout(() => {
         setActiveRide(prev => prev ? { ...prev, status: "completed", finalFare: prev.fare } : null);
+        notifyTripCompleted(activeRide.fare);
       }, 8000);
       return () => clearTimeout(t);
     }
