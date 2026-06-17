@@ -17,6 +17,7 @@ export default function RegisterScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
 
   const handleRegister = async () => {
     if (!fullName.trim() || !email.trim() || !password.trim()) {
@@ -33,7 +34,7 @@ export default function RegisterScreen() {
     }
     setLoading(true);
     try {
-      await signUp(email.trim(), password, fullName.trim());
+      await signUp(email.trim(), password, fullName.trim(), inviteCode.trim().toUpperCase() || undefined);
       router.replace('/(tabs)');
     } catch (err: any) {
       Alert.alert('Registration Failed', err.message || 'Could not create account');
@@ -115,6 +116,21 @@ export default function RegisterScreen() {
           />
         </View>
 
+        {/* Invite Code */}
+        <View style={[styles.inputWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <MaterialIcons name="card-giftcard" size={20} color={colors.muted} style={styles.inputIcon} />
+          <TextInput
+            style={[styles.input, { color: colors.foreground }]}
+            placeholder="Invite Code (optional)"
+            placeholderTextColor={colors.muted}
+            value={inviteCode}
+            onChangeText={setInviteCode}
+            autoCapitalize="characters"
+            returnKeyType="done"
+          />
+        </View>
+        <Text style={[styles.bonusHint, { color: '#22C55E' }]}>🎁 Get GH₵10 bonus on your first trip with an invite code</Text>
+
         {/* Register button */}
         <TouchableOpacity
           style={[styles.btn, { backgroundColor: '#006B3F' }, loading && styles.btnDisabled]}
@@ -162,4 +178,5 @@ const styles = StyleSheet.create({
   loginRow: { flexDirection: 'row', justifyContent: 'center' },
   loginText: { fontSize: 14 },
   loginLink: { fontSize: 14, fontWeight: '700' },
+  bonusHint: { fontSize: 12, textAlign: 'center', marginBottom: 20, marginTop: -8 },
 });

@@ -168,6 +168,10 @@ export default function HomeScreen() {
   const [rideRated, setRideRated] = useState(false);
   const [tipAdded, setTipAdded] = useState(false);
 
+  // Multi-stop
+  const [stops, setStops] = useState<Array<Location | null>>([]);
+  // Trip Receipt
+  const [showReceipt, setShowReceipt] = useState(false);
   // In-ride chat
   const [showChat, setShowChat] = useState(false);
   const [chatMessages, setChatMessages] = useState<Array<{ id: string; text: string; fromRider: boolean; time: string }>>([]);
@@ -184,6 +188,14 @@ export default function HomeScreen() {
   useEffect(() => {
     AsyncStorage.getItem("savedPlaces").then((v) => { if (v) setSavedPlaces(JSON.parse(v)); });
     AsyncStorage.getItem("searchHistory").then((v) => { if (v) setSearchHistory(JSON.parse(v)); });
+    // Rebook pre-fill: if activity screen stored a destination, auto-open booking
+    AsyncStorage.getItem("rebookDestination").then((v) => {
+      if (v) {
+        const loc: Location = JSON.parse(v);
+        setDestination(loc);
+        AsyncStorage.removeItem("rebookDestination");
+      }
+    });
   }, []);
 
   // Simulate driver progression
@@ -656,6 +668,13 @@ export default function HomeScreen() {
             )}
 
             <TouchableOpacity
+              onPress={() => setShowReceipt(true)}
+              style={{ width: "100%", borderWidth: 1, borderColor: BORDER, borderRadius: 12, paddingVertical: 13, alignItems: "center", marginBottom: 10, flexDirection: "row", justifyContent: "center", gap: 8 }}
+            >
+              <MaterialIcons name="receipt" size={18} color={MUTED} />
+              <Text style={{ color: MUTED, fontWeight: "600", fontSize: 14 }}>View Receipt</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               onPress={handleFinishRide}
               style={{ width: "100%", alignItems: "center", paddingVertical: 12 }}
             >
@@ -935,6 +954,44 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Promotions Banner */}
+      <View style={{ marginTop: 14 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <Text style={{ color: TEXT, fontWeight: "700", fontSize: 14 }}>Promotions</Text>
+          <Text style={{ color: GOLD, fontSize: 12 }}>Tap to apply</Text>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            {[
+              { code: "FIRSTRIDE", label: "First Ride Free", desc: "100% off your first ride", color: GREEN },
+              { code: "HY3N10", label: "10% Off", desc: "10% off any ride", color: GOLD },
+              { code: "WEEKEND", label: "Weekend Deal", desc: "GH₵5 off weekends", color: "#7C3AED" },
+              { code: "FREERIDE", label: "Free Ride", desc: "One free ride on us", color: "#0EA5E9" },
+              { code: "WELCOME", label: "Welcome Bonus", desc: "GH₵10 credit", color: "#F59E0B" },
+            ].map((promo) => (
+              <TouchableOpacity
+                key={promo.code}
+                onPress={() => {
+                  setPromoInput(promo.code);
+                  setPromoExpanded(true);
+                  setDestination({ name: destination?.name || "", address: destination?.address || "", lat: destination?.lat || 5.6037, lng: destination?.lng || -0.187 });
+                }}
+                style={{ width: 160, backgroundColor: `${promo.color}18`, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: `${promo.color}44` }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                  <MaterialIcons name="local-offer" size={16} color={promo.color} />
+                  <View style={{ backgroundColor: `${promo.color}22`, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+                    <Text style={{ color: promo.color, fontSize: 10, fontWeight: "700" }}>{promo.code}</Text>
+                  </View>
+                </View>
+                <Text style={{ color: TEXT, fontWeight: "700", fontSize: 13 }}>{promo.label}</Text>
+                <Text style={{ color: MUTED, fontSize: 11, marginTop: 2 }}>{promo.desc}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
+      </View>
     </View>
   );
 
@@ -1204,6 +1261,72 @@ export default function HomeScreen() {
               <Text style={{ color: MUTED, fontSize: 14 }}>No Thanks</Text>
             </TouchableOpacity>
           </View>
+        </View>
+      </Modal>
+      {/* Trip Receipt Modal */}
+      <Modal visible={showReceipt} animationType="slide" presentationStyle="pageSheet">
+        <View style={{ flex: 1, backgroundColor: BG }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderBottomWidth: 0.5, borderBottomColor: BORDER }}>
+            <TouchableOpacity onPress={() => setShowReceipt(false)} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: CARD, alignItems: "center", justifyContent: "center" }}>
+              <MaterialIcons name="close" size={20} color={TEXT} />
+            </TouchableOpacity>
+            <Text style={{ color: TEXT, fontWeight: "bold", fontSize: 18 }}>Trip Receipt</Text>
+          </View>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
+            {/* Header */}
+            <View style={{ alignItems: "center", marginBottom: 24 }}>
+              <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: `${GREEN}1A`, alignItems: "center", justifyContent: "center", marginBottom: 10 }}>
+                <MaterialIcons name="check-circle" size={32} color={GREEN} />
+              </View>
+              <Text style={{ color: TEXT, fontWeight: "bold", fontSize: 22 }}>GH₵{activeRide ? (activeRide.fare + (activeRide.waitingFee || 0) + (tipAmount || 0)).toFixed(2) : "0.00"}</Text>
+              <Text style={{ color: MUTED, fontSize: 13, marginTop: 4 }}>Total Charged</Text>
+            </View>
+            {/* Trip Info */}
+            <View style={{ backgroundColor: CARD, borderRadius: 14, padding: 16, marginBottom: 16, borderWidth: 0.5, borderColor: BORDER }}>
+              <Text style={{ color: GOLD, fontWeight: "bold", fontSize: 13, marginBottom: 12, textTransform: "uppercase", letterSpacing: 0.8 }}>Trip Details</Text>
+              <Row label="Date" value={new Date().toLocaleDateString('en-GH', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })} />
+              <Row label="Pickup" value="Current Location" />
+              <Row label="Destination" value={activeRide?.destination.name || "—"} />
+              <Row label="Distance" value={`${activeRide ? activeRide.distance.toFixed(1) : 0} km`} />
+              <Row label="Duration" value={`${activeRide?.duration || 0} min`} />
+              <Row label="Category" value={activeRide?.category || "—"} />
+              <Row label="Payment" value={activeRide?.payment || "—"} />
+            </View>
+            {/* Fare Breakdown */}
+            <View style={{ backgroundColor: CARD, borderRadius: 14, padding: 16, marginBottom: 16, borderWidth: 0.5, borderColor: BORDER }}>
+              <Text style={{ color: GOLD, fontWeight: "bold", fontSize: 13, marginBottom: 12, textTransform: "uppercase", letterSpacing: 0.8 }}>Fare Breakdown</Text>
+              <Row label="Base Fare" value={`GH₵${activeRide?.fare.toFixed(2) || "0.00"}`} />
+              {activeRide?.waitingFee && activeRide.waitingFee > 0 && (
+                <Row label="Waiting Fee" value={`+GH₵${activeRide.waitingFee.toFixed(2)}`} valueColor={RED} />
+              )}
+              {tipAmount && tipAmount > 0 && (
+                <Row label="Tip" value={`+GH₵${tipAmount.toFixed(2)}`} valueColor={GREEN} />
+              )}
+              <View style={{ borderTopWidth: 0.5, borderTopColor: BORDER, marginTop: 8, paddingTop: 8 }}>
+                <Row label="Total" value={`GH₵${activeRide ? (activeRide.fare + (activeRide.waitingFee || 0) + (tipAmount || 0)).toFixed(2) : "0.00"}`} valueColor={GOLD} bold />
+              </View>
+            </View>
+            {/* Driver Info */}
+            {activeRide?.driverName && (
+              <View style={{ backgroundColor: CARD, borderRadius: 14, padding: 16, marginBottom: 24, borderWidth: 0.5, borderColor: BORDER }}>
+                <Text style={{ color: GOLD, fontWeight: "bold", fontSize: 13, marginBottom: 12, textTransform: "uppercase", letterSpacing: 0.8 }}>Driver</Text>
+                <Row label="Name" value={activeRide.driverName} />
+                {activeRide.driverRating && <Row label="Rating" value={`⭐ ${activeRide.driverRating}`} />}
+                {activeRide.driverVehicle && <Row label="Vehicle" value={activeRide.driverVehicle} />}
+                {activeRide.driverPlate && <Row label="Plate" value={activeRide.driverPlate} />}
+              </View>
+            )}
+            <TouchableOpacity
+              onPress={async () => {
+                const receiptText = `HY3N Trip Receipt\nDate: ${new Date().toLocaleDateString('en-GH')}\nDestination: ${activeRide?.destination.name}\nFare: GH₵${activeRide?.fare.toFixed(2)}\nTotal: GH₵${activeRide ? (activeRide.fare + (activeRide.waitingFee || 0) + (tipAmount || 0)).toFixed(2) : '0.00'}\nDriver: ${activeRide?.driverName || 'N/A'}\n\nThank you for riding with HY3N!`;
+                try { await Share.share({ message: receiptText, title: 'HY3N Trip Receipt' }); } catch {}
+              }}
+              style={{ backgroundColor: GREEN, borderRadius: 14, paddingVertical: 14, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8, marginBottom: 16 }}
+            >
+              <MaterialIcons name="share" size={18} color="#fff" />
+              <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 15 }}>Share Receipt</Text>
+            </TouchableOpacity>
+          </ScrollView>
         </View>
       </Modal>
       {/* In-Ride Chat Modal */}

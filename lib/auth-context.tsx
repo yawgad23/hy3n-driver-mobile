@@ -26,7 +26,7 @@ interface AuthContextType {
   guestMode: boolean;
   setGuestMode: (val: boolean) => void;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, fullName: string) => Promise<void>;
+  signUp: (email: string, password: string, fullName: string, inviteCode?: string) => Promise<void>;
   signOut: () => Promise<void>;
   deleteAccount: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -87,9 +87,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await loadProfile(firebaseUser);
   };
 
-  const signUp = async (email: string, password: string, fullName: string) => {
+  const signUp = async (email: string, password: string, fullName: string, inviteCode?: string) => {
     const firebaseUser = await firebaseAuth.register(email, password, fullName);
     setGuestMode(false);
+    // Store invite code in profile if provided
+    if (inviteCode) {
+      await firestoreDB.create(COLLECTIONS.RIDER_PROFILES, {
+        user_id: firebaseUser.uid,
+        full_name: fullName,
+        email: email,
+        loyalty_points: 10, // GH₵10 bonus for using invite code
+        loyalty_tier: 'Bronze',
+        rating: 5.0,
+        total_rides: 0,
+        referral_code: Math.random().toString(36).slice(2, 8).toUpperCase(),
+        invite_code_used: inviteCode,
+        wallet_balance: 10, // GH₵10 bonus credited to wallet
+      });
+    }
     await loadProfile(firebaseUser);
   };
 

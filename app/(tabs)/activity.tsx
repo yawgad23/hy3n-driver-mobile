@@ -16,6 +16,7 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/lib/auth-context";
 import { firestoreDB } from "@/lib/firebase";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const GOLD = "#D4AF37";
 const GREEN = "#006B3F";
@@ -335,7 +336,17 @@ export default function ActivityScreen() {
               {selectedRide.status === "completed" && (
                 <View style={{ gap: 10 }}>
                   <TouchableOpacity
-                    onPress={() => { setShowDetails(false); router.push("/"); }}
+                    onPress={async () => {
+                      const dest = {
+                        name: selectedRide.destination_address,
+                        address: selectedRide.destination_address,
+                        lat: 5.6037,
+                        lng: -0.187,
+                      };
+                      await AsyncStorage.setItem('rebookDestination', JSON.stringify(dest));
+                      setShowDetails(false);
+                      router.push('/');
+                    }}
                     style={{ backgroundColor: GREEN, borderRadius: 14, paddingVertical: 14, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8 }}
                   >
                     <MaterialIcons name="replay" size={18} color="#fff" />
