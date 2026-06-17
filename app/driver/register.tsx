@@ -113,7 +113,7 @@ export default function DriverRegisterScreen() {
   const [vehicleModel, setVehicleModel] = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
   const [vehicleColor, setVehicleColor] = useState('');
-  const [vehicleYear, setVehicleYear] = useState('');
+  const [vehicleFullModel, setVehicleFullModel] = useState('');
   const [city, setCity] = useState('');
   const [serviceType, setServiceType] = useState('');
   const [carTier, setCarTier] = useState('standard');
@@ -214,7 +214,7 @@ export default function DriverRegisterScreen() {
         vehicle_model: vehicleModel,
         license_plate: vehiclePlate,
         vehicle_color: vehicleColor,
-        vehicle_year: vehicleYear,
+        vehicle_full_model: vehicleFullModel,
         city,
         service_type: serviceType,
         ride_categories: rideCategories,
@@ -442,10 +442,10 @@ export default function DriverRegisterScreen() {
         <TextInput style={styles.input} placeholder="e.g. Silver" placeholderTextColor={MUTED} value={vehicleColor} onChangeText={setVehicleColor} />
       </View>
 
-      <Text style={styles.label}>Vehicle Year</Text>
+      <Text style={styles.label}>Vehicle Full Name / Model</Text>
       <View style={styles.inputWrap}>
-        <MaterialIcons name="calendar-today" size={18} color={MUTED} style={styles.inputIcon} />
-        <TextInput style={styles.input} placeholder="e.g. 2020" placeholderTextColor={MUTED} value={vehicleYear} onChangeText={setVehicleYear} keyboardType="numeric" maxLength={4} />
+        <MaterialIcons name="directions-car" size={18} color={MUTED} style={styles.inputIcon} />
+        <TextInput style={styles.input} placeholder="e.g. Toyota Camry 2022" placeholderTextColor={MUTED} value={vehicleFullModel} onChangeText={setVehicleFullModel} autoCapitalize="words" />
       </View>
 
       <Text style={styles.sectionTitle}>Required Documents</Text>
