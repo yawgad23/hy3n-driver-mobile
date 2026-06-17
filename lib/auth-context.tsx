@@ -28,6 +28,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, fullName: string) => Promise<void>;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   updateProfile: (data: Partial<RiderProfile>) => Promise<void>;
 }
@@ -99,6 +100,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setGuestMode(false);
   };
 
+  const deleteAccount = async () => {
+    if (!user) return;
+    try {
+      // Delete rider profile from Firestore if it exists
+      if (riderProfile?.id) {
+        await firestoreDB.delete(COLLECTIONS.RIDER_PROFILES, riderProfile.id);
+      }
+    } catch (err) {
+      console.error('Error deleting profile:', err);
+    }
+    // Delete Firebase Auth account
+    await firebaseAuth.deleteAccount();
+    setUser(null);
+    setRiderProfile(null);
+    setGuestMode(false);
+  };
+
   const refreshProfile = async () => {
     if (user) await loadProfile(user);
   };
@@ -119,6 +137,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signIn,
       signUp,
       signOut: signOutUser,
+      deleteAccount,
       refreshProfile,
       updateProfile: updateProfileData,
     }}>

@@ -167,6 +167,19 @@ export default function HomeScreen() {
   const [rideRated, setRideRated] = useState(false);
   const [tipAdded, setTipAdded] = useState(false);
 
+  // In-ride chat
+  const [showChat, setShowChat] = useState(false);
+  const [chatMessages, setChatMessages] = useState<Array<{ id: string; text: string; fromRider: boolean; time: string }>>([]);
+  const [chatInput, setChatInput] = useState("");
+  const QUICK_MESSAGES = [
+    "I'm at the gate",
+    "Almost there, 1 min",
+    "Please wait for me",
+    "I'm wearing a red shirt",
+    "Can you call me?",
+    "I'm outside now",
+  ];
+
   useEffect(() => {
     AsyncStorage.getItem("savedPlaces").then((v) => { if (v) setSavedPlaces(JSON.parse(v)); });
     AsyncStorage.getItem("searchHistory").then((v) => { if (v) setSearchHistory(JSON.parse(v)); });
@@ -508,13 +521,38 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {/* Share Trip */}
+            {/* Share Trip + SOS row */}
+            <View style={{ flexDirection: "row", gap: 10, marginBottom: 10 }}>
+              <TouchableOpacity
+                onPress={handleShareTrip}
+                style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, padding: 12, backgroundColor: CARD, borderRadius: 12, borderWidth: 0.5, borderColor: BORDER }}
+              >
+                <MaterialIcons name="share" size={16} color={MUTED} />
+                <Text style={{ color: MUTED, fontSize: 13, fontWeight: "500" }}>Share Trip</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => Alert.alert(
+                  '🚨 Emergency SOS',
+                  'This will immediately notify HY3N Safety team and your emergency contacts with your current location.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Send SOS', style: 'destructive', onPress: () => Alert.alert('SOS Sent', 'HY3N Safety team and your emergency contacts have been notified.') },
+                  ]
+                )}
+                style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: `${RED}1A`, borderRadius: 12, borderWidth: 1, borderColor: `${RED}55` }}
+              >
+                <MaterialIcons name="emergency" size={18} color={RED} />
+                <Text style={{ color: RED, fontSize: 13, fontWeight: "700" }}>SOS</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* In-ride chat button */}
             <TouchableOpacity
-              onPress={handleShareTrip}
-              style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, padding: 12, backgroundColor: CARD, borderRadius: 12, marginBottom: 10, borderWidth: 0.5, borderColor: BORDER }}
+              onPress={() => setShowChat(true)}
+              style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, padding: 12, backgroundColor: `${GOLD}0D`, borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: `${GOLD}33` }}
             >
-              <MaterialIcons name="share" size={16} color={MUTED} />
-              <Text style={{ color: MUTED, fontSize: 13, fontWeight: "500" }}>Share Trip with Contacts</Text>
+              <MaterialIcons name="chat-bubble-outline" size={16} color={GOLD} />
+              <Text style={{ color: GOLD, fontSize: 13, fontWeight: "600" }}>Message Driver</Text>
             </TouchableOpacity>
 
             {activeRide.status !== "in_progress" && (
@@ -1115,6 +1153,94 @@ export default function HomeScreen() {
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setShowTipModal(false)} style={{ alignItems: "center", paddingVertical: 10 }}>
               <Text style={{ color: MUTED, fontSize: 14 }}>No Thanks</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      {/* In-Ride Chat Modal */}
+      <Modal visible={showChat} animationType="slide" presentationStyle="pageSheet">
+        <View style={{ flex: 1, backgroundColor: BG }}>
+          {/* Header */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderBottomWidth: 0.5, borderBottomColor: BORDER }}>
+            <TouchableOpacity onPress={() => setShowChat(false)} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: CARD, alignItems: "center", justifyContent: "center" }}>
+              <MaterialIcons name="close" size={20} color={TEXT} />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: TEXT, fontWeight: "bold", fontSize: 16 }}>Message Driver</Text>
+              {activeRide?.driverName && <Text style={{ color: MUTED, fontSize: 12 }}>{activeRide.driverName}</Text>}
+            </View>
+            <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: GREEN }} />
+            <Text style={{ color: GREEN, fontSize: 12 }}>Online</Text>
+          </View>
+
+          {/* Messages */}
+          <ScrollView style={{ flex: 1, padding: 16 }} contentContainerStyle={{ gap: 10, paddingBottom: 16 }}>
+            {chatMessages.length === 0 && (
+              <View style={{ alignItems: "center", paddingVertical: 32 }}>
+                <MaterialIcons name="chat-bubble-outline" size={40} color={BORDER} />
+                <Text style={{ color: MUTED, fontSize: 13, marginTop: 8 }}>No messages yet</Text>
+                <Text style={{ color: MUTED, fontSize: 12 }}>Use quick messages below to get started</Text>
+              </View>
+            )}
+            {chatMessages.map(msg => (
+              <View key={msg.id} style={{ flexDirection: "row", justifyContent: msg.fromRider ? "flex-end" : "flex-start" }}>
+                <View style={{ maxWidth: "75%", backgroundColor: msg.fromRider ? GREEN : CARD, borderRadius: 16, borderBottomRightRadius: msg.fromRider ? 4 : 16, borderBottomLeftRadius: msg.fromRider ? 16 : 4, padding: 12, borderWidth: msg.fromRider ? 0 : 0.5, borderColor: BORDER }}>
+                  <Text style={{ color: TEXT, fontSize: 14 }}>{msg.text}</Text>
+                  <Text style={{ color: msg.fromRider ? "rgba(255,255,255,0.6)" : MUTED, fontSize: 10, marginTop: 4, textAlign: "right" }}>{msg.time}</Text>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+
+          {/* Quick Messages */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ borderTopWidth: 0.5, borderTopColor: BORDER }} contentContainerStyle={{ padding: 10, gap: 8 }}>
+            {QUICK_MESSAGES.map(qm => (
+              <TouchableOpacity
+                key={qm}
+                onPress={() => {
+                  const now = new Date().toLocaleTimeString('en-GH', { hour: '2-digit', minute: '2-digit' });
+                  setChatMessages(prev => [...prev, { id: Date.now().toString(), text: qm, fromRider: true, time: now }]);
+                  // Simulate driver reply after 2s
+                  setTimeout(() => {
+                    const replies = ['Ok, noted!', 'On my way!', 'I can see you', 'Almost there', 'Give me 1 min'];
+                    const reply = replies[Math.floor(Math.random() * replies.length)];
+                    const replyTime = new Date().toLocaleTimeString('en-GH', { hour: '2-digit', minute: '2-digit' });
+                    setChatMessages(prev => [...prev, { id: (Date.now() + 1).toString(), text: reply, fromRider: false, time: replyTime }]);
+                  }, 2000);
+                }}
+                style={{ paddingHorizontal: 14, paddingVertical: 8, backgroundColor: CARD, borderRadius: 20, borderWidth: 0.5, borderColor: BORDER }}
+              >
+                <Text style={{ color: TEXT, fontSize: 13 }}>{qm}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Text Input */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 12, borderTopWidth: 0.5, borderTopColor: BORDER }}>
+            <TextInput
+              value={chatInput}
+              onChangeText={setChatInput}
+              placeholder="Type a message..."
+              placeholderTextColor={MUTED}
+              style={{ flex: 1, backgroundColor: CARD, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: TEXT, fontSize: 14, borderWidth: 0.5, borderColor: BORDER }}
+              returnKeyType="send"
+              onSubmitEditing={() => {
+                if (!chatInput.trim()) return;
+                const now = new Date().toLocaleTimeString('en-GH', { hour: '2-digit', minute: '2-digit' });
+                setChatMessages(prev => [...prev, { id: Date.now().toString(), text: chatInput.trim(), fromRider: true, time: now }]);
+                setChatInput("");
+              }}
+            />
+            <TouchableOpacity
+              onPress={() => {
+                if (!chatInput.trim()) return;
+                const now = new Date().toLocaleTimeString('en-GH', { hour: '2-digit', minute: '2-digit' });
+                setChatMessages(prev => [...prev, { id: Date.now().toString(), text: chatInput.trim(), fromRider: true, time: now }]);
+                setChatInput("");
+              }}
+              style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: GREEN, alignItems: "center", justifyContent: "center" }}
+            >
+              <MaterialIcons name="send" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
         </View>

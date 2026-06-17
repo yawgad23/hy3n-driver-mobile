@@ -211,6 +211,8 @@ export default function RootLayout() {
           <AuthProvider>
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="onboarding" />
+              <Stack.Screen name="privacy" options={{ presentation: "modal" }} />
               <Stack.Screen name="login" />
               <Stack.Screen name="register" />
               <Stack.Screen name="forgot-password" />

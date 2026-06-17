@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, ScrollView, Modal, TextInput, Alert, Linking } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useRouter } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const GREEN = "#006B3F";
 const RED = "#CE1126";
@@ -34,14 +35,30 @@ interface TrustedContact {
   phone: string;
 }
 
+const STORAGE_KEY = 'hy3n_trusted_contacts';
+
 export default function SafetyScreen() {
   const router = useRouter();
   const [showAddContact, setShowAddContact] = useState(false);
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
-  const [trustedContacts, setTrustedContacts] = useState<TrustedContact[]>([
-    { id: "1", name: "Ama Mensah", phone: "+233 24 111 2222" },
-  ]);
+  const [trustedContacts, setTrustedContacts] = useState<TrustedContact[]>([]);
+
+  // Load persisted contacts on mount
+  useEffect(() => {
+    AsyncStorage.getItem(STORAGE_KEY).then(val => {
+      if (val) {
+        setTrustedContacts(JSON.parse(val));
+      } else {
+        // Default contact on first launch
+        setTrustedContacts([{ id: "1", name: "Ama Mensah", phone: "+233 24 111 2222" }]);
+      }
+    });
+  }, []);
+
+  const saveContacts = async (contacts: TrustedContact[]) => {
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(contacts));
+  };
 
   const handleSOS = () => {
     Alert.alert(
@@ -60,7 +77,9 @@ export default function SafetyScreen() {
 
   const handleAddContact = () => {
     if (!contactName.trim() || !contactPhone.trim()) { Alert.alert("Required", "Please enter both name and phone number"); return; }
-    setTrustedContacts(prev => [...prev, { id: Date.now().toString(), name: contactName, phone: contactPhone }]);
+    const updated = [...trustedContacts, { id: Date.now().toString(), name: contactName, phone: contactPhone }];
+    setTrustedContacts(updated);
+    saveContacts(updated);
     setContactName("");
     setContactPhone("");
     setShowAddContact(false);

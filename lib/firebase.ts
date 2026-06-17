@@ -14,6 +14,7 @@ import {
   PhoneAuthProvider,
   signInWithCredential,
   updateProfile,
+  deleteUser,
   type User,
 } from 'firebase/auth';
 import {
@@ -107,6 +108,13 @@ export const firebaseAuth = {
 
   onAuthStateChanged(callback: (user: User | null) => void) {
     return onAuthStateChanged(auth, callback);
+  },
+
+  async deleteAccount() {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('No user logged in');
+    await deleteUser(currentUser);
+    await AsyncStorage.removeItem('hy3n_user');
   },
 };
 

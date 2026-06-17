@@ -9,11 +9,15 @@ import {
   Alert,
   Switch,
   Share,
+  Platform,
 } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/lib/auth-context";
+import * as LocalAuthentication from 'expo-local-authentication';
+import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const GOLD = "#D4AF37";
 const GREEN = "#006B3F";
@@ -57,7 +61,7 @@ const SAVED_PLACES_DEFAULT = [
 
 export default function AccountScreen() {
   const router = useRouter();
-  const { user, riderProfile, signOut, updateProfile } = useAuth();
+  const { user, riderProfile, signOut, deleteAccount, updateProfile } = useAuth();
   const userPoints = riderProfile?.loyalty_points ?? 0;
 
   const [showEditProfile, setShowEditProfile] = useState(false);
@@ -89,6 +93,69 @@ export default function AccountScreen() {
 
   const [notifications, setNotifications] = useState(true);
   const [locationSharing, setLocationSharing] = useState(true);
+  const [darkMode, setDarkMode] = useState(true); // HY3N is always dark — this is a visual toggle for future light mode
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+
+  // Load biometric state
+  useEffect(() => {
+    (async () => {
+      const compatible = await LocalAuthentication.hasHardwareAsync();
+      const enrolled = await LocalAuthentication.isEnrolledAsync();
+      setBiometricAvailable(compatible && enrolled);
+      const saved = await AsyncStorage.getItem('biometric_enabled');
+      setBiometricEnabled(saved === 'true');
+    })();
+  }, []);
+
+  // Wire notification toggle to OS permission
+  const handleNotificationToggle = async (val: boolean) => {
+    if (val) {
+      const { status } = await Notifications.requestPermissionsAsync();
+      setNotifications(status === 'granted');
+    } else {
+      setNotifications(false);
+    }
+  };
+
+  const handleBiometricToggle = async (val: boolean) => {
+    if (val) {
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: 'Confirm your identity to enable biometric login',
+        fallbackLabel: 'Use passcode',
+      });
+      if (result.success) {
+        setBiometricEnabled(true);
+        await AsyncStorage.setItem('biometric_enabled', 'true');
+        Alert.alert('Biometric Enabled', 'You can now log in with Face ID or fingerprint.');
+      }
+    } else {
+      setBiometricEnabled(false);
+      await AsyncStorage.setItem('biometric_enabled', 'false');
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'This will permanently delete your account and all ride history. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Account',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteAccount();
+              router.replace('/login' as any);
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to delete account. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const currentTier = LOYALTY_TIERS.find(t => userPoints >= t.minPoints && userPoints <= t.maxPoints) || LOYALTY_TIERS[0];
   const nextTier = LOYALTY_TIERS[LOYALTY_TIERS.indexOf(currentTier) + 1];
@@ -235,22 +302,41 @@ export default function AccountScreen() {
             <Text style={{ color: TEXT, fontSize: 14, fontWeight: "500", flex: 1 }}>Push Notifications</Text>
             <Switch value={notifications} onValueChange={setNotifications} trackColor={{ false: BORDER, true: `${GREEN}80` }} thumbColor={notifications ? GREEN : MUTED} />
           </View>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 14, paddingHorizontal: 16 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 14, paddingHorizontal: 16, borderBottomWidth: 0.5, borderBottomColor: BORDER }}>
             <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: `${GREEN}1A`, alignItems: "center", justifyContent: "center" }}>
               <MaterialIcons name="location-on" size={18} color={GREEN} />
             </View>
             <Text style={{ color: TEXT, fontSize: 14, fontWeight: "500", flex: 1 }}>Location Sharing</Text>
             <Switch value={locationSharing} onValueChange={setLocationSharing} trackColor={{ false: BORDER, true: `${GREEN}80` }} thumbColor={locationSharing ? GREEN : MUTED} />
           </View>
+          {biometricAvailable && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 14, paddingHorizontal: 16, borderBottomWidth: 0.5, borderBottomColor: BORDER }}>
+              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: biometricEnabled ? `${GREEN}1A` : `${MUTED}1A`, alignItems: "center", justifyContent: "center" }}>
+                <MaterialIcons name="fingerprint" size={18} color={biometricEnabled ? GREEN : MUTED} />
+              </View>
+              <Text style={{ color: TEXT, fontSize: 14, fontWeight: "500", flex: 1 }}>Biometric Login</Text>
+              <Switch value={biometricEnabled} onValueChange={handleBiometricToggle} trackColor={{ false: BORDER, true: `${GREEN}80` }} thumbColor={biometricEnabled ? GREEN : MUTED} />
+            </View>
+          )}
+          <MenuItem icon="privacy-tip" label="Privacy Policy & Terms" color={MUTED} onPress={() => router.push('/privacy' as any)} />
         </View>
 
         {/* Sign Out */}
         <TouchableOpacity
           onPress={() => Alert.alert('Sign Out', 'Are you sure you want to sign out?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign Out', style: 'destructive', onPress: async () => { await signOut(); router.replace('/login' as any); } }])}
-          style={{ marginHorizontal: 16, marginBottom: 16, backgroundColor: `${RED}1A`, borderRadius: 16, paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1, borderColor: `${RED}4D` }}
+          style={{ marginHorizontal: 16, marginBottom: 8, backgroundColor: `${RED}1A`, borderRadius: 16, paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1, borderColor: `${RED}4D` }}
         >
           <MaterialIcons name="logout" size={18} color={RED} />
           <Text style={{ color: RED, fontWeight: "bold", fontSize: 15 }}>Sign Out</Text>
+        </TouchableOpacity>
+
+        {/* Delete Account */}
+        <TouchableOpacity
+          onPress={handleDeleteAccount}
+          style={{ marginHorizontal: 16, marginBottom: 16, backgroundColor: 'transparent', borderRadius: 16, paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1, borderColor: `${RED}33` }}
+        >
+          <MaterialIcons name="delete-forever" size={18} color={`${RED}99`} />
+          <Text style={{ color: `${RED}99`, fontWeight: "600", fontSize: 14 }}>Delete Account</Text>
         </TouchableOpacity>
 
         <Text style={{ color: MUTED, fontSize: 11, textAlign: "center", marginBottom: 8 }}>HY3N Rider v1.0.0 \u2022 Made in Ghana</Text>

@@ -4,7 +4,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/use-colors";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useAuth } from "@/lib/auth-context";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 type TabBarIconProps = {
   name: React.ComponentProps<typeof MaterialIcons>["name"];
@@ -35,11 +36,21 @@ export default function TabLayout() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, loading } = useAuth();
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.replace('/login' as any);
-    }
+    if (loading) return;
+    (async () => {
+      const seen = await AsyncStorage.getItem('hasSeenOnboarding');
+      if (!seen) {
+        router.replace('/onboarding' as any);
+        return;
+      }
+      if (!user) {
+        router.replace('/login' as any);
+      }
+      setOnboardingChecked(true);
+    })();
   }, [user, loading]);
 
   if (loading) {

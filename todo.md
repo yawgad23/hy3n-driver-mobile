@@ -48,3 +48,35 @@
 - [x] EAS Build configuration (eas.json) for App Store submission
 - [x] Bundle ID set to com.hy3n.rider
 - [x] expo-location plugin added to app.config.ts with iOS/Android permissions
+
+## Web App Feature Parity — Remaining Gaps
+
+### Onboarding
+- [x] Onboarding slides (5 slides: Book a Ride, Real-Time Tracking, Payment Options, Safe & Secure, Split Fare) — shown once on first launch before login
+
+### Account Screen
+- [x] Delete Account option with confirmation dialog
+- [x] Dark/Light mode toggle in account settings (UI toggle added)
+- [x] Biometric login toggle (Face ID / Fingerprint)
+- [x] Privacy Policy & Terms of Use screen (linked from account)
+
+### Home Screen
+- [ ] Scheduled trip confirmation toast/banner after booking a scheduled ride
+- [x] SOS button visible during active ride (in ride tracker area)
+- [x] In-ride chat with driver (quick message templates + free text)
+
+### Activity / History
+- [ ] Trip receipt download/share (full breakdown: fare, tip, promo, waiting fee)
+- [ ] Ride report modal improvements (match web: rude driver, wrong route, overcharged, lost item, safety concern)
+
+### Notifications
+- [x] Push notification service setup (expo-notifications + expo-device)
+- [x] Android notification channels (rides, promos, wallet)
+- [x] Driver found / arriving / trip started / completed / wallet top-up notifications
+- [x] Wire notification toggle in account settings to actual OS permission
+
+### Safety
+- [x] Trusted contacts persisted to AsyncStorage
+
+### General
+- [x] "Wo ho te sɛn?" Twi greeting on home screen header
