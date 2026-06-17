@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  TextInput, ActivityIndicator, Animated,
+  TextInput, ActivityIndicator, Animated, Share,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -195,6 +195,34 @@ function TripCard({ trip }: { trip: Trip }) {
             <Text style={styles.expandedLabel}>Trip ID</Text>
             <Text style={[styles.expandedValue, { fontFamily: 'monospace', fontSize: 11 }]}>{trip.id?.slice(0, 12)}…</Text>
           </View>
+          {isCompleted && (
+            <TouchableOpacity
+              style={styles.shareBtn}
+              activeOpacity={0.8}
+              onPress={() => {
+                const date = formatTripDate(trip.trip_date || trip.created_date);
+                const distStr = dist ? `${typeof dist === 'number' ? dist.toFixed(1) : dist} km` : '';
+                const durStr = dur ? `${dur} min` : '';
+                const meta = [distStr, durStr].filter(Boolean).join(' · ');
+                const lines = [
+                  '🚗 HY3N Trip Receipt',
+                  `Rider: ${getRiderName(trip)}`,
+                  `Date: ${date}`,
+                  `From: ${getPickup(trip)}`,
+                  `To: ${getDestination(trip)}`,
+                  meta ? `Trip: ${meta}` : null,
+                  trip.category ? `Category: ${trip.category}` : null,
+                  trip.payment_method ? `Payment: ${trip.payment_method.charAt(0).toUpperCase() + trip.payment_method.slice(1)}` : null,
+                  `Fare: GH₵${fare.toFixed(2)}`,
+                  `Trip ID: ${trip.id?.slice(0, 12)}`,
+                ].filter(Boolean) as string[];
+                Share.share({ message: lines.join('\n'), title: 'HY3N Trip Receipt' });
+              }}
+            >
+              <MaterialIcons name="share" size={15} color={GOLD} />
+              <Text style={styles.shareBtnText}>Share Receipt</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </TouchableOpacity>
@@ -384,5 +412,7 @@ const styles = StyleSheet.create({
   feedbackText: { fontSize: 13, color: TEXT, lineHeight: 18 },
   expandedRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   expandedLabel: { fontSize: 12, color: MUTED },
-  expandedValue: { fontSize: 13, fontWeight: '600', color: TEXT },
+  expandedValue: { fontSize: 13, fontWeight: '600', color: '#ECEDEE' },
+  shareBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginTop: 12, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, backgroundColor: '#1A1400', borderWidth: 1, borderColor: '#D4AF3740' },
+  shareBtnText: { fontSize: 13, fontWeight: '700', color: '#D4AF37' },
 });

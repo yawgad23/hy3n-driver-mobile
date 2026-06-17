@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useDriverPreferences } from '@/hooks/use-driver-preferences';
+import { trpc } from '@/lib/trpc';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   Dimensions, Alert, ActivityIndicator, Animated, Image, Platform,
@@ -90,6 +92,12 @@ interface ActiveTrip {
   fare: number;
   status: string;
   ride_pin?: string;
+  distance_km?: number;
+  distance?: number;
+  duration_min?: number;
+  duration_minutes?: number;
+  duration?: number;
+  category?: string;
 }
 
 // ─── Notification Center Modal ────────────────────────────────────────────────
@@ -334,6 +342,28 @@ export default function DriverHomeScreen() {
   const [summaryVisible, setSummaryVisible] = useState(false);
   const [completedTrip, setCompletedTrip] = useState<ActiveTrip | null>(null);
   const unreadCount = useUnreadChatCount(activeTrip?.id || null, user?.uid || '', 'driver');
+  const { prefs } = useDriverPreferences();
+  const [driverDestination, setDriverDestination] = useState<string>('');
+  const [destModalVisible, setDestModalVisible] = useState(false);
+  const [destInput, setDestInput] = useState('');
+
+  // Load persisted destination on mount
+  useEffect(() => {
+    import('@react-native-async-storage/async-storage').then(({ default: AS }) => {
+      AS.getItem('hy3n_driver_destination').then(v => { if (v) setDriverDestination(v); }).catch(() => {});
+    });
+  }, []);
+
+  const saveDestination = async (dest: string) => {
+    const { default: AS } = await import('@react-native-async-storage/async-storage');
+    if (dest.trim()) {
+      await AS.setItem('hy3n_driver_destination', dest.trim());
+      setDriverDestination(dest.trim());
+    } else {
+      await AS.removeItem('hy3n_driver_destination');
+      setDriverDestination('');
+    }
+  };
 
   // Pulse animation for online indicator
   useEffect(() => {
@@ -360,7 +390,22 @@ export default function DriverHomeScreen() {
         const pending = rides.find((r: any) => {
           if (r.driver_id && r.driver_id !== driverId) return false;
           if (Array.isArray(r.declined_by) && r.declined_by.includes(driverId)) return false;
-          return r.status === 'searching';
+          if (!r.status || r.status !== 'searching') return false;
+          // Long-trips-only filter: skip rides under 10 km
+          if (prefs.longTripsOnly) {
+            const dist = r.distance_km || r.distance || 0;
+            if (dist > 0 && dist < 10) return false;
+          }
+          // Set Destination filter: only show rides heading toward driver's chosen area
+          if (driverDestination) {
+            const dest = (
+              r.destination_address ||
+              (typeof r.destination === 'object' ? r.destination?.address || r.destination?.name : r.destination) ||
+              ''
+            ).toLowerCase();
+            if (dest && !dest.includes(driverDestination.toLowerCase())) return false;
+          }
+          return true;
         });
         if (pending && !activeTrip) {
           setIncomingRequest(pending as RideRequest);
@@ -370,6 +415,18 @@ export default function DriverHomeScreen() {
     );
     return unsubscribe;
   }, [isOnline, user, activeTrip]);
+
+  // Auto-Accept: when preference is on and a request arrives, accept after a 3s grace period
+  const autoAcceptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (autoAcceptTimerRef.current) clearTimeout(autoAcceptTimerRef.current);
+    if (incomingRequest && prefs.autoAccept && !activeTrip) {
+      autoAcceptTimerRef.current = setTimeout(() => {
+        handleAcceptRide();
+      }, 3000); // 3-second grace so driver can still manually decline
+    }
+    return () => { if (autoAcceptTimerRef.current) clearTimeout(autoAcceptTimerRef.current); };
+  }, [incomingRequest?.id, prefs.autoAccept]);
 
   // Countdown timer for ride request
   useEffect(() => {
@@ -478,18 +535,47 @@ export default function DriverHomeScreen() {
     return req.pickup_address || req.pickup || '';
   };
 
+  const sendReceiptMutation = trpc.trips.sendReceipt.useMutation();
+
   const handleTripAction = async (action: 'pickup' | 'start' | 'complete') => {
     if (!activeTrip) return;
     const statusMap = { pickup: 'driver_arrived', start: 'in_progress', complete: 'completed' };
     try {
+      const completedAt = new Date().toISOString();
       const extra: any = {};
-      if (action === 'start') extra.started_at = new Date().toISOString();
-      if (action === 'complete') extra.completed_at = new Date().toISOString();
+      if (action === 'start') extra.started_at = completedAt;
+      if (action === 'complete') extra.completed_at = completedAt;
       await firestoreDB.update(COLLECTIONS.RIDES, activeTrip.id, { status: statusMap[action], ...extra });
       if (action === 'complete') {
         // Re-mark driver as available
         if (driverProfile?.id) {
           firestoreDB.update(COLLECTIONS.DRIVER_PROFILES, driverProfile.id, { is_available: true }).catch(() => {});
+        }
+        // Send receipt email to rider (best-effort, non-blocking)
+        const riderEmail = (activeTrip as any).rider_email || (activeTrip as any).passenger_email;
+        if (riderEmail) {
+          sendReceiptMutation.mutate({
+            riderEmail,
+            riderName: activeTrip.rider_name || activeTrip.passenger_name || 'Rider',
+            driverName: driverProfile?.full_name || 'Driver',
+            driverVehicle: driverProfile?.vehicle_make && driverProfile?.vehicle_model
+              ? `${driverProfile.vehicle_make} ${driverProfile.vehicle_model}`
+              : driverProfile?.vehicle_make || 'Vehicle',
+            driverPlate: driverProfile?.vehicle_plate || '',
+            pickup: typeof activeTrip.pickup === 'object'
+              ? activeTrip.pickup.address || activeTrip.pickup.name || ''
+              : (activeTrip as any).pickup_address || activeTrip.pickup || '',
+            destination: typeof activeTrip.destination === 'object'
+              ? activeTrip.destination.address || activeTrip.destination.name || ''
+              : (activeTrip as any).destination_address || activeTrip.destination || '',
+            fare: activeTrip.fare,
+            paymentMethod: (activeTrip as any).payment_method || 'cash',
+            distance: activeTrip.distance_km || activeTrip.distance,
+            duration: activeTrip.duration_min || activeTrip.duration_minutes || activeTrip.duration,
+            category: activeTrip.category,
+            tripId: activeTrip.id,
+            completedAt,
+          });
         }
         setTodayEarnings(prev => prev + activeTrip.fare);
         setTodayTrips(prev => prev + 1);
@@ -577,6 +663,85 @@ export default function DriverHomeScreen() {
             )}
           </TouchableOpacity>
         </View>
+
+        {/* Set Destination Card */}
+        {isOnline && !activeTrip && (
+          <View style={styles.destCard}>
+            <View style={styles.destCardLeft}>
+              <MaterialIcons name="flag" size={18} color={driverDestination ? GOLD : MUTED} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.destCardLabel}>Set Destination</Text>
+                {driverDestination ? (
+                  <Text style={styles.destCardValue} numberOfLines={1}>{driverDestination}</Text>
+                ) : (
+                  <Text style={styles.destCardPlaceholder}>Filter rides by destination area</Text>
+                )}
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {driverDestination && (
+                <TouchableOpacity
+                  style={styles.destClearBtn}
+                  onPress={() => saveDestination('')}
+                  activeOpacity={0.7}
+                >
+                  <MaterialIcons name="close" size={16} color={MUTED} />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[styles.destSetBtn, driverDestination && { backgroundColor: GOLD + '20', borderColor: GOLD }]}
+                onPress={() => { setDestInput(driverDestination); setDestModalVisible(true); }}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.destSetBtnText, driverDestination && { color: GOLD }]}>
+                  {driverDestination ? 'Change' : 'Set'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Set Destination Modal */}
+        <Modal visible={destModalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setDestModalVisible(false)}>
+          <View style={styles.destModal}>
+            <View style={styles.destModalHeader}>
+              <MaterialIcons name="flag" size={22} color={GOLD} />
+              <Text style={styles.destModalTitle}>Set Destination</Text>
+              <TouchableOpacity onPress={() => setDestModalVisible(false)}>
+                <MaterialIcons name="close" size={22} color={MUTED} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.destModalDesc}>
+              Only ride requests heading toward this area will be shown to you. Leave blank to see all requests.
+            </Text>
+            <TextInput
+              style={styles.destModalInput}
+              placeholder="e.g. Airport, East Legon, Tema"
+              placeholderTextColor={MUTED}
+              value={destInput}
+              onChangeText={setDestInput}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={() => { saveDestination(destInput); setDestModalVisible(false); }}
+            />
+            <View style={styles.destModalActions}>
+              <TouchableOpacity
+                style={[styles.destModalBtn, { backgroundColor: '#1A1A1A', borderColor: BORDER }]}
+                onPress={() => { saveDestination(''); setDestModalVisible(false); }}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.destModalBtnText, { color: MUTED }]}>Clear</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.destModalBtn, { backgroundColor: GOLD, borderColor: GOLD, flex: 1 }]}
+                onPress={() => { saveDestination(destInput); setDestModalVisible(false); }}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.destModalBtnText, { color: '#000' }]}>Save Destination</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
 
         {/* Approval Status Banner */}
         {driverProfile && driverProfile.approval_status !== 'approved' && (
@@ -694,6 +859,14 @@ export default function DriverHomeScreen() {
                 <Text style={[styles.countdownText, { color: countdown <= 5 ? RED : GOLD }]}>{countdown}s</Text>
               </View>
             </View>
+
+            {/* Auto-Accept indicator */}
+            {prefs.autoAccept && (
+              <View style={styles.autoAcceptIndicator}>
+                <MaterialIcons name="flash-on" size={14} color="#EAB308" />
+                <Text style={styles.autoAcceptIndicatorText}>Auto-Accepting in 3s — tap Decline to cancel</Text>
+              </View>
+            )}
 
             {/* Rider info */}
             <View style={styles.riderInfoRow}>
@@ -919,6 +1092,25 @@ const styles = StyleSheet.create({
   pinBoxRow: { flexDirection: 'row', gap: 6 },
   pinBox: { width: 28, height: 32, borderRadius: 6, backgroundColor: '#2A2200', borderWidth: 1.5, borderColor: GOLD, alignItems: 'center', justifyContent: 'center' },
   pinDigit: { fontSize: 16, fontWeight: '800', color: GOLD, letterSpacing: 1 },
+  autoAcceptIndicator: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#EAB30815', borderWidth: 1, borderColor: '#EAB30840', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 10 },
+  autoAcceptIndicatorText: { flex: 1, fontSize: 12, color: '#EAB308', fontWeight: '600' },
+  // Set Destination
+  destCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: CARD, borderRadius: 14, padding: 14, marginHorizontal: 16, marginBottom: 12, borderWidth: 1, borderColor: BORDER, gap: 10 },
+  destCardLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  destCardLabel: { fontSize: 11, fontWeight: '700', color: MUTED, textTransform: 'uppercase', letterSpacing: 0.6 },
+  destCardValue: { fontSize: 14, fontWeight: '600', color: TEXT, marginTop: 2 },
+  destCardPlaceholder: { fontSize: 13, color: MUTED, marginTop: 2 },
+  destClearBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#1A1A1A', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: BORDER },
+  destSetBtn: { paddingHorizontal: 14, height: 30, borderRadius: 8, backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: BORDER, alignItems: 'center', justifyContent: 'center' },
+  destSetBtnText: { fontSize: 13, fontWeight: '700', color: MUTED },
+  destModal: { flex: 1, backgroundColor: '#0A0A0A', padding: 24 },
+  destModalHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16, marginTop: 8 },
+  destModalTitle: { flex: 1, fontSize: 20, fontWeight: '800', color: TEXT },
+  destModalDesc: { fontSize: 14, color: MUTED, lineHeight: 20, marginBottom: 20 },
+  destModalInput: { backgroundColor: '#111111', borderWidth: 1, borderColor: BORDER, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, color: TEXT, marginBottom: 20 },
+  destModalActions: { flexDirection: 'row', gap: 12 },
+  destModalBtn: { height: 50, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20 },
+  destModalBtnText: { fontSize: 15, fontWeight: '700' },
 });
 
 const notifStyles = StyleSheet.create({

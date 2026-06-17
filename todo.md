@@ -140,3 +140,22 @@
 ### Commission Gate
 - [x] Real MoMo number: 0546728330
 - [x] Vehicle-type-based fees: GH₵50 (car), GH₵30 (okada/delivery)
+
+## New Features (Jun 17)
+
+### Rider Email Receipt on Trip Completion
+- [ ] Server-side email trigger: when driver marks trip complete, send receipt email to rider (fare, route, date, Trip ID, driver name/vehicle)
+- [ ] tRPC endpoint: `sendTripReceipt` called from driver app on trip complete
+- [ ] Email template: HY3N branded, Ghana Cedis fare, pickup/destination, payment method, Trip ID
+
+### Driver Set Destination
+- [ ] "Set Destination" button on driver home screen (when online, no active trip)
+- [ ] Allows driver to filter incoming requests to only those heading toward their chosen destination
+- [ ] Destination filter applied to incoming ride request listener
+- [ ] Clear destination button to remove filter
+- [ ] Destination shown as active badge on home screen
+
+### History Tab Share Receipt
+- [ ] Share Receipt button inside expanded trip card (completed trips only)
+- [ ] Generates plain-text receipt: rider, date, route, fare, Trip ID, payment method
+- [ ] Opens native share sheet

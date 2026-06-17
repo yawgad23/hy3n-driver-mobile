@@ -8,6 +8,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { router } from 'expo-router';
+import { useDriverPreferences } from '@/hooks/use-driver-preferences';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -16,31 +17,13 @@ const BORDER = '#2A2A2A';
 const TEXT = '#FAFAFA';
 const MUTED = '#9CA3AF';
 const RED = '#EF4444';
-
-interface Preferences {
-  notifications: boolean;
-  soundAlerts: boolean;
-  autoAccept: boolean;
-  longTripsOnly: boolean;
-  preferHighRated: boolean;
-}
+const GREEN = '#22C55E';
 
 export default function DriverSettingsScreen() {
   const { driverProfile, signOut } = useDriverAuth();
   const insets = useSafeAreaInsets();
   const [deleting, setDeleting] = useState(false);
-
-  const [prefs, setPrefs] = useState<Preferences>({
-    notifications: true,
-    soundAlerts: true,
-    autoAccept: false,
-    longTripsOnly: false,
-    preferHighRated: true,
-  });
-
-  const toggle = (key: keyof Preferences) => {
-    setPrefs(p => ({ ...p, [key]: !p[key] }));
-  };
+  const { prefs, toggle, saving, loaded } = useDriverPreferences();
 
   const handleDeleteAccount = () => {
     Alert.alert(
@@ -59,7 +42,7 @@ export default function DriverSettingsScreen() {
               }
               await signOut();
               router.replace('/driver/login' as any);
-            } catch (err) {
+            } catch {
               Alert.alert('Error', 'Failed to delete account. Please try again or contact hello@ridehy3n.com');
             } finally {
               setDeleting(false);
@@ -71,7 +54,7 @@ export default function DriverSettingsScreen() {
   };
 
   const prefRows: {
-    key: keyof Preferences;
+    key: keyof typeof prefs;
     icon: string;
     label: string;
     desc: string;
@@ -118,6 +101,18 @@ export default function DriverSettingsScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Settings</Text>
+        {saving && (
+          <View style={styles.savingBadge}>
+            <ActivityIndicator size="small" color={GOLD} />
+            <Text style={styles.savingText}>Saving…</Text>
+          </View>
+        )}
+        {!saving && loaded && (
+          <View style={styles.savedBadge}>
+            <MaterialIcons name="cloud-done" size={14} color={GREEN} />
+            <Text style={styles.savedText}>Synced</Text>
+          </View>
+        )}
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 100 }}>
@@ -146,6 +141,16 @@ export default function DriverSettingsScreen() {
             </View>
           ))}
         </View>
+
+        {/* Auto-Accept info banner */}
+        {prefs.autoAccept && (
+          <View style={styles.autoAcceptBanner}>
+            <MaterialIcons name="flash-on" size={18} color="#EAB308" />
+            <Text style={styles.autoAcceptText}>
+              Auto-Accept is on. New ride requests will be accepted automatically — no tap needed.
+            </Text>
+          </View>
+        )}
 
         {/* Account Info */}
         <View style={styles.section}>
@@ -210,8 +215,19 @@ export default function DriverSettingsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
-  header: { paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 0.5, borderBottomColor: BORDER },
-  headerTitle: { fontSize: 22, fontWeight: '800', color: TEXT },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 0.5,
+    borderBottomColor: BORDER,
+  },
+  headerTitle: { flex: 1, fontSize: 22, fontWeight: '800', color: TEXT },
+  savingBadge: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  savingText: { fontSize: 12, color: GOLD },
+  savedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  savedText: { fontSize: 12, color: '#22C55E' },
   scroll: { flex: 1 },
   section: {
     backgroundColor: CARD,
@@ -246,6 +262,17 @@ const styles = StyleSheet.create({
   prefLabel: { fontSize: 14, fontWeight: '600', color: TEXT },
   prefDesc: { fontSize: 12, color: MUTED, marginTop: 2 },
   divider: { height: 0.5, backgroundColor: BORDER, marginVertical: 2 },
+  autoAcceptBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: '#EAB30810',
+    borderWidth: 1,
+    borderColor: '#EAB30840',
+    borderRadius: 12,
+    padding: 12,
+  },
+  autoAcceptText: { flex: 1, fontSize: 13, color: '#EAB308', lineHeight: 18 },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -261,7 +288,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   supportText: { flex: 1, fontSize: 14, fontWeight: '600', color: TEXT },
-  dangerSection: { borderColor: RED + '40' },
+  dangerSection: { borderColor: '#EF444440' },
   dangerDesc: { fontSize: 13, color: MUTED, lineHeight: 20, marginBottom: 12 },
   deleteBtn: {
     flexDirection: 'row',
