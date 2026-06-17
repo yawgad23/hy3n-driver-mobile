@@ -260,3 +260,11 @@
 - [ ] Categories saved to Firestore as `ride_categories` array on driver profile
 - [ ] Admin ApplicationDetailModal: display ride_categories field in Vehicle Info section
 - [ ] Admin ApplicationDetailModal: allow admin to edit/override ride categories before approving
+
+## Rejection Reason & Admin Push Notifications (Jun 17)
+
+- [ ] Driver ApprovalGate: show rejection reason when approval_status is 'rejected'
+- [ ] Driver ApprovalGate: show "Fix & Resubmit" button that navigates back to registration
+- [ ] Admin: send push notification to driver on approval (title: "You're Approved!", body: "Welcome to HY3N. Start driving now.")
+- [ ] Admin: send push notification to driver on rejection (title: "Application Update", body: rejection reason)
+- [ ] Admin ApplicationDetailModal: trigger push notification via Firestore push_notifications collection on status change

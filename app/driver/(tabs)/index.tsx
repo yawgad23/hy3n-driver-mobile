@@ -110,22 +110,28 @@ function NotificationCenter({ visible, onClose, driverId }: { visible: boolean; 
   const [loading, setLoading] = useState(true);
 
   const TYPE_ICON: Record<string, { icon: string; color: string }> = {
-    ride_completed:     { icon: 'check-circle',  color: GREEN },
-    ride_cancelled:     { icon: 'cancel',         color: RED  },
-    commission_paid:    { icon: 'credit-card',    color: GREEN },
-    commission_rejected:{ icon: 'error',          color: RED  },
-    commission_pending: { icon: 'access-time',    color: GOLD },
-    rating_received:    { icon: 'star',           color: GOLD },
-    support_reply:      { icon: 'info',           color: '#3B82F6' },
-    general:            { icon: 'notifications',  color: GOLD },
+    ride_completed:      { icon: 'check-circle',  color: GREEN },
+    ride_cancelled:      { icon: 'cancel',         color: RED  },
+    commission_paid:     { icon: 'credit-card',    color: GREEN },
+    commission_rejected: { icon: 'error',          color: RED  },
+    commission_pending:  { icon: 'access-time',    color: GOLD },
+    rating_received:     { icon: 'star',           color: GOLD },
+    support_reply:       { icon: 'info',           color: '#3B82F6' },
+    approval_approved:   { icon: 'verified',       color: GREEN },
+    approval_rejected:   { icon: 'cancel',         color: RED  },
+    general:             { icon: 'notifications',  color: GOLD },
   };
 
   const buildFromFirestore = async () => {
     try {
-      // Primary: read from notifications collection
-      const notifDocs = await firestoreDB.list('notifications', { user_id: driverId });
-      if (notifDocs.length > 0) {
-        const sorted = [...notifDocs].sort((a: any, b: any) =>
+      // Primary: read from notifications + push_notifications collections
+      const [notifDocs, pushDocs] = await Promise.all([
+        firestoreDB.list('notifications', { user_id: driverId }).catch(() => [] as any[]),
+        firestoreDB.list('push_notifications', { user_id: driverId }).catch(() => [] as any[]),
+      ]);
+      const merged = [...notifDocs, ...pushDocs];
+      if (merged.length > 0) {
+        const sorted = merged.sort((a: any, b: any) =>
           (b.created_date || '').localeCompare(a.created_date || '')
         ).slice(0, 50);
         setNotifications(sorted);

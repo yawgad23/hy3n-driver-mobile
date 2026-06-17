@@ -241,42 +241,132 @@ function ApprovalGate({ driver }: { driver: any }) {
   const colors = useColors();
   const router = useRouter();
   const isRejected = driver.approval_status === 'rejected';
+  const rejectionReason = driver.rejection_reason || driver.rejection_note || driver.admin_note || '';
 
-  return (
-    <View style={[styles.gateContainer, { backgroundColor: colors.background, flex: 1 }]}>
-      <View style={[styles.gateIconBox, {
-        backgroundColor: isRejected ? '#EF444420' : '#F59E0B20',
-      }]}>
-        <MaterialIcons
-          name={isRejected ? 'cancel' : 'access-time'}
-          size={40}
-          color={isRejected ? '#EF4444' : '#F59E0B'}
-        />
-      </View>
-      <Text style={[styles.gateTitle, { color: colors.foreground }]}>
-        {isRejected ? 'Application Not Approved' : 'Application Under Review'}
-      </Text>
-      <Text style={[styles.gateSubtitle, { color: colors.muted }]}>
-        {isRejected
-          ? 'Unfortunately, your driver application was not approved at this time. Please contact our support team for more information or to reapply.'
-          : `Welcome, ${driver.full_name?.split(' ')[0]}! Your application is being reviewed by our admin team. You will be notified once approved.`}
-      </Text>
-      {isRejected ? (
+  // Timeline steps for pending state
+  const steps = [
+    { icon: 'check-circle', label: 'Account Created', done: true },
+    { icon: 'upload-file', label: 'Documents Uploaded', done: true },
+    { icon: 'access-time', label: 'Under Review', done: false, active: true },
+    { icon: 'verified', label: 'Approved & Ready', done: false },
+  ];
+
+  if (isRejected) {
+    return (
+      <ScrollView
+        style={{ flex: 1, backgroundColor: colors.background }}
+        contentContainerStyle={[styles.gateContainer, { paddingBottom: 40 }]}
+      >
+        <View style={[styles.gateIconBox, { backgroundColor: '#EF444420' }]}>
+          <MaterialIcons name="cancel" size={40} color="#EF4444" />
+        </View>
+        <Text style={[styles.gateTitle, { color: '#EF4444' }]}>Application Not Approved</Text>
+        <Text style={[styles.gateSubtitle, { color: colors.muted }]}>
+          Your driver application was reviewed and could not be approved at this time.
+        </Text>
+
+        {/* Rejection Reason Card */}
+        {!!rejectionReason && (
+          <View style={[styles.rejectionCard, { backgroundColor: '#EF444415', borderColor: '#EF444440' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <MaterialIcons name="info" size={18} color="#EF4444" />
+              <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 13 }}>Reason from Admin</Text>
+            </View>
+            <Text style={{ color: colors.foreground, fontSize: 14, lineHeight: 22 }}>{rejectionReason}</Text>
+          </View>
+        )}
+
+        {/* What to do next */}
+        <View style={[styles.rejectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={{ color: colors.foreground, fontWeight: '700', fontSize: 14, marginBottom: 10 }}>What to do next</Text>
+          {[
+            'Review the reason above carefully',
+            'Update your documents or information',
+            'Resubmit your application below',
+            'Contact support if you need help',
+          ].map((step, i) => (
+            <View key={i} style={{ flexDirection: 'row', gap: 10, marginBottom: 8, alignItems: 'flex-start' }}>
+              <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: GOLD + '30', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: GOLD, fontSize: 11, fontWeight: '800' }}>{i + 1}</Text>
+              </View>
+              <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 20, flex: 1 }}>{step}</Text>
+            </View>
+          ))}
+        </View>
+
         <TouchableOpacity
           style={[styles.submitBtn, { backgroundColor: GOLD }]}
           onPress={() => router.push('/driver/register' as any)}
         >
-          <Text style={styles.submitBtnText}>Reapply</Text>
+          <MaterialIcons name="refresh" size={18} color="#000" style={{ marginRight: 6 }} />
+          <Text style={styles.submitBtnText}>Fix & Resubmit Application</Text>
         </TouchableOpacity>
-      ) : (
         <TouchableOpacity
-          style={[styles.submitBtn, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}
-          onPress={() => Linking.openURL('mailto:hello@ridehy3n.com')}
+          style={{ marginTop: 4 }}
+          onPress={() => Linking.openURL('https://wa.me/233546728330?text=My%20driver%20application%20was%20rejected.%20Can%20you%20help%3F')}
         >
-          <Text style={[styles.submitBtnText, { color: colors.foreground }]}>Contact Support</Text>
+          <Text style={{ color: colors.muted, fontSize: 13, textDecorationLine: 'underline', textAlign: 'center' }}>Contact Support via WhatsApp</Text>
         </TouchableOpacity>
-      )}
-    </View>
+      </ScrollView>
+    );
+  }
+
+  // Pending state with timeline
+  return (
+    <ScrollView
+      style={{ flex: 1, backgroundColor: colors.background }}
+      contentContainerStyle={[styles.gateContainer, { paddingBottom: 40 }]}
+    >
+      <View style={[styles.gateIconBox, { backgroundColor: '#F59E0B20' }]}>
+        <MaterialIcons name="access-time" size={40} color="#F59E0B" />
+      </View>
+      <Text style={[styles.gateTitle, { color: colors.foreground }]}>Application Under Review</Text>
+      <Text style={[styles.gateSubtitle, { color: colors.muted }]}>
+        Welcome, {driver.full_name?.split(' ')[0]}! Our team is reviewing your application. This usually takes 24–48 hours.
+      </Text>
+
+      {/* Timeline */}
+      <View style={[styles.rejectionCard, { backgroundColor: colors.surface, borderColor: colors.border, width: '100%' }]}>
+        {steps.map((step, i) => (
+          <View key={i} style={{ flexDirection: 'row', gap: 14, alignItems: 'flex-start', marginBottom: i < steps.length - 1 ? 18 : 0 }}>
+            <View style={{ alignItems: 'center' }}>
+              <View style={{
+                width: 36, height: 36, borderRadius: 18,
+                backgroundColor: step.done ? '#22C55E20' : step.active ? '#F59E0B20' : colors.background,
+                borderWidth: 2,
+                borderColor: step.done ? '#22C55E' : step.active ? '#F59E0B' : colors.border,
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <MaterialIcons
+                  name={step.icon as any}
+                  size={18}
+                  color={step.done ? '#22C55E' : step.active ? '#F59E0B' : colors.muted}
+                />
+              </View>
+              {i < steps.length - 1 && (
+                <View style={{ width: 2, height: 18, backgroundColor: step.done ? '#22C55E40' : colors.border, marginTop: 4 }} />
+              )}
+            </View>
+            <View style={{ flex: 1, paddingTop: 6 }}>
+              <Text style={{ color: step.done ? '#22C55E' : step.active ? '#F59E0B' : colors.muted, fontWeight: '700', fontSize: 14 }}>
+                {step.label}
+              </Text>
+              {step.active && (
+                <Text style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>Estimated: 24–48 hours</Text>
+              )}
+            </View>
+          </View>
+        ))}
+      </View>
+
+      <TouchableOpacity
+        style={[styles.submitBtn, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}
+        onPress={() => Linking.openURL('https://wa.me/233546728330?text=I%20need%20help%20with%20my%20driver%20application')}
+      >
+        <MaterialIcons name="support-agent" size={18} color={colors.foreground} style={{ marginRight: 6 }} />
+        <Text style={[styles.submitBtnText, { color: colors.foreground }]}>Contact Support</Text>
+      </TouchableOpacity>
+    </ScrollView>
   );
 }
 
@@ -605,4 +695,5 @@ const styles = StyleSheet.create({
   pendingDots: { alignItems: 'center', marginTop: 8 },
   momoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, width: '100%' },
   copyBtn: { alignItems: 'center', justifyContent: 'center', borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 8, minWidth: 56 },
+  rejectionCard: { width: '100%', borderRadius: 16, borderWidth: 1, padding: 16, marginTop: 4 },
 });
