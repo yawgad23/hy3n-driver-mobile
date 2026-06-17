@@ -90,6 +90,21 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
           style={{ width: 256, height: 256, resizeMode: "contain" }}
         />
       </Animated.View>
+      {/* Akwaaba subtitle */}
+      <Animated.Text
+        style={{
+          color: "#D4AF37",
+          fontSize: 18,
+          fontWeight: "300",
+          letterSpacing: 6,
+          textTransform: "uppercase",
+          marginTop: 16,
+          opacity: logoOpacity,
+        }}
+      >
+        Akwaaba
+      </Animated.Text>
+
       {/* Loading bar */}
       <View
         style={{
