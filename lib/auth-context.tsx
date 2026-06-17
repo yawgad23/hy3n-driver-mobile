@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { firebaseAuth, firestoreDB, COLLECTIONS } from './firebase';
 import type { User } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -24,6 +24,8 @@ interface AuthContextType {
   user: User | null;
   riderProfile: RiderProfile | null;
   loading: boolean;
+  guestMode: boolean;
+  setGuestMode: (val: boolean) => void;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, fullName: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -37,6 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [riderProfile, setRiderProfile] = useState<RiderProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [guestMode, setGuestMode] = useState(false);
 
   const loadProfile = async (firebaseUser: User) => {
     try {
@@ -81,11 +84,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const firebaseUser = await firebaseAuth.loginWithEmail(email, password);
+    setGuestMode(false);
     await loadProfile(firebaseUser);
   };
 
   const signUp = async (email: string, password: string, fullName: string) => {
     const firebaseUser = await firebaseAuth.register(email, password, fullName);
+    setGuestMode(false);
     await loadProfile(firebaseUser);
   };
 
@@ -93,6 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await firebaseAuth.logout();
     setUser(null);
     setRiderProfile(null);
+    setGuestMode(false);
   };
 
   const refreshProfile = async () => {
@@ -110,6 +116,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       riderProfile,
       loading,
+      guestMode,
+      setGuestMode,
       signIn,
       signUp,
       signOut: signOutUser,

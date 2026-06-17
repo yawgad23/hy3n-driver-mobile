@@ -302,13 +302,12 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Terms */}
+                {/* Terms */}
         <Text style={styles.terms}>
           By continuing, you agree to HY3N's{' '}
           <Text style={{ color: GOLD }}>Terms of Service</Text> and{' '}
           <Text style={{ color: GOLD }}>Privacy Policy</Text>
         </Text>
-
       </ScrollView>
     </KeyboardAvoidingView>
   );
