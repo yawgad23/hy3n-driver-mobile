@@ -102,7 +102,7 @@ const MOCK_DRIVERS = [
 ];
 
 export default function HomeScreen() {
-  const { user } = useAuth();
+  const { user, riderProfile } = useAuth();
   const insets = useSafeAreaInsets();
   const safeTop = insets.top > 0 ? insets.top : (Constants.statusBarHeight ?? 44);
   const [userLocation, setUserLocation] = useState<[number, number]>(DEFAULT_LOCATION);
@@ -876,10 +876,15 @@ export default function HomeScreen() {
 
       {/* Header */}
       <View style={{ position: "absolute", top: safeTop + 4, left: 16, right: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between", zIndex: 10 }}>
-        <Image
-          source={require('@/assets/images/icon.png')}
-          style={{ width: 80, height: 40, resizeMode: 'contain' }}
-        />
+        <View style={{ flexDirection: "column" }}>
+          <Image
+            source={require('@/assets/images/icon.png')}
+            style={{ width: 80, height: 40, resizeMode: 'contain' }}
+          />
+          <Text style={{ color: GOLD, fontSize: 11, fontWeight: '600', letterSpacing: 0.5, marginTop: 2, opacity: 0.85 }}>
+            Wo ho te sɛn{riderProfile?.full_name ? `, ${riderProfile.full_name.split(' ')[0]}` : ''}? 👋
+          </Text>
+        </View>
         <TouchableOpacity
           style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(17,17,17,0.9)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: BORDER }}
           onPress={() => Alert.alert("Notifications", "No new notifications")}

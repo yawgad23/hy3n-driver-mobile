@@ -308,6 +308,7 @@ export default function LoginScreen() {
           <Text style={{ color: GOLD }}>Terms of Service</Text> and{' '}
           <Text style={{ color: GOLD }}>Privacy Policy</Text>
         </Text>
+
       </ScrollView>
     </KeyboardAvoidingView>
   );

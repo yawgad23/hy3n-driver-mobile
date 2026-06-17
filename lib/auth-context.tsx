@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { firebaseAuth, firestoreDB, COLLECTIONS } from './firebase';
 import type { User } from 'firebase/auth';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export interface RiderProfile {
   id: string;
@@ -50,7 +49,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (profiles.length > 0) {
         setRiderProfile(profiles[0] as RiderProfile);
       } else {
-        // Create profile if it doesn't exist
         const newProfile = await firestoreDB.create(COLLECTIONS.RIDER_PROFILES, {
           user_id: firebaseUser.uid,
           full_name: firebaseUser.displayName || '',
