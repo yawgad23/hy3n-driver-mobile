@@ -93,13 +93,6 @@ const config: ExpoConfig = {
   plugins: [
     "expo-router",
     [
-      "react-native-webrtc",
-      {
-        cameraPermission: "Allow HY3N to access your camera for video calls.",
-        microphonePermission: "Allow HY3N to access your microphone for in-app voice calls.",
-      },
-    ],
-    [
       "expo-location",
       {
         locationAlwaysAndWhenInUsePermission: "Allow HY3N to use your location to find nearby drivers and show your position on the map.",
