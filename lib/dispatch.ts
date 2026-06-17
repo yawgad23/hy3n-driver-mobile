@@ -412,8 +412,10 @@ export const dispatchService = {
   /**
    * Cancel a ride with a reason.
    */
-  async cancelRide(rideId: string, reason: string): Promise<void> {
-    await dispatchService.updateRideStatus(rideId, 'cancelled', { cancel_reason: reason });
+  async cancelRide(rideId: string, reason: string, cancellationFee = 0): Promise<void> {
+    const extra: any = { cancel_reason: reason };
+    if (cancellationFee > 0) extra.cancellation_fee = cancellationFee;
+    await dispatchService.updateRideStatus(rideId, 'cancelled', extra);
   },
 
   /**

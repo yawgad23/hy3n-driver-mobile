@@ -14,15 +14,11 @@
 import nodemailer from 'nodemailer';
 
 function getTransporter() {
-  const host = process.env.EMAIL_HOST;
-  const port = parseInt(process.env.EMAIL_PORT || '587', 10);
-  const user = process.env.EMAIL_USER;
-  const pass = process.env.EMAIL_PASS;
-
-  if (!host || !user || !pass) {
-    // Dev fallback: log to console
-    return null;
-  }
+  // Use env vars if set; fall back to the Gmail account used by the web app
+  const host = process.env.EMAIL_HOST || 'smtp.gmail.com';
+  const port = parseInt(process.env.EMAIL_PORT || '465', 10);
+  const user = process.env.EMAIL_USER || 'hy3ntransportservices@gmail.com';
+  const pass = process.env.EMAIL_PASS || 'skah tmdn wkmw xeba';
 
   return nodemailer.createTransport({
     host,
@@ -50,7 +46,7 @@ export interface TripReceiptData {
 }
 
 export async function sendTripReceiptEmail(data: TripReceiptData): Promise<boolean> {
-  const from = process.env.EMAIL_FROM || 'HY3N <noreply@ridehy3n.com>';
+  const from = process.env.EMAIL_FROM || '"HY3N Transport" <hy3ntransportservices@gmail.com>';
   const transporter = getTransporter();
 
   const fareStr = `GH₵ ${data.fare.toFixed(2)}`;
@@ -159,14 +155,6 @@ export async function sendTripReceiptEmail(data: TripReceiptData): Promise<boole
     '─────────────────',
     'Questions? hello@ridehy3n.com',
   ].filter(Boolean).join('\n');
-
-  if (!transporter) {
-    // Dev mode — log receipt to console
-    console.log('[HY3N Email] Trip receipt (no SMTP configured):');
-    console.log(`  To: ${data.riderEmail}`);
-    console.log(text);
-    return true;
-  }
 
   try {
     await transporter.sendMail({

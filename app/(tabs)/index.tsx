@@ -104,6 +104,7 @@ interface ActiveRide {
   firestoreId?: string;  // real Firestore document ID
   cancelReason?: string;
   rideOptions?: { ac: boolean; pet_friendly: boolean; extra_luggage: boolean; wheelchair_accessible: boolean };
+  matchedAt?: string;  // ISO timestamp when driver was matched — used for 2-min free cancel window
 }
 
 const DEFAULT_LOCATION: [number, number] = [5.6037, -0.187]; // Accra, Ghana
@@ -345,7 +346,11 @@ export default function HomeScreen() {
           driverTotalTrips: driver?.total_trips ?? prev.driverTotalTrips,
           driverPhone: driver?.phone ?? prev.driverPhone,
           eta: etaMin ?? prev.eta,
-          etaSeconds: (etaMin ?? 0) * 60,
+          // Prefer live eta_seconds written by driver GPS; fall back to calculated
+          etaSeconds: (ride as any).eta_seconds ?? ((etaMin ?? 0) * 60),
+          waitingFee: (ride as any).waiting_fee ?? prev.waitingFee,
+          // Record when driver was first matched so we can enforce 2-min free cancel window
+          matchedAt: prev.matchedAt ?? ((ride.status === 'driver_arriving' || ride.status === 'matched') && !prev.matchedAt ? new Date().toISOString() : prev.matchedAt),
           finalFare: ride.status === 'completed' ? prev.fare : prev.finalFare,
         };
       });
@@ -525,10 +530,27 @@ export default function HomeScreen() {
     setCancelReason("");
     setShowCancelModal(true);
   };
+  const FREE_CANCEL_WINDOW_MS = 2 * 60 * 1000; // 2 minutes
+  const CANCEL_FEE = 2; // GH₵2
   const confirmCancelRide = async () => {
     if (activeRide?.firestoreId) {
       try {
-        await dispatchService.cancelRide(activeRide.firestoreId, cancelReason || 'Cancelled by rider');
+        // Check if outside the 2-min free cancellation window
+        const hasDriver = activeRide.matchedAt && ['driver_arriving', 'matched'].includes(activeRide.status);
+        const elapsedMs = hasDriver ? Date.now() - new Date(activeRide.matchedAt!).getTime() : 0;
+        const applyFee = hasDriver && elapsedMs > FREE_CANCEL_WINDOW_MS;
+        await dispatchService.cancelRide(
+          activeRide.firestoreId,
+          cancelReason || 'Cancelled by rider',
+          applyFee ? CANCEL_FEE : 0
+        );
+        if (applyFee) {
+          Alert.alert(
+            'Cancellation Fee Applied',
+            `A GH₵${CANCEL_FEE}.00 cancellation fee has been charged because you cancelled more than 2 minutes after your driver was matched.`,
+            [{ text: 'OK' }]
+          );
+        }
       } catch (e) { /* silent */ }
     }
     setShowCancelModal(false);
@@ -1692,7 +1714,15 @@ export default function HomeScreen() {
         <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.6)" }}>
           <View style={{ backgroundColor: CARD, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24 }}>
             <Text style={{ color: TEXT, fontWeight: "800", fontSize: 18, marginBottom: 4 }}>Cancel Ride</Text>
-            <Text style={{ color: MUTED, fontSize: 13, marginBottom: 16 }}>Please select a reason for cancelling:</Text>
+            {/* Show cancellation fee warning if outside 2-min free window */}
+            {activeRide?.matchedAt && ['driver_arriving', 'matched'].includes(activeRide.status) && Date.now() - new Date(activeRide.matchedAt).getTime() > FREE_CANCEL_WINDOW_MS ? (
+              <View style={{ backgroundColor: 'rgba(239,68,68,0.12)', borderRadius: 10, padding: 10, marginBottom: 12 }}>
+                <Text style={{ color: RED, fontSize: 13, fontWeight: '600' }}>⚠️ A GH₵2.00 cancellation fee will apply</Text>
+                <Text style={{ color: MUTED, fontSize: 12, marginTop: 2 }}>Your driver has been waiting more than 2 minutes. Cancellations after the free window incur a GH₵2 fee.</Text>
+              </View>
+            ) : (
+              <Text style={{ color: MUTED, fontSize: 13, marginBottom: 16 }}>Please select a reason for cancelling:</Text>
+            )}
             {CANCEL_REASONS.map((reason) => (
               <TouchableOpacity
                 key={reason}

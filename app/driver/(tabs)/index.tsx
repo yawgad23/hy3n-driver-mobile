@@ -433,6 +433,7 @@ export default function DriverHomeScreen() {
   const [waitSeconds, setWaitSeconds] = useState(0);
   const waitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const arrivedAtRef = useRef<number | null>(null);
+  const locationSubRef = useRef<ExpoLocation.LocationSubscription | null>(null);
 
   // ─── Voice Call ───────────────────────────────────────────────────────────────
   const riderName = activeTrip?.rider_name || activeTrip?.passenger_name || 'Rider';
@@ -570,6 +571,45 @@ export default function DriverHomeScreen() {
     }, 1000);
     return () => { if (countdownRef.current) clearInterval(countdownRef.current); };
   }, [incomingRequest]);
+
+  // ETA location tracking: when driver has an active trip heading to pickup, watch GPS and write
+  // current_lat/current_lng + eta_seconds to the ride doc every 15 seconds
+  useEffect(() => {
+    const isHeadingToPickup = activeTrip?.status === 'driver_arriving';
+    if (!isHeadingToPickup || !activeTrip?.id) {
+      if (locationSubRef.current) { locationSubRef.current.remove(); locationSubRef.current = null; }
+      return;
+    }
+    let lastWrite = 0;
+    ExpoLocation.requestForegroundPermissionsAsync().then(({ status }) => {
+      if (status !== 'granted') return;
+      ExpoLocation.watchPositionAsync(
+        { accuracy: ExpoLocation.Accuracy.Balanced, timeInterval: 5000, distanceInterval: 20 },
+        (pos) => {
+          const now = Date.now();
+          if (now - lastWrite < 15000) return; // throttle to every 15s
+          lastWrite = now;
+          const { latitude, longitude } = pos.coords;
+          // Estimate ETA: haversine distance to pickup, assume 30 km/h avg speed in city
+          const pickupLat = typeof activeTrip.pickup === 'object' ? (activeTrip.pickup as any).lat : null;
+          const pickupLng = typeof activeTrip.pickup === 'object' ? (activeTrip.pickup as any).lng : null;
+          let etaSeconds: number | undefined;
+          if (pickupLat && pickupLng) {
+            const R = 6371000;
+            const dLat = (pickupLat - latitude) * Math.PI / 180;
+            const dLng = (pickupLng - longitude) * Math.PI / 180;
+            const a = Math.sin(dLat/2)**2 + Math.cos(latitude * Math.PI/180) * Math.cos(pickupLat * Math.PI/180) * Math.sin(dLng/2)**2;
+            const distM = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            etaSeconds = Math.round(distM / (30000/3600)); // 30 km/h
+          }
+          const update: any = { driver_current_lat: latitude, driver_current_lng: longitude };
+          if (etaSeconds !== undefined) update.eta_seconds = etaSeconds;
+          firestoreDB.update(COLLECTIONS.RIDES, activeTrip.id, update).catch(() => {});
+        }
+      ).then(sub => { locationSubRef.current = sub; }).catch(() => {});
+    });
+    return () => { if (locationSubRef.current) { locationSubRef.current.remove(); locationSubRef.current = null; } };
+  }, [activeTrip?.status, activeTrip?.id]);
 
   // Load today's earnings
   useEffect(() => {
