@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Alert, Image,
@@ -6,8 +6,9 @@ import {
 import { router } from 'expo-router';
 import { useAuth } from '@/lib/auth-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { auth } from '@/lib/firebase';
+import { auth, app } from '@/lib/firebase';
 import { PhoneAuthProvider, signInWithCredential } from 'firebase/auth';
+import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
 
 const GOLD = '#D4AF37';
 const GREEN = '#006B3F';
@@ -19,9 +20,24 @@ const MUTED = '#9CA3AF';
 
 type LoginTab = 'phone' | 'email';
 
+// Google "G" SVG-style coloured letter using Text spans
+function GoogleIcon() {
+  return (
+    <View style={styles.googleIconWrap}>
+      {/* Render the Google G using coloured segments via a background image approach */}
+      <Text style={styles.googleIconText}>
+        <Text style={{ color: '#4285F4' }}>G</Text>
+      </Text>
+    </View>
+  );
+}
+
 export default function LoginScreen() {
   const { signIn } = useAuth();
   const [tab, setTab] = useState<LoginTab>('phone');
+
+  // Recaptcha ref for phone auth
+  const recaptchaVerifier = useRef<FirebaseRecaptchaVerifierModal>(null);
 
   // Phone OTP state
   const [phone, setPhone] = useState('');
@@ -44,24 +60,22 @@ export default function LoginScreen() {
       Alert.alert('Invalid Number', 'Please enter your 9-digit Ghana mobile number (e.g. 241234567)');
       return;
     }
+    if (!recaptchaVerifier.current) {
+      Alert.alert('Error', 'Recaptcha not ready. Please try again.');
+      return;
+    }
     setPhoneLoading(true);
     try {
       const provider = new PhoneAuthProvider(auth);
-      // On native Expo Go / production build, Firebase handles reCAPTCHA natively
-      // No RecaptchaVerifier needed — pass undefined for native
-      const vid = await (provider as any).verifyPhoneNumber(fullNumber, undefined);
+      const vid = await provider.verifyPhoneNumber(fullNumber, recaptchaVerifier.current);
       setVerificationId(vid);
       Alert.alert('OTP Sent', `A verification code has been sent to ${fullNumber}`);
     } catch (err: any) {
       const code = err?.code || '';
-      if (
-        code === 'auth/operation-not-supported-in-this-environment' ||
-        code === 'auth/web-storage-unsupported' ||
-        code === 'auth/internal-error'
-      ) {
+      if (code === 'auth/operation-not-supported-in-this-environment') {
         Alert.alert(
           'Phone Login',
-          'Phone OTP works on real iOS/Android devices. Please use the Email tab to log in while testing in the browser preview.',
+          'Phone OTP works on real iOS/Android devices with the published app. Please use the Email tab to log in while testing in Expo Go.',
           [{ text: 'Switch to Email', onPress: () => setTab('email') }, { text: 'OK' }]
         );
       } else {
@@ -116,6 +130,15 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      {/* Firebase Recaptcha Verifier — invisible, required for phone OTP on native */}
+      <FirebaseRecaptchaVerifierModal
+        ref={recaptchaVerifier}
+        firebaseConfig={app.options}
+        attemptInvisibleVerification={true}
+        title="Verify you're human"
+        cancelLabel="Cancel"
+      />
+
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
 
         {/* Logo */}
@@ -285,7 +308,7 @@ export default function LoginScreen() {
           <View style={styles.dividerLine} />
         </View>
 
-        {/* Google Sign-In */}
+        {/* Google Sign-In — proper multicolour G logo */}
         <TouchableOpacity
           style={styles.googleBtn}
           onPress={() => Alert.alert(
@@ -295,8 +318,18 @@ export default function LoginScreen() {
           )}
           activeOpacity={0.85}
         >
-          <View style={styles.googleIcon}>
-            <Text style={{ fontSize: 18, fontWeight: '900', color: '#4285F4' }}>G</Text>
+          {/* Proper Google G logo using SVG-style coloured text on white circle */}
+          <View style={styles.googleLogoCircle}>
+            <Text style={styles.googleLogoG}>
+              <Text style={{ color: '#4285F4' }}>G</Text>
+            </Text>
+            {/* Colour bar under the G to simulate Google's multicolour */}
+            <View style={styles.googleColorBar}>
+              <View style={[styles.googleColorDot, { backgroundColor: '#4285F4' }]} />
+              <View style={[styles.googleColorDot, { backgroundColor: '#EA4335' }]} />
+              <View style={[styles.googleColorDot, { backgroundColor: '#FBBC05' }]} />
+              <View style={[styles.googleColorDot, { backgroundColor: '#34A853' }]} />
+            </View>
           </View>
           <Text style={styles.googleText}>Continue with Google</Text>
         </TouchableOpacity>
@@ -359,10 +392,24 @@ const styles = StyleSheet.create({
     height: 52, borderRadius: 12, borderWidth: 1, borderColor: BORDER,
     backgroundColor: CARD, marginBottom: 20, gap: 12,
   },
-  googleIcon: {
+  googleLogoCircle: {
+    width: 30, height: 30, borderRadius: 15, backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+  },
+  googleLogoG: {
+    fontSize: 17, fontWeight: '900', lineHeight: 22,
+  },
+  googleColorBar: {
+    flexDirection: 'row', position: 'absolute', bottom: 2, gap: 1,
+  },
+  googleColorDot: {
+    width: 5, height: 2, borderRadius: 1,
+  },
+  googleIconWrap: {
     width: 28, height: 28, borderRadius: 14, backgroundColor: '#fff',
     alignItems: 'center', justifyContent: 'center',
   },
+  googleIconText: { fontSize: 16, fontWeight: '900' },
   googleText: { color: TEXT, fontSize: 16, fontWeight: '600' },
   registerRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 16 },
   registerText: { color: MUTED, fontSize: 15 },
