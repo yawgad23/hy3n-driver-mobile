@@ -158,6 +158,17 @@ export default function DriverProfileScreen() {
           </View>
         </View>
 
+        {/* Switch to Rider Mode */}
+        <TouchableOpacity
+          style={styles.switchRiderBtn}
+          onPress={() => router.replace('/(tabs)' as any)}
+          activeOpacity={0.85}
+        >
+          <MaterialIcons name="directions-car" size={20} color={GOLD} />
+          <Text style={styles.switchRiderText}>Switch to Rider Mode</Text>
+          <MaterialIcons name="chevron-right" size={20} color={GOLD} />
+        </TouchableOpacity>
+
         {/* Sign Out */}
         <TouchableOpacity
           style={[styles.signOutBtn, signingOut && { opacity: 0.6 }]}
@@ -217,6 +228,8 @@ const styles = StyleSheet.create({
   safetyBar: { width: '100%', height: 8, backgroundColor: '#1A1A1A', borderRadius: 4, overflow: 'hidden' },
   safetyFill: { height: '100%', backgroundColor: GREEN, borderRadius: 4 },
   safetySubtext: { fontSize: 13, color: MUTED },
+  switchRiderBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: 16, marginBottom: 12, backgroundColor: '#1A1400', borderRadius: 14, paddingVertical: 16, paddingHorizontal: 20, borderWidth: 1, borderColor: '#3A2E00' },
+  switchRiderText: { flex: 1, color: GOLD, fontSize: 15, fontWeight: '700', marginLeft: 10 },
   signOutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 16, marginBottom: 8, backgroundColor: '#2A0000', borderRadius: 14, paddingVertical: 16 },
   signOutText: { color: RED, fontSize: 15, fontWeight: '700' },
   version: { textAlign: 'center', color: MUTED, fontSize: 12, marginBottom: 16 },
