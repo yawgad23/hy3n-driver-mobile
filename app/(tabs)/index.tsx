@@ -212,6 +212,11 @@ export default function HomeScreen() {
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [showTipModal, setShowTipModal] = useState(false);
   const [ratingValue, setRatingValue] = useState(5);
+  const [ratingComment, setRatingComment] = useState("");
+  const [selectedRatingTags, setSelectedRatingTags] = useState<string[]>([]);
+  // Pending rating: if rider closed app before rating, prompt on next open
+  const [pendingRatingRideId, setPendingRatingRideId] = useState<string | null>(null);
+  const [pendingRatingDriverName, setPendingRatingDriverName] = useState<string | null>(null);
   const [tipAmount, setTipAmount] = useState<number | null>(null);
   const [rideRated, setRideRated] = useState(false);
   const [tipAdded, setTipAdded] = useState(false);
@@ -274,6 +279,35 @@ export default function HomeScreen() {
       }
     });
   }, []);
+
+  // Pending rating check: on app load, look for completed rides in last 24h with no rating
+  useEffect(() => {
+    if (!user?.uid) return;
+    const checkPendingRating = async () => {
+      try {
+        const rides = await firestoreDB.list(COLLECTIONS.RIDES, { rider_id: user.uid, status: 'completed' });
+        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+        const unrated = rides.filter((r: any) => {
+          const ts = r.created_at ? new Date(r.created_at).getTime() : 0;
+          return ts > cutoff && !r.rider_rating;
+        });
+        if (unrated.length > 0) {
+          const ride = unrated[0] as any;
+          setPendingRatingRideId(ride.id);
+          setPendingRatingDriverName(ride.driver_name || ride.driverName || 'Your Driver');
+          setRatingValue(5);
+          setRatingComment("");
+          setSelectedRatingTags([]);
+          setShowRatingModal(true);
+        }
+      } catch {
+        // Silently ignore — don't block app load
+      }
+    };
+    // Delay slightly so app finishes loading before showing modal
+    const t = setTimeout(checkPendingRating, 2000);
+    return () => clearTimeout(t);
+  }, [user?.uid]);
 
   // Real Firestore ride listener — subscribes to live ride updates when a Firestore ride ID is set
   const firestoreUnsubRef = useRef<(() => void) | null>(null);
@@ -1399,37 +1433,84 @@ export default function HomeScreen() {
       </Modal>
 
       {/* Rating Modal */}
-      <Modal visible={showRatingModal} transparent animationType="fade">
-        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", paddingHorizontal: 24 }}>
-          <View style={{ backgroundColor: SURFACE, borderRadius: 24, padding: 24 }}>
-            <Text style={{ color: TEXT, fontWeight: "bold", fontSize: 18, textAlign: "center", marginBottom: 4 }}>Rate Your Driver</Text>
-            <Text style={{ color: MUTED, fontSize: 13, textAlign: "center", marginBottom: 20 }}>{activeRide?.driverName || "Your Driver"}</Text>
-            <View style={{ flexDirection: "row", justifyContent: "center", gap: 8, marginBottom: 24 }}>
+      <Modal visible={showRatingModal} transparent animationType="slide">
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" }}>
+          <View style={{ backgroundColor: SURFACE, borderRadius: 28, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, padding: 24, paddingBottom: 36 }}>
+            {/* Handle */}
+            <View style={{ width: 40, height: 4, backgroundColor: BORDER, borderRadius: 2, alignSelf: "center", marginBottom: 20 }} />
+            {/* Header */}
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+              <Text style={{ color: TEXT, fontWeight: "bold", fontSize: 18 }}>Rate Your Driver</Text>
+              <TouchableOpacity onPress={() => { setShowRatingModal(false); setPendingRatingRideId(null); }} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: CARD, alignItems: "center", justifyContent: "center" }}>
+                <MaterialIcons name="close" size={18} color={MUTED} />
+              </TouchableOpacity>
+            </View>
+            <Text style={{ color: MUTED, fontSize: 13, marginBottom: 20 }}>
+              How was your experience with {pendingRatingDriverName || activeRide?.driverName || "your driver"}?
+            </Text>
+            {/* Stars */}
+            <View style={{ flexDirection: "row", justifyContent: "center", gap: 8, marginBottom: 8 }}>
               {[1, 2, 3, 4, 5].map((star) => (
                 <TouchableOpacity key={star} onPress={() => setRatingValue(star)}>
-                  <MaterialIcons name={star <= ratingValue ? "star" : "star-border"} size={40} color={GOLD} />
+                  <MaterialIcons name={star <= ratingValue ? "star" : "star-border"} size={44} color={GOLD} />
                 </TouchableOpacity>
               ))}
             </View>
+            <Text style={{ color: MUTED, fontSize: 13, textAlign: "center", marginBottom: 20 }}>
+              {["Poor", "Fair", "Good", "Great", "Excellent"][ratingValue - 1]}
+            </Text>
+            {/* Quick tags */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+              <View style={{ flexDirection: "row", gap: 8, paddingHorizontal: 2 }}>
+                {["Great Driver", "Smooth Ride", "On Time", "Clean Car", "Professional", "Safe Driving"].map((tag) => {
+                  const active = selectedRatingTags.includes(tag);
+                  return (
+                    <TouchableOpacity
+                      key={tag}
+                      onPress={() => setSelectedRatingTags(prev => active ? prev.filter(t => t !== tag) : [...prev, tag])}
+                      style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: active ? `${GOLD}22` : CARD, borderWidth: 1, borderColor: active ? GOLD : BORDER }}
+                    >
+                      <Text style={{ color: active ? GOLD : TEXT, fontSize: 13, fontWeight: active ? "600" : "400" }}>{tag}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
+            {/* Comment field */}
+            <TextInput
+              value={ratingComment}
+              onChangeText={setRatingComment}
+              placeholder="Add a comment (optional)"
+              placeholderTextColor={MUTED}
+              multiline
+              numberOfLines={3}
+              style={{ backgroundColor: CARD, borderRadius: 12, padding: 12, color: TEXT, fontSize: 14, borderWidth: 0.5, borderColor: BORDER, marginBottom: 20, minHeight: 72, textAlignVertical: "top" }}
+            />
+            {/* Submit */}
             <TouchableOpacity
               onPress={async () => {
+                const rideId = pendingRatingRideId || activeRide?.firestoreId;
+                const fullComment = [ratingComment.trim(), ...selectedRatingTags].filter(Boolean).join(" · ");
                 setRideRated(true);
                 setShowRatingModal(false);
-                // Save rating to Firestore on the ride document
-                if (activeRide?.firestoreId) {
+                setPendingRatingRideId(null);
+                setPendingRatingDriverName(null);
+                setRatingComment("");
+                setSelectedRatingTags([]);
+                if (rideId) {
                   try {
-                    await dispatchService.rateDriver(activeRide.firestoreId, ratingValue);
+                    await dispatchService.rateDriver(rideId, ratingValue, fullComment);
                   } catch (e) {
                     console.warn('[Rating] Failed to save rating:', e);
                   }
                 }
-                Alert.alert("Thank you!", `You rated ${activeRide?.driverName || "your driver"} ${ratingValue} star${ratingValue !== 1 ? 's' : ''}`);
+                Alert.alert("Thank you!", `You rated ${pendingRatingDriverName || activeRide?.driverName || "your driver"} ${ratingValue} star${ratingValue !== 1 ? 's' : ''}`);
               }}
               style={{ backgroundColor: GOLD, borderRadius: 14, paddingVertical: 14, alignItems: "center", marginBottom: 10 }}
             >
               <Text style={{ color: "#000", fontWeight: "bold", fontSize: 15 }}>Submit Rating</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setShowRatingModal(false)} style={{ alignItems: "center", paddingVertical: 10 }}>
+            <TouchableOpacity onPress={() => { setShowRatingModal(false); setPendingRatingRideId(null); }} style={{ alignItems: "center", paddingVertical: 10 }}>
               <Text style={{ color: MUTED, fontSize: 14 }}>Skip</Text>
             </TouchableOpacity>
           </View>

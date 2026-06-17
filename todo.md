@@ -182,6 +182,12 @@
 - [x] Notification Center: mark-all-read writes back to Firestore
 - [x] Notification Center: unread badges and dot indicators
 
+## Rating Features Parity (Jun 17)
+
+- [x] Driver app: live average rating display updates after rider submits a rating (Firestore subscribeDoc in driver-auth-context)
+- [x] Rider app: pending rating prompt on app reopen if a completed unrated ride exists (last 24h check on user load)
+- [x] Rider app: comment/feedback text field + quick tags in the rating modal (Great Driver, Smooth Ride, On Time, Clean Car, Professional, Safe Driving)
+
 ## Ride History & Account Stats Bug Fix (Jun 17)
 
 - [x] Activity tab queries wrong collection (RideRequests) — fixed to use correct 'rides' collection

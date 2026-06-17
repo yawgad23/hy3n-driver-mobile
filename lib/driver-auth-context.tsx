@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { useRef } from 'react';
 import { firebaseAuth, firestoreDB, COLLECTIONS } from './firebase';
 import type { User } from 'firebase/auth';
 
@@ -73,6 +74,11 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
           profile.user_id = firebaseUser.uid;
         }
         setDriverProfile(profile);
+        // Subscribe to live updates on this profile doc so rating changes reflect immediately
+        if (profileUnsubRef.current) profileUnsubRef.current();
+        profileUnsubRef.current = firestoreDB.subscribeDoc(COLLECTIONS.DRIVER_PROFILES, profile.id, (updated) => {
+          if (updated) setDriverProfile(updated as DriverProfile);
+        });
       } else {
         setDriverProfile(null);
       }
@@ -81,9 +87,14 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
     }
   };
 
+  // Ref to hold the live Firestore subscription for the driver profile doc
+  const profileUnsubRef = useRef<(() => void) | null>(null);
+
   useEffect(() => {
     const unsubscribe = firebaseAuth.onAuthStateChanged(async (firebaseUser) => {
       setUser(firebaseUser);
+      // Cancel any previous profile subscription
+      if (profileUnsubRef.current) { profileUnsubRef.current(); profileUnsubRef.current = null; }
       if (firebaseUser) {
         await loadProfile(firebaseUser);
       } else {
@@ -91,7 +102,7 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
       }
       setLoading(false);
     });
-    return unsubscribe;
+    return () => { unsubscribe(); if (profileUnsubRef.current) profileUnsubRef.current(); };
   }, []);
 
   const signIn = async (email: string, password: string) => {

@@ -468,16 +468,56 @@ export const dispatchService = {
 
   /**
    * Submit a driver rating after a completed trip.
+   * Also recalculates and updates the driver's average rating in DriverProfile.
    */
   async rateDriver(rideId: string, rating: number, comment?: string): Promise<void> {
     if (rideId.startsWith('local_')) return;
     try {
       const rideRef = doc(db, COLLECTIONS.RIDES, rideId);
+      // Get the ride first to find driver_id
+      const rideSnap = await getDoc(rideRef);
+      const rideData = rideSnap.exists() ? rideSnap.data() : null;
       await updateDoc(rideRef, {
         rider_rating: rating,
         rider_comment: comment || '',
         updated_date: new Date().toISOString(),
       });
+      // Recalculate driver's average rating from all their rated rides
+      const driverId = rideData?.driver_id;
+      if (driverId) {
+        try {
+          const ridesRef = collection(db, COLLECTIONS.RIDES);
+          const q = query(ridesRef, where('driver_id', '==', driverId));
+          const snap = await getDocs(q);
+          const allRides = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+          // Merge in the just-submitted rating in case Firestore hasn't propagated yet
+          const ratedRides = allRides
+            .map(r => r.id === rideId ? { ...r, rider_rating: rating } : r)
+            .filter(r => r.rider_rating && r.rider_rating > 0);
+          if (ratedRides.length > 0) {
+            const avg = ratedRides.reduce((sum: number, r: any) => sum + r.rider_rating, 0) / ratedRides.length;
+            const avgRounded = parseFloat(avg.toFixed(2));
+            // Try direct doc ID first (driver_id may be the DriverProfile Firestore doc ID)
+            const dpRef = doc(db, COLLECTIONS.DRIVER_PROFILES, driverId);
+            const dpSnap = await getDoc(dpRef);
+            if (dpSnap.exists()) {
+              await updateDoc(dpRef, { rating: avgRounded });
+            } else {
+              // Fallback: search DriverProfile by user_id
+              const dpQuery = query(
+                collection(db, COLLECTIONS.DRIVER_PROFILES),
+                where('user_id', '==', driverId)
+              );
+              const dpQuerySnap = await getDocs(dpQuery);
+              if (!dpQuerySnap.empty) {
+                await updateDoc(dpQuerySnap.docs[0].ref, { rating: avgRounded });
+              }
+            }
+          }
+        } catch (ratingErr) {
+          console.warn('[Dispatch] Failed to update driver average rating:', ratingErr);
+        }
+      }
     } catch (err) {
       console.warn('[Dispatch] rateDriver error:', err);
     }
