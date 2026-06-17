@@ -28,7 +28,7 @@ export default function LoginScreen() {
   const [tab, setTab] = useState<LoginTab>('phone');
 
   // Phone OTP state
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState(''); // stores only the local digits after +233
   const [otp, setOtp] = useState('');
   const [verificationId, setVerificationId] = useState<string | null>(null);
   const [phoneLoading, setPhoneLoading] = useState(false);
@@ -42,7 +42,7 @@ export default function LoginScreen() {
 
   // ── Phone OTP ──────────────────────────────────────────────────────────────
   const handleSendOTP = async () => {
-    const cleaned = phone.trim().replace(/\s/g, '');
+    const cleaned = ('+233' + phone.trim().replace(/\s/g, '')).replace(/\+233\+233/, '+233');
     if (!cleaned || cleaned.length < 9) {
       Alert.alert('Invalid Number', 'Please enter a valid phone number with country code (e.g. +233241234567)');
       return;
@@ -148,18 +148,25 @@ export default function LoginScreen() {
               <>
                 <Text style={styles.label}>Phone Number</Text>
                 <View style={styles.inputWrap}>
-                  <MaterialIcons name="phone" size={20} color={MUTED} style={styles.inputIcon} />
+                  <View style={{ paddingHorizontal: 12, paddingVertical: 12, borderRightWidth: 1, borderRightColor: BORDER, justifyContent: 'center' }}>
+                    <Text style={{ color: TEXT, fontWeight: '700', fontSize: 15 }}>🇬🇭 +233</Text>
+                  </View>
                   <TextInput
-                    style={styles.input}
-                    placeholder="+233 24 123 4567"
+                    style={[styles.input, { flex: 1, borderWidth: 0 }]}
+                    placeholder="24 123 4567"
                     placeholderTextColor={MUTED}
                     value={phone}
-                    onChangeText={setPhone}
-                    keyboardType="phone-pad"
+                    onChangeText={(val) => {
+                      // Strip any leading +233 or 0 if user pastes full number
+                      const stripped = val.replace(/^\+?233/, '').replace(/^0/, '');
+                      setPhone(stripped);
+                    }}
+                    keyboardType="number-pad"
                     autoComplete="tel"
+                    maxLength={9}
                   />
                 </View>
-                <Text style={styles.hint}>Enter your number with country code (e.g. +233 for Ghana)</Text>
+                <Text style={styles.hint}>Enter your Ghana mobile number (e.g. 24 123 4567)</Text>
                 <TouchableOpacity
                   style={[styles.btn, phoneLoading && styles.btnDisabled]}
                   onPress={handleSendOTP}
@@ -176,7 +183,7 @@ export default function LoginScreen() {
               <>
                 <View style={styles.otpSentBanner}>
                   <MaterialIcons name="check-circle" size={18} color={GREEN} />
-                  <Text style={styles.otpSentText}>Code sent to {phone}</Text>
+                  <Text style={styles.otpSentText}>Code sent to +233{phone}</Text>
                 </View>
                 <Text style={styles.label}>Verification Code</Text>
                 <View style={styles.inputWrap}>
