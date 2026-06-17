@@ -1023,7 +1023,7 @@ export default function HomeScreen() {
   );
 
   const renderDefaultSheet = () => (
-    <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 }}>
       <TouchableOpacity
         onPress={() => setSearchOpen(true)}
         style={{ flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: CARD, borderRadius: 16, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: BORDER }}
@@ -1102,14 +1102,14 @@ export default function HomeScreen() {
           </View>
         </ScrollView>
       </View>
-    </View>
+    </ScrollView>
   );
 
   const sheetHeight = activeRide
     ? (activeRide.status === "completed" ? SCREEN_HEIGHT * 0.75 : SCREEN_HEIGHT * 0.65)
     : destination
     ? SCREEN_HEIGHT * 0.72
-    : 200;
+    : SCREEN_HEIGHT * 0.44;
 
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
