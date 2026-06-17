@@ -7,6 +7,7 @@ import { initializeApp, getApps } from 'firebase/app';
 import {
   initializeAuth,
   getAuth,
+  browserLocalPersistence,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
@@ -18,11 +19,14 @@ import {
   deleteUser,
   type User,
 } from 'firebase/auth';
-// getReactNativePersistence is only in the RN build of firebase/auth (resolved via metro.config.js)
-// We import it separately to avoid TypeScript errors on the web type definitions
-import AsyncStorage from '@react-native-async-storage/async-storage';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { getReactNativePersistence } = require('firebase/auth') as { getReactNativePersistence: (storage: any) => any };
+import { Platform } from 'react-native';
+// getReactNativePersistence is only available on native — import conditionally
+let AsyncStorage: any = null;
+let getReactNativePersistence: any = null;
+if (Platform.OS !== 'web') {
+  AsyncStorage = require('@react-native-async-storage/async-storage').default;
+  getReactNativePersistence = require('firebase/auth').getReactNativePersistence;
+}
 import {
   getFirestore,
   collection,
@@ -61,12 +65,14 @@ const firebaseConfig = {
 // Initialize Firebase (avoid re-initialization)
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
-// Use initializeAuth with AsyncStorage persistence so login survives app restarts
+// Use initializeAuth with platform-appropriate persistence
+// Web: browserLocalPersistence (localStorage) | Native: AsyncStorage
 let auth: ReturnType<typeof getAuth>;
 try {
-  auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(AsyncStorage),
-  });
+  const persistence = Platform.OS === 'web'
+    ? browserLocalPersistence
+    : getReactNativePersistence(AsyncStorage);
+  auth = initializeAuth(app, { persistence });
 } catch (e: any) {
   // Already initialized — get existing instance
   auth = getAuth(app);

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+
+    <!-- PWA Meta Tags -->
+    <meta name="application-name" content="HY3N Rider" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="HY3N Rider" />
+    <meta name="description" content="Ghana's premium ride-hailing app" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#D4AF37" />
+    <meta name="msapplication-TileColor" content="#0A0A0A" />
+    <meta name="msapplication-tap-highlight" content="no" />
+
+    <!-- Open Graph / Social -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="HY3N Rider" />
+    <meta property="og:description" content="Ghana's premium ride-hailing app" />
+    <meta property="og:image" content="/assets/images/icon-512.png" />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="/assets/images/favicon.png" />
+    <link rel="shortcut icon" href="/assets/images/favicon.png" />
+
+    <!-- Apple Touch Icons (for iOS Add to Home Screen) -->
+    <link rel="apple-touch-icon" href="/assets/images/icon-180.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/assets/images/icon-152.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/images/icon-180.png" />
+    <link rel="apple-touch-icon" sizes="120x120" href="/assets/images/icon-120.png" />
+
+    <!-- Web App Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <title>HY3N Rider</title>
+
+    <style>
+      /* Prevent flash of unstyled content */
+      html, body { background-color: #0A0A0A; margin: 0; padding: 0; }
+      #root { display: flex; flex: 1; height: 100vh; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // Register service worker for PWA
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/sw.js').then(
+            function (reg) { console.log('SW registered:', reg.scope); },
+            function (err) { console.log('SW registration failed:', err); }
+          );
+        });
+      }
+    </script>
+  </body>
+</html>

@@ -83,6 +83,12 @@ const config: ExpoConfig = {
     bundler: "metro",
     output: "static",
     favicon: "./assets/images/favicon.png",
+    name: "HY3N Rider",
+    shortName: "HY3N",
+    description: "Ghana's premium ride-hailing app",
+    themeColor: "#D4AF37",
+    backgroundColor: "#0A0A0A",
+    lang: "en",
   },
   plugins: [
     "expo-router",
