@@ -827,9 +827,9 @@ export default function HomeScreen() {
               )}
               {/* Surge badge if applicable */}
               {activeRide.surgeMultiplier && activeRide.surgeMultiplier > 1 && (
-                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 6, backgroundColor: `${RED}1A`, borderTopWidth: 0.5, borderTopColor: `${RED}33` }}>
-                  <MaterialIcons name="trending-up" size={14} color={RED} />
-                  <Text style={{ color: RED, fontSize: 12, fontWeight: "600" }}>{activeRide.surgeMultiplier.toFixed(1)}× Surge Pricing Active</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 6, backgroundColor: "#F59E0B18", borderTopWidth: 0.5, borderTopColor: "#F59E0B40" }}>
+                  <MaterialIcons name="bolt" size={14} color="#F59E0B" />
+                  <Text style={{ color: "#F59E0B", fontSize: 12, fontWeight: "600" }}>Fare includes high-demand pricing</Text>
                 </View>
               )}
               {/* Divider */}
@@ -1041,6 +1041,16 @@ export default function HomeScreen() {
         </View>
       </View>
 
+      {/* Surge banner — Uber/Bolt style: plain language, no multiplier */}
+      {SURGE > 1 && (
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, backgroundColor: "#F59E0B18", borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: "#F59E0B40" }}>
+          <MaterialIcons name="bolt" size={18} color="#F59E0B" style={{ marginTop: 1 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: "#F59E0B", fontWeight: "700", fontSize: 13, marginBottom: 2 }}>Prices are higher than normal</Text>
+            <Text style={{ color: "#F59E0B", fontSize: 12, lineHeight: 17, opacity: 0.85 }}>More people are requesting rides than there are available drivers. Fares will return to normal when demand drops.</Text>
+          </View>
+        </View>
+      )}
       {/* Ride Categories */}
       <Text style={{ color: MUTED, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: "600", marginBottom: 8 }}>Choose Ride</Text>
       {RIDE_CATEGORIES.map((cat) => {
@@ -1206,11 +1216,11 @@ export default function HomeScreen() {
 
       {/* Fare Summary */}
       <View style={{ backgroundColor: CARD, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 0.5, borderColor: BORDER }}>
-        {/* Surge indicator */}
+        {/* Surge indicator — plain language, no multiplier */}
         {SURGE > 1 && (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: `${RED}1A`, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 10 }}>
-            <MaterialIcons name="trending-up" size={14} color={RED} />
-            <Text style={{ color: RED, fontSize: 12, fontWeight: "600" }}>{SURGE.toFixed(1)}× Surge Pricing — High demand in your area</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#F59E0B18", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 10 }}>
+            <MaterialIcons name="bolt" size={14} color="#F59E0B" />
+            <Text style={{ color: "#F59E0B", fontSize: 12, fontWeight: "600" }}>Prices are higher due to demand</Text>
           </View>
         )}
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>

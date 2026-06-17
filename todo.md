@@ -278,3 +278,10 @@
 - [x] Also resets approval_status to 'pending' so admin sees the resubmission
 - [x] "Fix & Resubmit" button on ApprovalGate navigates to this screen instead of full register
 - [x] "Or restart full application" secondary link still available for full re-registration
+
+## Surge Pricing UX — Uber/Bolt Style (Jun 17)
+
+- [x] Amber banner above category list in booking sheet: "Prices are higher than normal" with explanation
+- [x] Fare summary amber note: "Prices are higher due to demand" (replaces red multiplier badge)
+- [x] Active ride card amber note: "Fare includes high-demand pricing" (replaces red multiplier badge)
+- [x] No multiplier numbers shown to riders — plain language only, matching Uber/Bolt UX
