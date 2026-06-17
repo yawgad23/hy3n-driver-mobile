@@ -1185,7 +1185,7 @@ export default function HomeScreen() {
             source={require('@/assets/images/icon.png')}
             style={{ width: 80, height: 40, resizeMode: 'contain' }}
           />
-          <Text style={{ color: GOLD, fontSize: 11, fontWeight: '600', letterSpacing: 0.5, marginTop: 2, opacity: 0.85 }}>
+          <Text style={{ color: GOLD, fontSize: 14, fontWeight: '700', letterSpacing: 0.3, marginTop: 2 }}>
             Wo ho te sɛn{riderProfile?.full_name ? `, ${riderProfile.full_name.split(' ')[0]}` : ''}? 👋
           </Text>
         </View>
