@@ -305,7 +305,7 @@ function NoProfileGate() {
 
 // ─── Main Shell ───────────────────────────────────────────────────────────────
 export default function DriverTabLayout() {
-  const { driverProfile, loading } = useDriverAuth();
+  const { user, driverProfile, loading } = useDriverAuth();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const bottomPadding = Platform.OS === 'web' ? 12 : Math.max(insets.bottom, 8);
@@ -363,6 +363,15 @@ export default function DriverTabLayout() {
 
   const visibleAlerts = lostItemAlerts.filter(a => !dismissedAlerts.includes(a.id));
 
+  const router = useRouter();
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace('/driver/login' as any);
+    }
+  }, [loading, user]);
+
   if (loading || checkingCommission) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
@@ -370,6 +379,8 @@ export default function DriverTabLayout() {
       </View>
     );
   }
+
+  if (!user) return null;
 
   if (!driverProfile) return <NoProfileGate />;
 
