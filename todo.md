@@ -107,3 +107,36 @@
 - [ ] Ride PIN verification (4-digit PIN rider shows driver before trip starts)
 - [ ] Lost & Found contact button in trip details
 - [ ] Accessibility option (wheelchair-accessible vehicle request)
+
+## Driver App Feature Parity (vs Web App)
+
+### Settings Tab
+- [x] Settings tab created with 5 preference toggles (Push Notifications, Sound Alerts, Auto-Accept, Long Trips Only, Prefer High-Rated Riders)
+- [x] Delete Account with two-step confirmation dialog
+
+### History Tab
+- [x] Today / This Week filter buttons added
+- [x] Expandable trip cards (passenger feedback, payment method, Trip ID)
+- [x] Rider name included in search
+- [x] Summary row shows Today earnings and This Week earnings
+- [x] Result count + earnings shown in filtered list header
+
+### Home Tab
+- [x] Notification bell opens Notification Center modal (trip history as notifications)
+- [x] High-risk area alert on incoming ride request (Nima, Mamobi, Agbogbloshie, etc.)
+- [x] declined_by array updated on decline so driver is not shown same ride again
+- [x] driver_accepted_at timestamp written on accept
+- [x] is_available: false set on accept, restored to true on complete
+- [x] Rider info row on incoming request (name + rating)
+- [x] Fare shown prominently on incoming request card
+
+### Post-Trip TripSummaryDialog
+- [x] Rate passenger (1-5 stars)
+- [x] Optional remarks about passenger
+- [x] Found item toggle + description field
+- [x] Writes passenger_rating, driver_remarks, found_item to Firestore ride doc
+- [x] Creates RideReport doc for found items
+
+### Commission Gate
+- [x] Real MoMo number: 0546728330
+- [x] Vehicle-type-based fees: GH₵50 (car), GH₵30 (okada/delivery)

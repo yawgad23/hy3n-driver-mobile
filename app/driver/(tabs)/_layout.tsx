@@ -16,7 +16,11 @@ const MUTED = '#9CA3AF';
 // ─── Commission Gate ──────────────────────────────────────────────────────────
 function CommissionGate({ driver }: { driver: any }) {
   const colors = useColors();
-  const [amount, setAmount] = useState('5.00');
+  // Fee based on vehicle type: GH₵50 for cars, GH₵30 for okada/delivery
+  const vehicleType = (driver.vehicle_type || driver.category || '').toLowerCase();
+  const isOkadaOrDelivery = vehicleType.includes('okada') || vehicleType.includes('motor') || vehicleType.includes('delivery') || vehicleType.includes('bike');
+  const feeAmount = isOkadaOrDelivery ? 30 : 50;
+  const [amount, setAmount] = useState(String(feeAmount));
   const [reference, setReference] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -36,7 +40,7 @@ function CommissionGate({ driver }: { driver: any }) {
         driver_id: driverId,
         driver_name: driver.full_name,
         date: today,
-        amount: parseFloat(amount) || 5,
+        amount: parseFloat(amount) || feeAmount,
         reference: reference.trim(),
         status: 'pending',
         submitted_at: new Date().toISOString(),
@@ -80,11 +84,11 @@ function CommissionGate({ driver }: { driver: any }) {
 
       <View style={[styles.commissionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Text style={[styles.commissionLabel, { color: colors.muted }]}>Daily Platform Fee</Text>
-        <Text style={[styles.commissionAmount, { color: GOLD }]}>GH₵ 5.00</Text>
+        <Text style={[styles.commissionAmount, { color: GOLD }]}>GH₵ {feeAmount}.00</Text>
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <Text style={[styles.commissionMomo, { color: colors.muted }]}>
           Send to MoMo:{' '}
-          <Text style={{ color: colors.foreground, fontWeight: '700' }}>0XX XXX XXXX</Text>
+          <Text style={{ color: colors.foreground, fontWeight: '700' }}>0546728330</Text>
         </Text>
         <Text style={[styles.commissionMomo, { color: colors.muted }]}>
           Name:{' '}
