@@ -867,7 +867,7 @@ export default function HomeScreen() {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={{ color: TEXT, fontWeight: "bold", fontSize: 16 }}>Wo kɔ he?</Text>
-          <Text style={{ color: MUTED, fontSize: 12, marginTop: 2 }}>Hwɛ wo bɛkyerɛ...</Text>
+          <Text style={{ color: MUTED, fontSize: 12, marginTop: 2 }}>Where are you going?</Text>
         </View>
         <MaterialIcons name="location-on" size={20} color={MUTED} />
       </TouchableOpacity>
@@ -977,7 +977,7 @@ export default function HomeScreen() {
             <TextInput
               value={searchQuery}
               onChangeText={setSearchQuery}
-              placeholder="Hwɛ wo bɛkyerɛ..."
+              placeholder="Where are you going?"
               placeholderTextColor={MUTED}
               autoFocus
               style={{ flex: 1, color: TEXT, fontSize: 16, paddingVertical: 8 }}
