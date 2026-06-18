@@ -193,11 +193,11 @@ export default function DriverProfileScreen() {
         {/* Switch to Rider Mode */}
         <TouchableOpacity
           style={styles.switchRiderBtn}
-          onPress={() => router.replace('/(tabs)' as any)}
+          onPress={() => Linking.openURL('https://ridehy3n.com')}
           activeOpacity={0.85}
         >
           <MaterialIcons name="directions-car" size={20} color={GOLD} />
-          <Text style={styles.switchRiderText}>Switch to Rider Mode</Text>
+          <Text style={styles.switchRiderText}>Switch to User Mode</Text>
           <MaterialIcons name="chevron-right" size={20} color={GOLD} />
         </TouchableOpacity>
 

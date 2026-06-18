@@ -45,7 +45,7 @@ const SERVICE_TYPES = [
   },
   {
     id: 'okada',
-    label: 'Okada Rider',
+    label: 'Okada Driver',
     description: 'Fast motorbike rides to beat traffic',
     icon: 'two-wheeler' as const,
     vehicleLabel: 'Motorbike',
