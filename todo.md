@@ -342,3 +342,10 @@
 - [x] CommissionGate: check for 'paid' status in addition to 'confirmed'
 - [x] Driver home: add midnight reset logic to clear daily commission at 00:00
 - [ ] Admin dashboard: wire to real tRPC API (fetch commissions, execute overrides)
+
+## Admin Dashboard Wiring (Jun 18)
+
+- [x] Wire admin-commission.html to real tRPC API (commission.listForAdmin, commission.overrideStatus)
+- [x] Add admin PIN login gate to dashboard (PIN verified server-side via /api/admin/verify-pin)
+- [x] Show live stats: total/paid/processing/failed counts + GH₵ revenue collected
+- [x] Override modal calls real overrideStatus mutation with reason field

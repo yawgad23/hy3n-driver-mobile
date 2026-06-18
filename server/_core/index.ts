@@ -117,6 +117,17 @@ async function startServer() {
     res.sendFile(path.join(__dirname, "../../server/admin-commission.html"));
   });
 
+  // Admin PIN verification endpoint — PIN stored server-side as ADMIN_DASHBOARD_PIN env var
+  app.post("/api/admin/verify-pin", (req, res) => {
+    const { pin } = req.body as { pin?: string };
+    const adminPin = process.env.ADMIN_DASHBOARD_PIN || "5809";
+    if (!pin || pin !== adminPin) {
+      res.status(401).json({ ok: false, error: "Invalid PIN" });
+      return;
+    }
+    res.json({ ok: true });
+  });
+
   app.use(
     "/api/trpc",
     createExpressMiddleware({
