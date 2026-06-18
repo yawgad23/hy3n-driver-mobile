@@ -12,6 +12,41 @@ import {
 } from "./hubtel";
 import { adminFirestore, ADMIN_COLLECTIONS } from "./firebaseAdmin";
 
+// ─── Wallet helpers ─────────────────────────────────────────────────────────
+
+async function getOrCreateWallet(userId: string, userType: 'rider' | 'driver' = 'rider') {
+  const existing = await adminFirestore.get(ADMIN_COLLECTIONS.WALLET, userId);
+  if (existing) return existing;
+  return adminFirestore.set(ADMIN_COLLECTIONS.WALLET, userId, {
+    user_id: userId,
+    user_type: userType,
+    balance: 0,
+    total_topped_up: 0,
+    total_spent: 0,
+    total_earned: 0,
+    created_date: new Date().toISOString(),
+  });
+}
+
+async function recordWalletTransaction(
+  userId: string,
+  type: 'credit' | 'debit' | 'refund',
+  amount: number,
+  description: string,
+  reference: string,
+  meta: Record<string, any> = {},
+) {
+  return adminFirestore.create(ADMIN_COLLECTIONS.WALLET_TRANSACTIONS, {
+    user_id: userId,
+    type,
+    amount,
+    description,
+    reference,
+    date: new Date().toISOString(),
+    ...meta,
+  });
+}
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
