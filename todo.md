@@ -326,3 +326,19 @@
 - [x] Admin dashboard: manual override button to mark commission as paid or failed
 - [x] Admin dashboard: filter by date range and driver name
 - [x] tRPC endpoints: `commission.listForAdmin` and `commission.overrideStatus` (placeholder, needs admin auth)
+
+## Admin Auth & Dashboard Wiring (Jun 18)
+
+- [ ] Fix server-side Firebase import (hubtelWebhook.ts imports react-native via lib/firebase.ts)
+- [ ] Create server/firebaseAdmin.ts using firebase-admin SDK (no React Native dependency)
+- [ ] Add admin auth middleware to tRPC context (verify Firebase ID token + admin claim)
+- [ ] Implement commission.listForAdmin with real Firestore query via firebase-admin
+- [ ] Implement commission.overrideStatus with real Firestore update via firebase-admin
+- [ ] Wire admin-commission.html to tRPC API (fetch commissions, execute overrides)
+- [ ] Add admin login gate to admin-commission.html (Firebase Auth web SDK)
+
+## Commission Flow Fix (Jun 18)
+
+- [x] CommissionGate: check for 'paid' status in addition to 'confirmed'
+- [x] Driver home: add midnight reset logic to clear daily commission at 00:00
+- [ ] Admin dashboard: wire to real tRPC API (fetch commissions, execute overrides)

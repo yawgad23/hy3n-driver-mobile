@@ -2,7 +2,7 @@ import { z } from "zod";
 import { COOKIE_NAME } from "../shared/const.js";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { publicProcedure, adminProcedure, router } from "./_core/trpc";
 import { sendTripReceiptEmail } from "./email";
 import {
   chargeDriverCommission,
@@ -10,6 +10,7 @@ import {
   getMomoChannel,
   getCommissionReference,
 } from "./hubtel";
+import { adminFirestore, ADMIN_COLLECTIONS } from "./firebaseAdmin";
 
 export const appRouter = router({
   system: systemRouter,
@@ -131,41 +132,86 @@ export const appRouter = router({
 
     /**
      * Admin: List all commissions for a date range.
-     * Returns all commission records with driver info.
-     * TODO: Implement admin auth check
+     * Requires admin role (ctx.user.role === 'admin').
      */
-    listForAdmin: publicProcedure
+    listForAdmin: adminProcedure
       .input(z.object({
         dateFrom: z.string().optional(),
         dateTo: z.string().optional(),
         status: z.string().optional(),
       }))
       .query(async ({ input }) => {
-        // Placeholder: In production, verify admin auth here
-        return {
-          commissions: [],
-          note: 'Admin endpoint — implement auth and Firestore query',
-        };
+        // Fetch all commission records from Firestore
+        const allCommissions = await adminFirestore.list(
+          ADMIN_COLLECTIONS.DAILY_COMMISSION,
+          {},
+          'created_date',
+          'desc',
+          500,
+        );
+
+        // Apply optional filters in-memory (Firestore compound queries need indexes)
+        let filtered = allCommissions;
+
+        if (input.dateFrom) {
+          filtered = filtered.filter((c: any) => c.date >= input.dateFrom!);
+        }
+        if (input.dateTo) {
+          filtered = filtered.filter((c: any) => c.date <= input.dateTo!);
+        }
+        if (input.status) {
+          filtered = filtered.filter((c: any) => c.status === input.status);
+        }
+
+        // Enrich with driver profile info where available
+        const enriched = await Promise.all(
+          filtered.map(async (commission: any) => {
+            let driverName = commission.driver_name || 'Unknown Driver';
+            let serviceType = commission.service_type || 'car';
+            if (commission.driver_id && !commission.driver_name) {
+              try {
+                const profile = await adminFirestore.get(
+                  ADMIN_COLLECTIONS.DRIVER_PROFILES,
+                  commission.driver_id,
+                );
+                if (profile) {
+                  driverName = profile.full_name || profile.name || driverName;
+                  serviceType = profile.service_type || serviceType;
+                }
+              } catch {
+                // Ignore enrichment errors
+              }
+            }
+            return { ...commission, driver_name: driverName, service_type: serviceType };
+          })
+        );
+
+        return { commissions: enriched };
       }),
 
     /**
      * Admin: Override a commission status manually.
-     * Updates the commission record directly.
-     * TODO: Implement admin auth check
+     * Requires admin role (ctx.user.role === 'admin').
      */
-    overrideStatus: publicProcedure
+    overrideStatus: adminProcedure
       .input(z.object({
         commissionId: z.string(),
         newStatus: z.enum(['paid', 'failed', 'processing']),
         reason: z.string().optional(),
       }))
-      .mutation(async ({ input }) => {
-        // Placeholder: In production, verify admin auth here
-        return {
-          success: true,
-          message: 'Commission status updated',
-          note: 'Admin endpoint — implement auth',
-        };
+      .mutation(async ({ input, ctx }) => {
+        const updated = await adminFirestore.update(
+          ADMIN_COLLECTIONS.DAILY_COMMISSION,
+          input.commissionId,
+          {
+            status: input.newStatus,
+            admin_override: true,
+            admin_override_reason: input.reason || 'Manual admin override',
+            admin_override_by: ctx.user?.openId || 'admin',
+            admin_override_at: new Date().toISOString(),
+          },
+        );
+        return { success: true, commission: updated };
       }),
   }),
 });

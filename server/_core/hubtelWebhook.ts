@@ -17,7 +17,7 @@
  */
 
 import { Express, Request, Response } from 'express';
-import { firestoreDB, COLLECTIONS } from '../../lib/firebase';
+import { adminFirestore, ADMIN_COLLECTIONS as COLLECTIONS } from '../firebaseAdmin';
 
 export interface HubtelWebhookPayload {
   TransactionId?: string;
@@ -75,7 +75,7 @@ export async function handleHubtelWebhook(req: Request, res: Response) {
 
   try {
     // Find the commission record in Firestore
-    const records = await firestoreDB.list(COLLECTIONS.DAILY_COMMISSION, {
+    const records = await adminFirestore.list(COLLECTIONS.DAILY_COMMISSION, {
       driver_id: driverId,
       date,
     });
@@ -97,7 +97,7 @@ export async function handleHubtelWebhook(req: Request, res: Response) {
     }
 
     // Update the commission record
-    await firestoreDB.update(COLLECTIONS.DAILY_COMMISSION, record.id, {
+    await adminFirestore.update(COLLECTIONS.DAILY_COMMISSION, record.id, {
       status: newStatus,
       hubtel_webhook_received_at: new Date().toISOString(),
       hubtel_transaction_id: payload.TransactionId || record.hubtel_transaction_id,

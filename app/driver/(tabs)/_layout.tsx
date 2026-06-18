@@ -474,20 +474,36 @@ export default function DriverTabLayout() {
     const driverId = (driverProfile as any).user_id || driverProfile.id;
     firestoreDB.list(COLLECTIONS.DAILY_COMMISSION, { driver_id: driverId, date: today })
       .then((records: any[]) => {
-        setCommissionConfirmed(records.some((r: any) => r.status === 'confirmed'));
+        const isPaid = records.some((r: any) => r.status === 'paid' || r.status === 'confirmed');
+        setCommissionConfirmed(isPaid);
       })
       .catch(() => setCommissionConfirmed(false))
       .finally(() => setCheckingCommission(false));
 
-    // Poll every 15s for admin confirmation
+    // Poll every 15s for payment status (paid or confirmed)
     const interval = setInterval(() => {
       firestoreDB.list(COLLECTIONS.DAILY_COMMISSION, { driver_id: driverId, date: today })
         .then((records: any[]) => {
-          setCommissionConfirmed(records.some((r: any) => r.status === 'confirmed'));
+          const isPaid = records.some((r: any) => r.status === 'paid' || r.status === 'confirmed');
+          setCommissionConfirmed(isPaid);
         })
         .catch(() => {});
     }, 15000);
-    return () => clearInterval(interval);
+
+    const now = new Date();
+    const midnight = new Date(now);
+    midnight.setDate(midnight.getDate() + 1);
+    midnight.setHours(0, 0, 0, 0);
+    const timeUntilMidnight = midnight.getTime() - now.getTime();
+
+    const midnightTimeout = setTimeout(() => {
+      setCommissionConfirmed(false);
+    }, timeUntilMidnight);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(midnightTimeout);
+    };
   }, [driverProfile]);
 
   // Subscribe to lost item alerts

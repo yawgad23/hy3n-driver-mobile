@@ -111,6 +111,12 @@ async function startServer() {
     res.json({ status: "ready", webhook: "/api/hubtel/callback" });
   });
 
+  // Admin commission dashboard (served as static HTML)
+  app.get("/admin/commission", (_req, res) => {
+    const path = require("path");
+    res.sendFile(path.join(__dirname, "../../server/admin-commission.html"));
+  });
+
   app.use(
     "/api/trpc",
     createExpressMiddleware({
