@@ -6,7 +6,7 @@ import type { ExpoConfig } from "expo/config";
 // e.g., "my-app" created at 2024-01-15 10:30:45 -> "space.manus.my.app.t20240115103045"
 // Bundle ID can only contain letters, numbers, and dots
 // Android requires each dot-separated segment to start with a letter
-const rawBundleId = "com.hy3n.rider";
+const rawBundleId = "com.hy3n.driver";
 const bundleId =
   rawBundleId
     .replace(/[-_]/g, ".") // Replace hyphens/underscores with dots
@@ -29,7 +29,7 @@ const schemeFromBundleId = `manus${timestamp}`;
 const env = {
   // App branding - update these values directly (do not use env vars)
   appName: "HY3N Driver",
-  appSlug: "hy3n-mobile-app",
+  appSlug: "hy3n-driver-app",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
   logoUrl: "https://files.manuscdn.com/user_upload_by_module/session_file/310519663767879005/DOmuRrvQQNqEEdHe.png",
@@ -83,9 +83,9 @@ const config: ExpoConfig = {
     bundler: "metro",
     output: "static",
     favicon: "./assets/images/favicon.png",
-    name: "HY3N Rider",
-    shortName: "HY3N",
-    description: "Ghana's premium ride-hailing app",
+    name: "HY3N Driver",
+    shortName: "HY3N Driver",
+    description: "HY3N Driver — Ghana's premium ride-hailing driver app",
     themeColor: "#D4AF37",
     backgroundColor: "#0A0A0A",
     lang: "en",
@@ -95,8 +95,8 @@ const config: ExpoConfig = {
     [
       "expo-location",
       {
-        locationAlwaysAndWhenInUsePermission: "Allow HY3N to use your location to find nearby drivers and show your position on the map.",
-        locationWhenInUsePermission: "Allow HY3N to use your location to find nearby drivers and show your position on the map.",
+        locationAlwaysAndWhenInUsePermission: "Allow HY3N Driver to use your location to navigate to pickups and destinations.",
+        locationWhenInUsePermission: "Allow HY3N Driver to use your location to navigate to pickups and destinations.",
       },
     ],
     [
