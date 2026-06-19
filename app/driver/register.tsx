@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as ImagePicker from 'expo-image-picker';
 import { useDriverAuth } from '@/lib/driver-auth-context';
-import { firestoreDB, COLLECTIONS, auth as firebaseAuthObj, firebaseAuth, firebaseStorage } from '@/lib/firebase';
+import { firestoreDB, COLLECTIONS, auth as firebaseAuthObj, firebaseAuth } from '@/lib/firebase';
 import { Linking } from 'react-native';
 
 const GOLD = '#D4AF37';
@@ -45,7 +45,7 @@ const SERVICE_TYPES = [
   },
   {
     id: 'okada',
-    label: 'Okada Driver',
+    label: 'Okada Rider',
     description: 'Fast motorbike rides to beat traffic',
     icon: 'two-wheeler' as const,
     vehicleLabel: 'Motorbike',
@@ -117,7 +117,6 @@ export default function DriverRegisterScreen() {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('+233');
   const [momoNumber, setMomoNumber] = useState('+233');
-  const [momoNetwork, setMomoNetwork] = useState<'mtn-gh' | 'vodafone-gh' | 'tigo-gh'>('mtn-gh');
   const [vehicleMake, setVehicleMake] = useState('');
   const [vehicleModel, setVehicleModel] = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
@@ -224,33 +223,6 @@ export default function DriverRegisterScreen() {
       const user = firebaseAuthObj.currentUser;
       if (!user) throw new Error('Not authenticated');
 
-      // Helper to upload a file if it's a local URI
-      const uploadIfLocal = async (uri: string, path: string) => {
-        if (!uri || (!uri.startsWith('file://') && !uri.startsWith('content://'))) return uri;
-        try {
-          const response = await fetch(uri);
-          const blob = await response.blob();
-          return await firebaseStorage.uploadFile(blob, path);
-        } catch (e) {
-          console.error(`Failed to upload ${path}:`, e);
-          return uri;
-        }
-      };
-
-      const [
-        ghanaFrontUrl, ghanaBackUrl, licenseFrontUrl, licenseBackUrl,
-        selfieUrl, vehicleUrl, insuranceUrl, roadworthyUrl
-      ] = await Promise.all([
-        uploadIfLocal(ghanaCardFront, `drivers/${user.uid}/ghana_card_front.jpg`),
-        uploadIfLocal(ghanaCardBack, `drivers/${user.uid}/ghana_card_back.jpg`),
-        uploadIfLocal(licenseFront, `drivers/${user.uid}/license_front.jpg`),
-        uploadIfLocal(licenseBack, `drivers/${user.uid}/license_back.jpg`),
-        uploadIfLocal(driverPhoto, `drivers/${user.uid}/profile_photo.jpg`),
-        uploadIfLocal(vehiclePhoto, `drivers/${user.uid}/vehicle_photo.jpg`),
-        uploadIfLocal(insurancePhoto, `drivers/${user.uid}/insurance.jpg`),
-        uploadIfLocal(roadworthyPhoto, `drivers/${user.uid}/roadworthy.jpg`),
-      ]);
-
       const defaultCats = serviceType === 'okada' ? ['okada'] : serviceType === 'delivery' ? ['express_delivery'] : ['standard'];
       const rideCategories = selectedCategories.length > 0 ? selectedCategories : defaultCats;
 
@@ -260,7 +232,6 @@ export default function DriverRegisterScreen() {
         phone,
         email: email || user.email || '',
         momo_number: momoNumber,
-        momo_network: momoNetwork,
         vehicle_make: vehicleMake,
         vehicle_model: vehicleModel,
         license_plate: vehiclePlate,
@@ -269,14 +240,14 @@ export default function DriverRegisterScreen() {
         city,
         service_type: serviceType,
         ride_categories: rideCategories,
-        ghana_card_front_url: ghanaFrontUrl,
-        ghana_card_back_url: ghanaBackUrl,
-        drivers_license_front_url: licenseFrontUrl,
-        drivers_license_back_url: licenseBackUrl,
-        profile_photo_url: selfieUrl,
-        vehicle_registration_url: vehicleUrl,
-        insurance_url: insuranceUrl,
-        roadworthy_url: roadworthyUrl,
+        ghana_card_front_url: ghanaCardFront,
+        ghana_card_back_url: ghanaCardBack,
+        drivers_license_front_url: licenseFront,
+        drivers_license_back_url: licenseBack,
+        profile_photo_url: driverPhoto,
+        vehicle_registration_url: vehiclePhoto,
+        insurance_url: insurancePhoto,
+        roadworthy_url: roadworthyPhoto,
         approval_status: 'pending',
         is_online: false,
         total_earnings: 0,
@@ -372,11 +343,10 @@ export default function DriverRegisterScreen() {
             const { sendEmailVerification: sendVerif } = await import('firebase/auth');
             await sendVerif(user);
           }
-          Alert.alert('Sent!', 'Verification email resent.');
-        } catch (e: any) {
-          Alert.alert('Error', e.message);
-        }
+          Alert.alert('Sent!', 'Verification email resent. Check your inbox.');
+        } catch { Alert.alert('Error', 'Could not resend email.'); }
       }}>
+        <MaterialIcons name="refresh" size={18} color={TEXT} />
         <Text style={styles.outlineBtnText}>Resend Email</Text>
       </TouchableOpacity>
     </View>
@@ -384,93 +354,96 @@ export default function DriverRegisterScreen() {
 
   const renderStep3 = () => (
     <ScrollView contentContainerStyle={styles.stepContent} keyboardShouldPersistTaps="handled">
-      <Text style={styles.stepTitle}>Driver Details</Text>
-      <Text style={styles.stepSubtitle}>Tell us more about yourself and your vehicle</Text>
+      <Text style={styles.stepTitle}>Personal Details</Text>
+      <Text style={styles.stepSubtitle}>Tell us about yourself</Text>
+
+      <Text style={styles.label}>Full Name</Text>
+      <View style={styles.inputWrap}>
+        <MaterialIcons name="person" size={18} color={MUTED} style={styles.inputIcon} />
+        <TextInput style={styles.input} value={fullName} onChangeText={setFullName} placeholder="e.g. Kwame Mensah" placeholderTextColor={MUTED} autoCapitalize="words" />
+      </View>
 
       <Text style={styles.label}>Phone Number</Text>
       <View style={styles.inputWrap}>
         <MaterialIcons name="phone" size={18} color={MUTED} style={styles.inputIcon} />
-        <TextInput style={styles.input} placeholder="+233 24 000 0000" placeholderTextColor={MUTED} value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+        <TextInput style={styles.input} value={phone} onChangeText={setPhone} placeholder="+233XXXXXXXXX" placeholderTextColor={MUTED} keyboardType="phone-pad" />
       </View>
 
-      <Text style={styles.label}>City of Operation</Text>
+      <Text style={styles.label}>City</Text>
       <View style={styles.inputWrap}>
         <MaterialIcons name="location-city" size={18} color={MUTED} style={styles.inputIcon} />
-        <TextInput style={styles.input} placeholder="e.g. Accra" placeholderTextColor={MUTED} value={city} onChangeText={setCity} />
+        <TextInput style={styles.input} value={city} onChangeText={setCity} placeholder="e.g. Accra" placeholderTextColor={MUTED} autoCapitalize="words" />
       </View>
 
-      <Text style={styles.label}>MoMo Number (for daily commission)</Text>
+      <Text style={styles.label}>MoMo Number (for earnings)</Text>
       <View style={styles.inputWrap}>
         <MaterialIcons name="account-balance-wallet" size={18} color={MUTED} style={styles.inputIcon} />
-        <TextInput style={styles.input} placeholder="+233 24 000 0000" placeholderTextColor={MUTED} value={momoNumber} onChangeText={setMomoNumber} keyboardType="phone-pad" />
+        <TextInput style={styles.input} value={momoNumber} onChangeText={setMomoNumber} placeholder="+233XXXXXXXXX" placeholderTextColor={MUTED} keyboardType="phone-pad" />
       </View>
 
-      <Text style={styles.label}>MoMo Network</Text>
-      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
-        {[
-          { id: 'mtn-gh' as const, label: 'MTN', color: '#FFCC00' },
-          { id: 'vodafone-gh' as const, label: 'Vodafone', color: '#E60000' },
-          { id: 'tigo-gh' as const, label: 'AirtelTigo', color: '#F77F00' },
-        ].map((net) => (
-          <TouchableOpacity
-            key={net.id}
-            style={[
-              { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, alignItems: 'center',
-                borderColor: momoNetwork === net.id ? net.color : BORDER,
-                backgroundColor: momoNetwork === net.id ? net.color + '20' : '#1A1A1A' },
-            ]}
-            onPress={() => setMomoNetwork(net.id)}
-          >
-            <Text style={{ color: momoNetwork === net.id ? net.color : MUTED, fontWeight: '700', fontSize: 13 }}>
-              {net.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Text style={styles.label}>Service Type</Text>
-      {SERVICE_TYPES.map((type) => (
+      <Text style={[styles.sectionTitle]}>Select Service Type</Text>
+      {SERVICE_TYPES.map((svc) => (
         <TouchableOpacity
-          key={type.id}
-          style={[styles.serviceCard, serviceType === type.id && { borderColor: GOLD, backgroundColor: GOLD + '10' }]}
-          onPress={() => { setServiceType(type.id); setSelectedCategories([]); }}
+          key={svc.id}
+          style={[styles.serviceCard, serviceType === svc.id && { borderColor: GOLD, backgroundColor: GOLD + '15' }]}
+          onPress={() => setServiceType(svc.id)}
         >
-          <View style={[styles.serviceIconBox, serviceType === type.id && { backgroundColor: GOLD + '20' }]}>
-            <MaterialIcons name={type.icon} size={24} color={serviceType === type.id ? GOLD : MUTED} />
+          <View style={[styles.serviceIconBox, serviceType === svc.id && { backgroundColor: GOLD + '30' }]}>
+            <MaterialIcons name={svc.icon} size={26} color={serviceType === svc.id ? GOLD : MUTED} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.serviceLabel}>{type.label}</Text>
-            <Text style={styles.serviceDesc}>{type.description}</Text>
+            <Text style={[styles.serviceLabel, serviceType === svc.id && { color: GOLD }]}>{svc.label}</Text>
+            <Text style={styles.serviceDesc}>{svc.description}</Text>
           </View>
-          {serviceType === type.id && <MaterialIcons name="check-circle" size={20} color={GOLD} />}
+          {serviceType === svc.id && <MaterialIcons name="check-circle" size={22} color={GOLD} />}
         </TouchableOpacity>
       ))}
 
-      {serviceType === 'car' && (
+      {availableCategories.length > 0 && (
         <>
-          <Text style={styles.label}>Ride Categories (Select up to 2)</Text>
-          <View style={styles.tierGrid}>
-            {availableCategories.map((cat) => (
+          <Text style={styles.sectionTitle}>Ride Categories</Text>
+          <Text style={{ color: MUTED, fontSize: 12, marginBottom: 10, marginTop: -6 }}>
+            {selectedCategories.includes('kantanka')
+              ? 'Kantanka unlocks all categories'
+              : serviceType === 'okada' || serviceType === 'delivery'
+              ? 'Your service type has one fixed category'
+              : `Select up to 2 categories (${selectedCategories.length}/2 selected)`}
+          </Text>
+          {availableCategories.map((cat) => {
+            const selected = selectedCategories.includes(cat.id);
+            return (
               <TouchableOpacity
                 key={cat.id}
-                style={[styles.tierCard, selectedCategories.includes(cat.id) && { borderColor: GOLD, backgroundColor: GOLD + '10' }]}
+                style={[styles.serviceCard, selected && { borderColor: GOLD, backgroundColor: GOLD + '15' }]}
                 onPress={() => toggleCategory(cat.id)}
               >
-                <Text style={styles.tierLabel}>{cat.label}</Text>
-                <Text style={styles.tierDesc}>{cat.description}</Text>
+                <View style={[styles.serviceIconBox, selected && { backgroundColor: GOLD + '30' }]}>
+                  <MaterialIcons name={cat.icon} size={22} color={selected ? GOLD : MUTED} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.serviceLabel, selected && { color: GOLD }]}>{cat.label}</Text>
+                  <Text style={styles.serviceDesc}>{cat.description}</Text>
+                </View>
+                <View style={[
+                  { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: selected ? GOLD : (!selected && selectedCategories.length >= maxCategories && cat.id !== 'kantanka') ? '#3A3A3A' : BORDER, alignItems: 'center', justifyContent: 'center', backgroundColor: selected ? GOLD : 'transparent' }
+                ]}>
+                  {selected && <MaterialIcons name="check" size={14} color="#000" />}
+                  {!selected && selectedCategories.length >= maxCategories && cat.id !== 'kantanka' && <MaterialIcons name="lock" size={12} color="#3A3A3A" />}
+                </View>
               </TouchableOpacity>
-            ))}
-          </View>
+            );
+          })}
         </>
       )}
 
       {!!error && <Text style={styles.errorText}>{error}</Text>}
 
       <TouchableOpacity
-        style={[styles.primaryBtn, { marginTop: 24 }]}
+        style={[styles.primaryBtn, { opacity: !serviceType ? 0.5 : 1 }]}
         onPress={() => {
-          if (!phone.trim() || !city.trim()) { setError('Please fill in all fields including city.'); return; }
-          if (serviceType === 'car' && selectedCategories.length === 0) { setError('Please select at least one ride category.'); return; }
+          if (!serviceType) { setError('Please select a service type.'); return; }
+          if (!fullName.trim() || !phone.trim() || !city.trim()) { setError('Please fill in all fields including city.'); return; }
+          if (selectedCategories.length === 0) { setError('Please select at least one ride category.'); return; }
           setError('');
           setStep(4);
         }}
