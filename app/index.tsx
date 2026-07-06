@@ -21,7 +21,7 @@ export default function DriverLandingScreen() {
   // If already authenticated, skip straight to the tabs
   useEffect(() => {
     if (!loading && user) {
-      router.replace('/driver/(tabs)' as any);
+      router.replace('/home');
     }
   }, [loading, user]);
 
@@ -81,7 +81,7 @@ export default function DriverLandingScreen() {
       <View style={styles.ctaSection}>
         <TouchableOpacity
           style={styles.signInBtn}
-          onPress={() => router.push('/driver/login' as any)}
+          onPress={() => router.push('/login' as any)}
           activeOpacity={0.85}
         >
           <MaterialIcons name="login" size={20} color="#000" />
@@ -90,7 +90,7 @@ export default function DriverLandingScreen() {
 
         <TouchableOpacity
           style={styles.becomeBtn}
-          onPress={() => router.push('/driver/register' as any)}
+          onPress={() => router.push('/register' as any)}
           activeOpacity={0.85}
         >
           <MaterialIcons name="directions-car" size={20} color={GOLD} />

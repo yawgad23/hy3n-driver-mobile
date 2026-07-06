@@ -42,7 +42,7 @@ export default function DriverLoginScreen() {
     setEmailLoading(true);
     try {
       await signIn(email.trim(), password);
-      router.replace('/driver/(tabs)' as any);
+      router.replace('/home');
     } catch (err: any) {
       const code = err?.code || '';
       if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
@@ -61,7 +61,7 @@ export default function DriverLoginScreen() {
     setGoogleLoading(true);
     try {
       await signInWithGoogle();
-      router.replace('/driver/(tabs)' as any);
+      router.replace('/home');
     } catch (err: any) {
       if (err?.code !== 'auth/popup-closed-by-user') {
         Alert.alert('Google Sign-In Failed', err.message || 'Could not sign in with Google. Please try again.');
@@ -138,7 +138,7 @@ export default function DriverLoginScreen() {
           {/* Password */}
           <View style={styles.passwordHeader}>
             <Text style={styles.label}>Password</Text>
-            <TouchableOpacity onPress={() => router.push('/driver/forgot-password' as any)}>
+            <TouchableOpacity onPress={() => router.push('/forgot-password' as any)}>
               <Text style={styles.forgotText}>Forgot password?</Text>
             </TouchableOpacity>
           </View>
@@ -176,7 +176,7 @@ export default function DriverLoginScreen() {
           {/* Back to landing */}
           <TouchableOpacity
             style={styles.registerRow}
-            onPress={() => router.replace('/driver' as any)}
+            onPress={() => router.replace('/' as any)}
             activeOpacity={0.7}
           >
             <MaterialIcons name="arrow-back" size={14} color={MUTED} />

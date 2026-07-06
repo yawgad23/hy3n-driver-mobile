@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Linking, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Linking, ActivityIndicator, Alert } from 'react-native';
 import { Tabs, useRouter } from 'expo-router';
 import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,6 +13,50 @@ const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
 const BORDER = '#2A2A2A';
 const MUTED = '#9CA3AF';
+
+export const unstable_settings = {
+  anchor: 'home',
+};
+
+// ─── Sign Out escape hatch — shared by every gate below ──────────────────────
+// None of the gates (NoProfile/Approval/Commission) render the real <Tabs>
+// navigator, so the Profile tab's sign-out button is unreachable from them.
+// Every gate needs its own way out, or a driver who hasn't paid/been approved
+// yet is stuck until they kill the app.
+function SignOutLink() {
+  const { signOut } = useDriverAuth();
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+
+  const handleSignOut = () => {
+    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out', style: 'destructive', onPress: async () => {
+          setLoading(true);
+          try {
+            await signOut();
+            router.replace('/');
+          } catch {
+            Alert.alert('Error', 'Failed to sign out. Please try again.');
+          } finally {
+            setLoading(false);
+          }
+        },
+      },
+    ]);
+  };
+
+  return (
+    <TouchableOpacity onPress={handleSignOut} disabled={loading} style={{ marginTop: 16, alignItems: 'center' }}>
+      {loading ? (
+        <ActivityIndicator size="small" color="#9CA3AF" />
+      ) : (
+        <Text style={{ color: '#9CA3AF', fontSize: 13, textDecorationLine: 'underline' }}>Sign Out</Text>
+      )}
+    </TouchableOpacity>
+  );
+}
 
 // ─── Commission Gate (Automatic Hubtel Charge) ───────────────────────────────
 type CommissionStatus = 'idle' | 'processing' | 'ussd_sent' | 'paid' | 'failed';
@@ -355,7 +399,7 @@ function ApprovalGate({ driver }: { driver: any }) {
         </TouchableOpacity>
         <TouchableOpacity
           style={{ marginTop: 6 }}
-          onPress={() => router.push('/driver/register' as any)}
+          onPress={() => router.push('/register' as any)}
         >
           <Text style={{ color: MUTED, fontSize: 12, textDecorationLine: 'underline', textAlign: 'center' }}>Or restart full application</Text>
         </TouchableOpacity>
@@ -365,6 +409,7 @@ function ApprovalGate({ driver }: { driver: any }) {
         >
           <Text style={{ color: colors.muted, fontSize: 13, textDecorationLine: 'underline', textAlign: 'center' }}>Contact Support via WhatsApp</Text>
         </TouchableOpacity>
+        <SignOutLink />
       </ScrollView>
     );
   }
@@ -424,6 +469,7 @@ function ApprovalGate({ driver }: { driver: any }) {
         <MaterialIcons name="support-agent" size={18} color={colors.foreground} style={{ marginRight: 6 }} />
         <Text style={[styles.submitBtnText, { color: colors.foreground }]}>Contact Support</Text>
       </TouchableOpacity>
+      <SignOutLink />
     </ScrollView>
   );
 }
@@ -443,10 +489,11 @@ function NoProfileGate() {
       </Text>
       <TouchableOpacity
         style={[styles.submitBtn, { backgroundColor: GOLD }]}
-        onPress={() => router.push('/driver/register' as any)}
+        onPress={() => router.push('/register' as any)}
       >
         <Text style={styles.submitBtnText}>Register as a Driver</Text>
       </TouchableOpacity>
+      <SignOutLink />
     </View>
   );
 }
@@ -511,7 +558,7 @@ export default function DriverTabLayout() {
     if (!driverProfile) return;
     const driverId = (driverProfile as any).user_id || driverProfile.id;
     const unsubscribe = firestoreDB.subscribe(
-      'RideReport',
+      COLLECTIONS.RIDE_REPORTS,
       { driver_id: driverId, report_type: 'lost_item' },
       (reports: any[]) => {
         const cutoff = Date.now() - 48 * 60 * 60 * 1000;
@@ -532,7 +579,7 @@ export default function DriverTabLayout() {
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!loading && !user) {
-      router.replace('/driver' as any);
+      router.replace('/' as any);
     }
   }, [loading, user]);
 
@@ -560,6 +607,7 @@ export default function DriverTabLayout() {
     return (
       <View style={{ flex: 1 }}>
         <CommissionGate driver={driverProfile} onConfirmed={() => setCommissionConfirmed(true)} />
+        <SignOutLink />
         {/* Tab bar still visible */}
         <View style={[styles.staticTabBar, {
           backgroundColor: BG,
@@ -640,7 +688,7 @@ export default function DriverTabLayout() {
         }}
       >
         <Tabs.Screen
-          name="index"
+          name="home"
           options={{
             title: 'Home',
             tabBarIcon: ({ color, size }) => <MaterialIcons name="home" size={size} color={color} />,

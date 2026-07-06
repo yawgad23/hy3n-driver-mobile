@@ -158,7 +158,7 @@ export default function ReuploadDocsScreen() {
       Alert.alert(
         'Resubmitted!',
         'Your updated documents have been submitted. The admin will review your application within 24–48 hours.',
-        [{ text: 'OK', onPress: () => router.replace('/driver/(tabs)' as any) }],
+        [{ text: 'OK', onPress: () => router.replace('/home') }],
       );
     } catch (err: any) {
       Alert.alert('Error', err?.message || 'Failed to submit. Please try again.');

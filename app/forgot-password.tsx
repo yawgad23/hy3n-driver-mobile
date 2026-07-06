@@ -43,7 +43,7 @@ export default function DriverForgotPasswordScreen() {
             <MaterialIcons name="check-circle" size={48} color="#22C55E" />
             <Text style={styles.successTitle}>Email Sent!</Text>
             <Text style={styles.successText}>Check your inbox for the password reset link.</Text>
-            <TouchableOpacity style={styles.backToLoginBtn} onPress={() => router.push('/driver/login' as any)}>
+            <TouchableOpacity style={styles.backToLoginBtn} onPress={() => router.push('/login' as any)}>
               <Text style={styles.backToLoginText}>Back to Login</Text>
             </TouchableOpacity>
           </View>

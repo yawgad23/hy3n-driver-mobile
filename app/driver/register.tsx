@@ -318,7 +318,7 @@ export default function DriverRegisterScreen() {
         {loading ? <ActivityIndicator color="#000" /> : <Text style={styles.primaryBtnText}>Create Account</Text>}
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => router.push('/driver/login' as any)} style={{ marginTop: 16, alignItems: 'center' }}>
+      <TouchableOpacity onPress={() => router.push('/login' as any)} style={{ marginTop: 16, alignItems: 'center' }}>
         <Text style={styles.linkText}>Already have an account? <Text style={{ color: GOLD }}>Sign In</Text></Text>
       </TouchableOpacity>
     </ScrollView>
@@ -564,7 +564,7 @@ export default function DriverRegisterScreen() {
         <Text style={[styles.primaryBtnText, { color: GOLD, marginLeft: 8 }]}>Contact Support</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.primaryBtn} onPress={() => router.replace('/driver/(tabs)' as any)} activeOpacity={0.85}>
+      <TouchableOpacity style={styles.primaryBtn} onPress={() => router.replace('/home')} activeOpacity={0.85}>
         <Text style={styles.primaryBtnText}>Go to Driver App</Text>
       </TouchableOpacity>
     </ScrollView>

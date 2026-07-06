@@ -108,7 +108,7 @@ function FileUploadField({ label, uri, onPick }: { label: string; uri: string; o
 export default function DriverRegisterScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { signUp, signInWithGoogle } = useDriverAuth();
+  const { signUp, signIn, signInWithGoogle } = useDriverAuth();
 
   const [step, setStep] = useState(1);
   const [email, setEmail] = useState('');
@@ -172,6 +172,55 @@ export default function DriverRegisterScreen() {
     }, 3000);
   };
 
+  // Email is already registered — likely a previous attempt crashed before the
+  // driver profile was written to Firestore. Sign in and resume instead of
+  // forcing the user to restart the whole application.
+  const resumeExistingRegistration = async () => {
+    try {
+      await signIn(email.trim(), password);
+    } catch {
+      setError('An account with this email already exists, but that password is incorrect. Sign in instead, or use "Forgot Password" to reset it.');
+      return;
+    }
+
+    const user = firebaseAuthObj.currentUser;
+    if (!user) {
+      setError('An account with this email already exists. Please sign in instead.');
+      return;
+    }
+
+    try {
+      let existing = await firestoreDB.list(COLLECTIONS.DRIVER_PROFILES, { user_id: user.uid });
+      if (existing.length === 0) {
+        existing = await firestoreDB.list(COLLECTIONS.DRIVER_PROFILES, { email: user.email });
+      }
+      if (existing.length > 0) {
+        Alert.alert(
+          'Application already submitted',
+          'You already have a driver application on file for this email.',
+          [{ text: 'Continue', onPress: () => router.replace('/home') }],
+        );
+        return;
+      }
+    } catch {
+      // If we can't confirm either way, fall through and let the user continue —
+      // the final submit step upserts by user_id, so it's safe to redo.
+    }
+
+    // Account exists but no profile yet — resume right where the previous attempt stopped.
+    if (user.displayName) setFullName(user.displayName);
+    if (user.emailVerified) {
+      setStep(3);
+    } else {
+      try {
+        const { sendEmailVerification: sendVerif } = await import('firebase/auth');
+        await sendVerif(user);
+      } catch {}
+      setStep(2);
+      startVerificationPolling();
+    }
+  };
+
   const handleCreateAccount = async () => {
     setError('');
     if (!fullName.trim()) { setError('Please enter your full name.'); return; }
@@ -189,7 +238,11 @@ export default function DriverRegisterScreen() {
       setStep(2);
       startVerificationPolling();
     } catch (err: any) {
-      setError(err.message || 'Failed to create account.');
+      if (err?.code === 'auth/email-already-in-use') {
+        await resumeExistingRegistration();
+      } else {
+        setError(err.message || 'Failed to create account.');
+      }
     } finally {
       setLoading(false);
     }
@@ -347,7 +400,7 @@ export default function DriverRegisterScreen() {
         {loading ? <ActivityIndicator color="#000" /> : <Text style={styles.primaryBtnText}>Create Account</Text>}
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => router.push('/driver/login' as any)} style={{ marginTop: 16, alignItems: 'center' }}>
+      <TouchableOpacity onPress={() => router.push('/login' as any)} style={{ marginTop: 16, alignItems: 'center' }}>
         <Text style={styles.linkText}>Already have an account? <Text style={{ color: GOLD }}>Sign In</Text></Text>
       </TouchableOpacity>
     </ScrollView>
@@ -591,7 +644,7 @@ export default function DriverRegisterScreen() {
         <Text style={[styles.primaryBtnText, { color: GOLD, marginLeft: 8 }]}>Contact Support</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.primaryBtn} onPress={() => router.replace('/driver/(tabs)' as any)} activeOpacity={0.85}>
+      <TouchableOpacity style={styles.primaryBtn} onPress={() => router.replace('/home')} activeOpacity={0.85}>
         <Text style={styles.primaryBtnText}>Go to Driver App</Text>
       </TouchableOpacity>
     </ScrollView>

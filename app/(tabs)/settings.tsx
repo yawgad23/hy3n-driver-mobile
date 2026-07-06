@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Switch, TouchableOpacity,
-  Alert, ActivityIndicator,
+  Alert, ActivityIndicator, Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -41,7 +41,7 @@ export default function DriverSettingsScreen() {
                 await firestoreDB.delete(COLLECTIONS.DRIVER_PROFILES, driverProfile.id);
               }
               await signOut();
-              router.replace('/driver' as any);
+              router.replace('/' as any);
             } catch {
               Alert.alert('Error', 'Failed to delete account. Please try again or contact hello@ridehy3n.com');
             } finally {
@@ -179,7 +179,7 @@ export default function DriverSettingsScreen() {
           <Text style={styles.sectionTitle}>Support</Text>
           <TouchableOpacity
             style={styles.supportRow}
-            onPress={() => router.push('/support' as any)}
+            onPress={() => Linking.openURL('https://wa.me/233546728330?text=I%20need%20help%20with%20my%20driver%20account')}
             activeOpacity={0.75}
           >
             <MaterialIcons name="help-outline" size={20} color={GOLD} />

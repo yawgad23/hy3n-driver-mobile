@@ -820,7 +820,7 @@ export default function DriverHomeScreen() {
       found_item_description: data.itemDescription || null,
     });
     if (data.foundItem && data.itemDescription) {
-      await firestoreDB.create('RideReport', {
+      await firestoreDB.create(COLLECTIONS.RIDE_REPORTS, {
         ride_id: completedTrip.id,
         driver_id: user?.uid,
         report_type: 'found_item',
@@ -1312,7 +1312,7 @@ export default function DriverHomeScreen() {
                   : 'Vehicle not set up'}
               </Text>
             </View>
-            <TouchableOpacity onPress={() => router.push('/driver/(tabs)/profile' as any)}>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/profile' as any)}>
               <MaterialIcons name="chevron-right" size={22} color={MUTED} />
             </TouchableOpacity>
           </View>

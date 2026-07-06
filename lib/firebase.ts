@@ -231,6 +231,9 @@ export const firestoreDB = {
     const q = query(colRef, ...constraints);
     return onSnapshot(q, (snap) => {
       callback(snapshotToArray(snap));
+    }, (err) => {
+      // Without this handler, Firestore logs an uncaught error and silently kills the listener.
+      console.warn(`[firestoreDB.subscribe] ${collectionName}:`, err.message);
     });
   },
 
@@ -239,6 +242,8 @@ export const firestoreDB = {
     const docRef = doc(db, collectionName, id);
     return onSnapshot(docRef, (snap) => {
       callback(snap.exists() ? { id: snap.id, ...snap.data() } : null);
+    }, (err) => {
+      console.warn(`[firestoreDB.subscribeDoc] ${collectionName}/${id}:`, err.message);
     });
   },
 
