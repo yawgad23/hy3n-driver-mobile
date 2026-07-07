@@ -111,7 +111,14 @@ const config: ExpoConfig = {
           buildArchs: ["armeabi-v7a", "arm64-v8a"],
           minSdkVersion: 24,
         },
+        ios: {
+          useModularHeaders: true,
+        },
       },
+    ],
+    [
+      "./plugins/withPodfileModularHeaders",
+      {},
     ],
   ],
   experiments: {
