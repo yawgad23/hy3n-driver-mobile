@@ -332,14 +332,9 @@ export default function DriverRegisterScreen() {
       setStep(3);
     } else {
       try {
-        await sendVerification.mutateAsync({ email: email.trim() || user.email || '' });
-      } catch (e) {
-        console.warn("Backend verification email failed, trying client fallback", e);
-        try {
-          const { sendEmailVerification: sendVerif } = await import('firebase/auth');
-          await sendVerif(user);
-        } catch {}
-      }
+        const { sendEmailVerification: sendVerif } = await import('firebase/auth');
+        await sendVerif(user);
+      } catch {}
       setStep(2);
       startVerificationPolling();
     }
@@ -356,13 +351,8 @@ export default function DriverRegisterScreen() {
       await signUp(email.trim(), password);
       const user = firebaseAuthObj.currentUser;
       if (user) {
-        try {
-          await sendVerification.mutateAsync({ email: email.trim() });
-        } catch (e) {
-          console.warn("Backend verification email failed, trying client fallback", e);
-          const { sendEmailVerification: sendVerif } = await import('firebase/auth');
-          await sendVerif(user);
-        }
+        const { sendEmailVerification: sendVerif } = await import('firebase/auth');
+        await sendVerif(user);
       }
       setStep(2);
       startVerificationPolling();
@@ -551,13 +541,8 @@ export default function DriverRegisterScreen() {
         try {
           const user = firebaseAuthObj.currentUser;
           if (user) {
-            try {
-              await sendVerification.mutateAsync({ email: email.trim() || user.email || '' });
-            } catch (e) {
-              console.warn("Backend resend failed, trying client fallback", e);
-              const { sendEmailVerification: sendVerif } = await import('firebase/auth');
-              await sendVerif(user);
-            }
+            const { sendEmailVerification: sendVerif } = await import('firebase/auth');
+            await sendVerif(user);
           }
           Alert.alert('Sent!', 'Verification email resent.');
         } catch (e: any) {
