@@ -10,6 +10,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS, auth as firebaseAuthObj, firebaseAuth } from '@/lib/firebase';
 import { Linking } from 'react-native';
+import { trpc } from '@/lib/trpc';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -108,7 +110,8 @@ function FileUploadField({ label, uri, onPick }: { label: string; uri: string; o
 export default function DriverRegisterScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { signUp, signInWithGoogle } = useDriverAuth();
+  const { signUp, signInWithGoogle, user, driverProfile } = useDriverAuth();
+  const sendVerification = trpc.auth.sendVerification.useMutation();
 
   const [step, setStep] = useState(1);
   const [email, setEmail] = useState('');
@@ -125,6 +128,120 @@ export default function DriverRegisterScreen() {
   const [city, setCity] = useState('');
   const [serviceType, setServiceType] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+
+  // Load draft from AsyncStorage on mount
+  useEffect(() => {
+    AsyncStorage.getItem('hy3n_driver_register_draft').then(val => {
+      if (val) {
+        try {
+          const draft = JSON.parse(val);
+          if (draft.step) setStep(draft.step);
+          if (draft.fullName) setFullName(draft.fullName);
+          if (draft.email) setEmail(draft.email);
+          if (draft.phone) setPhone(draft.phone);
+          if (draft.momoNumber) setMomoNumber(draft.momoNumber);
+          if (draft.vehicleMake) setVehicleMake(draft.vehicleMake);
+          if (draft.vehicleModel) setVehicleModel(draft.vehicleModel);
+          if (draft.vehiclePlate) setVehiclePlate(draft.vehiclePlate);
+          if (draft.vehicleColor) setVehicleColor(draft.vehicleColor);
+          if (draft.vehicleFullModel) setVehicleFullModel(draft.vehicleFullModel);
+          if (draft.city) setCity(draft.city);
+          if (draft.serviceType) setServiceType(draft.serviceType);
+          if (draft.selectedCategories) setSelectedCategories(draft.selectedCategories);
+          
+          if (draft.ghanaCardFront) setGhanaCardFront(draft.ghanaCardFront);
+          if (draft.ghanaCardBack) setGhanaCardBack(draft.ghanaCardBack);
+          if (draft.licenseFront) setLicenseFront(draft.licenseFront);
+          if (draft.licenseBack) setLicenseBack(draft.licenseBack);
+          if (draft.driverPhoto) setDriverPhoto(draft.driverPhoto);
+          if (draft.vehiclePhoto) setVehiclePhoto(draft.vehiclePhoto);
+          if (draft.insurancePhoto) setInsurancePhoto(draft.insurancePhoto);
+          if (draft.roadworthyPhoto) setRoadworthyPhoto(draft.roadworthyPhoto);
+        } catch (e) {
+          console.warn("Failed to parse draft", e);
+        }
+      }
+    });
+  }, []);
+
+  // Save draft on state changes
+  useEffect(() => {
+    const draft = {
+      step, fullName, email, phone, momoNumber,
+      vehicleMake, vehicleModel, vehiclePlate, vehicleColor, vehicleFullModel,
+      city, serviceType, selectedCategories,
+      ghanaCardFront, ghanaCardBack, licenseFront, licenseBack,
+      driverPhoto, vehiclePhoto, insurancePhoto, roadworthyPhoto
+    };
+    AsyncStorage.setItem('hy3n_driver_register_draft', JSON.stringify(draft)).catch(() => {});
+  }, [
+    step, fullName, email, phone, momoNumber,
+    vehicleMake, vehicleModel, vehiclePlate, vehicleColor, vehicleFullModel,
+    city, serviceType, selectedCategories,
+    ghanaCardFront, ghanaCardBack, licenseFront, licenseBack,
+    driverPhoto, vehiclePhoto, insurancePhoto, roadworthyPhoto
+  ]);
+
+  // Clear draft when finished
+  useEffect(() => {
+    if (step === 5) {
+      AsyncStorage.removeItem('hy3n_driver_register_draft').catch(() => {});
+    }
+  }, [step]);
+
+  // Auth-based progress recovery & details restoration
+  useEffect(() => {
+    let active = true;
+    const recoverState = async () => {
+      if (!user) return;
+      try {
+        await user.reload();
+      } catch (err) {
+        console.error("Error reloading user:", err);
+      }
+      if (!active) return;
+
+      if (!user.emailVerified) {
+        setStep(2);
+        if (!email) setEmail(user.email || '');
+        if (!fullName && user.displayName) setFullName(user.displayName);
+        startVerificationPolling();
+      } else {
+        if (driverProfile) {
+          if (driverProfile.approval_status === 'pending') {
+            setStep(5);
+          } else {
+            if (!fullName && driverProfile.full_name) setFullName(driverProfile.full_name);
+            if (!email && driverProfile.email) setEmail(driverProfile.email);
+            if (phone === '+233' && driverProfile.phone) setPhone(driverProfile.phone);
+            if (momoNumber === '+233' && driverProfile.momo_number) setMomoNumber(driverProfile.momo_number);
+            if (!city && driverProfile.city) setCity(driverProfile.city);
+            if (!serviceType && driverProfile.service_type) setServiceType(driverProfile.service_type);
+            if (selectedCategories.length === 0 && driverProfile.accepted_categories) {
+              setSelectedCategories(driverProfile.accepted_categories);
+            }
+
+            if (!vehicleMake && driverProfile.vehicle_make) setVehicleMake(driverProfile.vehicle_make);
+            if (!vehicleModel && driverProfile.vehicle_model) setVehicleModel(driverProfile.vehicle_model);
+            if (!vehiclePlate && driverProfile.vehicle_plate) setVehiclePlate(driverProfile.vehicle_plate);
+            if (!vehicleColor && driverProfile.vehicle_color) setVehicleColor(driverProfile.vehicle_color);
+
+            if (driverProfile.phone && driverProfile.city && driverProfile.service_type) {
+              setStep(4);
+            } else {
+              setStep(3);
+            }
+          }
+        } else {
+          setStep(3);
+          if (!fullName && user.displayName) setFullName(user.displayName);
+          if (!email) setEmail(user.email || '');
+        }
+      }
+    };
+    recoverState();
+    return () => { active = false; };
+  }, [user, driverProfile]);
 
   const isKantanka = selectedCategories.includes('kantanka') || serviceType === 'okada' || serviceType === 'delivery';
   const maxCategories = isKantanka ? 99 : 2;
@@ -182,8 +299,13 @@ export default function DriverRegisterScreen() {
       await signUp(email.trim(), password);
       const user = firebaseAuthObj.currentUser;
       if (user) {
-        const { sendEmailVerification: sendVerif } = await import('firebase/auth');
-        await sendVerif(user);
+        try {
+          await sendVerification.mutateAsync({ email: email.trim() });
+        } catch (e) {
+          console.warn("Backend verification email failed, trying client fallback", e);
+          const { sendEmailVerification: sendVerif } = await import('firebase/auth');
+          await sendVerif(user);
+        }
       }
       setStep(2);
       startVerificationPolling();
@@ -340,8 +462,13 @@ export default function DriverRegisterScreen() {
         try {
           const user = firebaseAuthObj.currentUser;
           if (user) {
-            const { sendEmailVerification: sendVerif } = await import('firebase/auth');
-            await sendVerif(user);
+            try {
+              await sendVerification.mutateAsync({ email: email.trim() || user.email || '' });
+            } catch (e) {
+              console.warn("Backend resend failed, trying client fallback", e);
+              const { sendEmailVerification: sendVerif } = await import('firebase/auth');
+              await sendVerif(user);
+            }
           }
           Alert.alert('Sent!', 'Verification email resent. Check your inbox.');
         } catch { Alert.alert('Error', 'Could not resend email.'); }
