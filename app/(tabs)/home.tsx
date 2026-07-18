@@ -6,7 +6,7 @@ import { trpc } from '@/lib/trpc';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   Dimensions, Alert, ActivityIndicator, Animated, Image, Platform,
-  Modal, TextInput,
+  Modal, TextInput, KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -307,108 +307,113 @@ function TripSummaryModal({
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={summaryStyles.container}>
-        <View style={summaryStyles.header}>
-          <MaterialIcons name="check-circle" size={24} color={GREEN} />
-          <Text style={summaryStyles.title}>Trip Summary & Feedback</Text>
-        </View>
-        <ScrollView contentContainerStyle={{ padding: 20, gap: 20, paddingBottom: 40 }}>
-          {/* Trip details */}
-          <View style={summaryStyles.tripCard}>
-            <Text style={summaryStyles.sectionLabel}>Trip Completed</Text>
-            <Text style={summaryStyles.fareText}>GH₵{trip?.fare?.toFixed(2) || '0.00'}</Text>
-            <Text style={summaryStyles.riderText}>{passengerName}</Text>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={summaryStyles.container}>
+          <View style={summaryStyles.header}>
+            <MaterialIcons name="check-circle" size={24} color={GREEN} />
+            <Text style={summaryStyles.title}>Trip Summary & Feedback</Text>
           </View>
-
-          {/* Rate Passenger */}
-          <View style={summaryStyles.section}>
-            <Text style={summaryStyles.sectionLabel}>Rate Passenger</Text>
-            <Text style={summaryStyles.sectionDesc}>How was {passengerName}?</Text>
-            <View style={summaryStyles.starsRow}>
-              {[1, 2, 3, 4, 5].map(star => (
-                <TouchableOpacity key={star} onPress={() => setRating(star)} activeOpacity={0.7}>
-                  <MaterialIcons
-                    name={star <= rating ? 'star' : 'star-border'}
-                    size={40}
-                    color={star <= rating ? GOLD : MUTED}
-                  />
-                </TouchableOpacity>
-              ))}
+          <ScrollView contentContainerStyle={{ padding: 20, gap: 20, paddingBottom: 40 }}>
+            {/* Trip details */}
+            <View style={summaryStyles.tripCard}>
+              <Text style={summaryStyles.sectionLabel}>Trip Completed</Text>
+              <Text style={summaryStyles.fareText}>GH₵{trip?.fare?.toFixed(2) || '0.00'}</Text>
+              <Text style={summaryStyles.riderText}>{passengerName}</Text>
             </View>
-            {/* Quick tags */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12, marginBottom: 4 }}>
-              <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 2 }}>
-                {RIDER_TAGS.map((tag) => {
-                  const active = selectedTags.includes(tag);
-                  return (
-                    <TouchableOpacity
-                      key={tag}
-                      onPress={() => setSelectedTags(prev => active ? prev.filter(t => t !== tag) : [...prev, tag])}
-                      style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: active ? `${GOLD}22` : '#1A1A1A', borderWidth: 1, borderColor: active ? GOLD : BORDER }}
-                    >
-                      <Text style={{ color: active ? GOLD : TEXT, fontSize: 13, fontWeight: active ? '600' : '400' }}>{tag}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </ScrollView>
-            <TextInput
-              style={[summaryStyles.remarksInput, { marginTop: 12 }]}
-              placeholder="Optional remarks about the passenger..."
-              placeholderTextColor={MUTED}
-              value={remarks}
-              onChangeText={setRemarks}
-              multiline
-              numberOfLines={3}
-              maxLength={200}
-            />
-          </View>
 
-          {/* Found Item */}
-          <View style={summaryStyles.section}>
-            <View style={summaryStyles.foundItemRow}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <MaterialIcons name="inventory-2" size={20} color={MUTED} />
-                <Text style={summaryStyles.foundItemLabel}>Found an item in your vehicle?</Text>
+            {/* Rate Passenger */}
+            <View style={summaryStyles.section}>
+              <Text style={summaryStyles.sectionLabel}>Rate Passenger</Text>
+              <Text style={summaryStyles.sectionDesc}>How was {passengerName}?</Text>
+              <View style={summaryStyles.starsRow}>
+                {[1, 2, 3, 4, 5].map(star => (
+                  <TouchableOpacity key={star} onPress={() => setRating(star)} activeOpacity={0.7}>
+                    <MaterialIcons
+                      name={star <= rating ? 'star' : 'star-border'}
+                      size={40}
+                      color={star <= rating ? GOLD : MUTED}
+                    />
+                  </TouchableOpacity>
+                ))}
               </View>
-              <TouchableOpacity
-                style={[summaryStyles.foundItemBtn, foundItem && { backgroundColor: GOLD }]}
-                onPress={() => setFoundItem(p => !p)}
-              >
-                <Text style={[summaryStyles.foundItemBtnText, foundItem && { color: '#000' }]}>
-                  {foundItem ? 'Yes' : 'No'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-            {foundItem && (
+              {/* Quick tags */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12, marginBottom: 4 }}>
+                <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 2 }}>
+                  {RIDER_TAGS.map((tag) => {
+                    const active = selectedTags.includes(tag);
+                    return (
+                      <TouchableOpacity
+                        key={tag}
+                        onPress={() => setSelectedTags(prev => active ? prev.filter(t => t !== tag) : [...prev, tag])}
+                        style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: active ? `${GOLD}22` : '#1A1A1A', borderWidth: 1, borderColor: active ? GOLD : BORDER }}
+                      >
+                        <Text style={{ color: active ? GOLD : TEXT, fontSize: 13, fontWeight: active ? '600' : '400' }}>{tag}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </ScrollView>
               <TextInput
-                style={[summaryStyles.remarksInput, { marginTop: 10 }]}
-                placeholder="Describe the item (e.g. Black wallet, phone charger)..."
+                style={[summaryStyles.remarksInput, { marginTop: 12 }]}
+                placeholder="Optional remarks about the passenger..."
                 placeholderTextColor={MUTED}
-                value={itemDescription}
-                onChangeText={setItemDescription}
+                value={remarks}
+                onChangeText={setRemarks}
                 multiline
-                numberOfLines={2}
-                maxLength={300}
+                numberOfLines={3}
+                maxLength={200}
               />
-            )}
-          </View>
-        </ScrollView>
+            </View>
 
-        <View style={summaryStyles.footer}>
-          <TouchableOpacity
-            style={[summaryStyles.submitBtn, (rating === 0 || submitting) && { opacity: 0.5 }]}
-            onPress={handleSubmit}
-            disabled={rating === 0 || submitting}
-            activeOpacity={0.85}
-          >
-            {submitting ? <ActivityIndicator size="small" color="#000" /> : null}
-            <Text style={summaryStyles.submitBtnText}>
-              {submitting ? 'Submitting...' : 'Submit & Finish Trip'}
-            </Text>
-          </TouchableOpacity>
+            {/* Found Item */}
+            <View style={summaryStyles.section}>
+              <View style={summaryStyles.foundItemRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <MaterialIcons name="inventory-2" size={20} color={MUTED} />
+                  <Text style={summaryStyles.foundItemLabel}>Found an item in your vehicle?</Text>
+                </View>
+                <TouchableOpacity
+                  style={[summaryStyles.foundItemBtn, foundItem && { backgroundColor: GOLD }]}
+                  onPress={() => setFoundItem(p => !p)}
+                >
+                  <Text style={[summaryStyles.foundItemBtnText, foundItem && { color: '#000' }]}>
+                    {foundItem ? 'Yes' : 'No'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {foundItem && (
+                <TextInput
+                  style={[summaryStyles.remarksInput, { marginTop: 10 }]}
+                  placeholder="Describe the item (e.g. Black wallet, phone charger)..."
+                  placeholderTextColor={MUTED}
+                  value={itemDescription}
+                  onChangeText={setItemDescription}
+                  multiline
+                  numberOfLines={2}
+                  maxLength={300}
+                />
+              )}
+            </View>
+          </ScrollView>
+
+          <View style={summaryStyles.footer}>
+            <TouchableOpacity
+              style={[summaryStyles.submitBtn, (rating === 0 || submitting) && { opacity: 0.5 }]}
+              onPress={handleSubmit}
+              disabled={rating === 0 || submitting}
+              activeOpacity={0.85}
+            >
+              {submitting ? <ActivityIndicator size="small" color="#000" /> : null}
+              <Text style={summaryStyles.submitBtnText}>
+                {submitting ? 'Submitting...' : 'Submit & Finish Trip'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -1029,44 +1034,49 @@ export default function DriverHomeScreen() {
         </Modal>
         {/* Set Destination Modal */}
         <Modal visible={destModalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setDestModalVisible(false)}>
-          <View style={styles.destModal}>
-            <View style={styles.destModalHeader}>
-              <MaterialIcons name="flag" size={22} color={GOLD} />
-              <Text style={styles.destModalTitle}>Set Destination</Text>
-              <TouchableOpacity onPress={() => setDestModalVisible(false)}>
-                <MaterialIcons name="close" size={22} color={MUTED} />
-              </TouchableOpacity>
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <View style={styles.destModal}>
+              <View style={styles.destModalHeader}>
+                <MaterialIcons name="flag" size={22} color={GOLD} />
+                <Text style={styles.destModalTitle}>Set Destination</Text>
+                <TouchableOpacity onPress={() => setDestModalVisible(false)}>
+                  <MaterialIcons name="close" size={22} color={MUTED} />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.destModalDesc}>
+                Only ride requests heading toward this area will be shown to you. Leave blank to see all requests.
+              </Text>
+              <TextInput
+                style={styles.destModalInput}
+                placeholder="e.g. Airport, East Legon, Tema"
+                placeholderTextColor={MUTED}
+                value={destInput}
+                onChangeText={setDestInput}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={() => { saveDestination(destInput); setDestModalVisible(false); }}
+              />
+              <View style={styles.destModalActions}>
+                <TouchableOpacity
+                  style={[styles.destModalBtn, { backgroundColor: '#1A1A1A', borderColor: BORDER }]}
+                  onPress={() => { saveDestination(''); setDestModalVisible(false); }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.destModalBtnText, { color: MUTED }]}>Clear</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.destModalBtn, { backgroundColor: GOLD, borderColor: GOLD, flex: 1 }]}
+                  onPress={() => { saveDestination(destInput); setDestModalVisible(false); }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.destModalBtnText, { color: '#000' }]}>Save Destination</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-            <Text style={styles.destModalDesc}>
-              Only ride requests heading toward this area will be shown to you. Leave blank to see all requests.
-            </Text>
-            <TextInput
-              style={styles.destModalInput}
-              placeholder="e.g. Airport, East Legon, Tema"
-              placeholderTextColor={MUTED}
-              value={destInput}
-              onChangeText={setDestInput}
-              autoFocus
-              returnKeyType="done"
-              onSubmitEditing={() => { saveDestination(destInput); setDestModalVisible(false); }}
-            />
-            <View style={styles.destModalActions}>
-              <TouchableOpacity
-                style={[styles.destModalBtn, { backgroundColor: '#1A1A1A', borderColor: BORDER }]}
-                onPress={() => { saveDestination(''); setDestModalVisible(false); }}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.destModalBtnText, { color: MUTED }]}>Clear</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.destModalBtn, { backgroundColor: GOLD, borderColor: GOLD, flex: 1 }]}
-                onPress={() => { saveDestination(destInput); setDestModalVisible(false); }}
-                activeOpacity={0.85}
-              >
-                <Text style={[styles.destModalBtnText, { color: '#000' }]}>Save Destination</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
 
         {/* Approval Status Banner */}
