@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, Alert, Image, ActivityIndicator, Platform,
+  StyleSheet, Alert, Image, ActivityIndicator, Platform, KeyboardAvoidingView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -571,36 +571,41 @@ export default function DriverRegisterScreen() {
   );
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        {step > 1 && step < 5 && (
-          <TouchableOpacity onPress={() => setStep(s => Math.max(1, s - 1))} style={styles.backBtn}>
-            <MaterialIcons name="arrow-back" size={22} color={TEXT} />
-          </TouchableOpacity>
-        )}
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Apply to Drive</Text>
-          <Text style={styles.headerStep}>Step {step} of {TOTAL_STEPS}</Text>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        {/* Header */}
+        <View style={styles.header}>
+          {step > 1 && step < 5 && (
+            <TouchableOpacity onPress={() => setStep(s => Math.max(1, s - 1))} style={styles.backBtn}>
+              <MaterialIcons name="arrow-back" size={22} color={TEXT} />
+            </TouchableOpacity>
+          )}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>Apply to Drive</Text>
+            <Text style={styles.headerStep}>Step {step} of {TOTAL_STEPS}</Text>
+          </View>
         </View>
-      </View>
 
-      {/* Progress bar */}
-      <View style={styles.progressBar}>
-        <View style={[styles.progressFill, { width: `${(step / TOTAL_STEPS) * 100}%` }]} />
-      </View>
-      <View style={styles.stepLabelsRow}>
-        {stepLabels.map((label, i) => (
-          <Text key={label} style={[styles.stepLabelText, { color: i + 1 <= step ? GOLD : MUTED }]}>{label}</Text>
-        ))}
-      </View>
+        {/* Progress bar */}
+        <View style={styles.progressBar}>
+          <View style={[styles.progressFill, { width: `${(step / TOTAL_STEPS) * 100}%` }]} />
+        </View>
+        <View style={styles.stepLabelsRow}>
+          {stepLabels.map((label, i) => (
+            <Text key={label} style={[styles.stepLabelText, { color: i + 1 <= step ? GOLD : MUTED }]}>{label}</Text>
+          ))}
+        </View>
 
-      {step === 1 && renderStep1()}
-      {step === 2 && renderStep2()}
-      {step === 3 && renderStep3()}
-      {step === 4 && renderStep4()}
-      {step === 5 && renderStep5()}
-    </View>
+        {step === 1 && renderStep1()}
+        {step === 2 && renderStep2()}
+        {step === 3 && renderStep3()}
+        {step === 4 && renderStep4()}
+        {step === 5 && renderStep5()}
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
