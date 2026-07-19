@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import * as Notifications from 'expo-notifications';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { router } from 'expo-router';
@@ -636,6 +637,32 @@ export default function DriverHomeScreen() {
             return prev;
           });
         }
+      }
+    );
+    return unsubscribe;
+  }, [user]);
+
+  // Listen for Firebase Push Notifications (from Admin Dispatch)
+  useEffect(() => {
+    if (!user) return;
+    const unsubscribe = firestoreDB.subscribe(
+      'push_notifications',
+      { user_id: user.uid, read: false },
+      (notifications: any[]) => {
+        notifications.forEach((n) => {
+          // Trigger local push notification
+          Notifications.scheduleNotificationAsync({
+            content: {
+              title: n.title || 'New Notification',
+              body: n.body || '',
+              data: { type: n.type },
+              sound: 'default',
+            },
+            trigger: null,
+          });
+          // Mark as read so it doesn't trigger again
+          firestoreDB.update('push_notifications', n.id, { read: true }).catch(() => {});
+        });
       }
     );
     return unsubscribe;
