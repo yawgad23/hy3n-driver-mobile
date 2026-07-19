@@ -614,6 +614,33 @@ export default function DriverHomeScreen() {
     return unsubscribe;
   }, [isOnline, user, activeTrip]);
 
+  // Listen for active assigned trips (e.g. from Admin Dispatch or after app reload)
+  useEffect(() => {
+    if (!user) return;
+    const unsubscribe = firestoreDB.subscribe(
+      COLLECTIONS.RIDES,
+      { driver_id: user.uid },
+      (rides: any[]) => {
+        const active = rides.find((r: any) => 
+          ['matched', 'driver_arriving', 'driver_arrived', 'in_progress'].includes(r.status)
+        );
+        if (active) {
+          setActiveTrip(active as ActiveTrip);
+        } else {
+          setActiveTrip(prev => {
+            if (prev) {
+               // Only clear if the previous active trip was actually completed/cancelled/reassigned in DB
+               const stillActive = rides.find((r: any) => r.id === prev.id && ['matched', 'driver_arriving', 'driver_arrived', 'in_progress'].includes(r.status));
+               if (!stillActive) return null;
+            }
+            return prev;
+          });
+        }
+      }
+    );
+    return unsubscribe;
+  }, [user]);
+
   // Auto-Accept: when preference is on and a request arrives, accept after a 3s grace period
   const autoAcceptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
