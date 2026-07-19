@@ -169,7 +169,7 @@ export const firestoreDB = {
     return docToObj(docSnap);
   },
 
-  async list(collectionName: string, filters: Record<string, any> = {}, orderByField = 'created_date', orderDir: 'asc' | 'desc' = 'desc', limitNum?: number) {
+  async list(collectionName: string, filters: Record<string, any> = {}, orderByField: string | null = 'created_date', orderDir: 'asc' | 'desc' = 'desc', limitNum?: number) {
     try {
       const colRef = collection(db, collectionName);
       const constraints: any[] = [];
@@ -178,7 +178,9 @@ export const firestoreDB = {
           constraints.push(where(field, '==', value));
         }
       }
-      constraints.push(orderBy(orderByField, orderDir));
+      if (orderByField) {
+        constraints.push(orderBy(orderByField, orderDir));
+      }
       if (limitNum) constraints.push(firestoreLimit(limitNum));
       const q = query(colRef, ...constraints);
       const snap = await getDocs(q);

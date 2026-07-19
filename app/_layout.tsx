@@ -31,6 +31,8 @@ export const unstable_settings = {
 function SplashScreen({ onComplete }: { onComplete: () => void }) {
   const opacity = useState(new Animated.Value(1))[0];
   const logoScale = useState(new Animated.Value(0.8))[0];
+  const logoTranslateY = useState(new Animated.Value(0))[0];
+  const subtitleTranslateY = useState(new Animated.Value(0))[0];
   const logoOpacity = useState(new Animated.Value(0))[0];
   const barWidth = useState(new Animated.Value(0))[0];
 
@@ -46,9 +48,14 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
       Animated.timing(barWidth, { toValue: 1, duration: 1400, useNativeDriver: false }).start();
     }, 1100);
 
-    // Fade out after 2.5s
+    // Fade out and move away (slide up & scale up) after 2.5s
     setTimeout(() => {
-      Animated.timing(opacity, { toValue: 0, duration: 600, useNativeDriver: true }).start(() => {
+      Animated.parallel([
+        Animated.timing(opacity, { toValue: 0, duration: 600, useNativeDriver: true }),
+        Animated.timing(logoScale, { toValue: 1.6, duration: 600, useNativeDriver: true }),
+        Animated.timing(logoTranslateY, { toValue: -150, duration: 600, useNativeDriver: true }),
+        Animated.timing(subtitleTranslateY, { toValue: 30, duration: 600, useNativeDriver: true }),
+      ]).start(() => {
         onComplete();
       });
     }, 2500);
@@ -66,16 +73,6 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
         opacity,
       }}
     >
-      {/* Radial glow */}
-      <View
-        style={{
-          position: "absolute",
-          width: 320,
-          height: 320,
-          borderRadius: 160,
-          backgroundColor: "rgba(212,175,55,0.06)",
-        }}
-      />
       {/* Logo */}
       <Animated.View
         style={{
@@ -84,7 +81,7 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
           alignItems: "center",
           justifyContent: "center",
           opacity: logoOpacity,
-          transform: [{ scale: logoScale }],
+          transform: [{ scale: logoScale }, { translateY: logoTranslateY }],
         }}
       >
         <Image
@@ -92,6 +89,7 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
           style={{ width: 256, height: 256, resizeMode: "contain" }}
         />
       </Animated.View>
+
       {/* Akwaaba subtitle */}
       <Animated.Text
         style={{
@@ -102,6 +100,7 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
           textTransform: "uppercase",
           marginTop: 16,
           opacity: logoOpacity,
+          transform: [{ translateY: subtitleTranslateY }],
         }}
       >
         Akwaaba

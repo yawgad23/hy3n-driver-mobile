@@ -58,7 +58,7 @@ export default function DriverEarningsScreen() {
     const today = new Date().toISOString().split('T')[0];
     const driverId = user.uid;
     setCommissionLoading(true);
-    firestoreDB.list(COLLECTIONS.DAILY_COMMISSION, { driver_id: driverId, date: today })
+    firestoreDB.list(COLLECTIONS.DAILY_COMMISSION, { driver_id: driverId, date: today }, "")
       .then((records: any[]) => {
         // Prefer paid/confirmed, then processing, then any
         const paid = records.find((r: any) => r.status === 'paid' || r.status === 'confirmed');

@@ -3,6 +3,7 @@ import * as ExpoLocation from 'expo-location';
 import { useDriverPreferences } from '@/hooks/use-driver-preferences';
 import { RIDE_CATEGORIES, FREE_WAITING_MINUTES } from '@/constants/rides';
 import { trpc } from '@/lib/trpc';
+import { getApiBaseUrl } from '@/constants/oauth';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   Dimensions, Alert, ActivityIndicator, Animated, Image, Platform,
@@ -440,6 +441,8 @@ export default function DriverHomeScreen() {
   const [driverDestination, setDriverDestination] = useState<string>('');
   const [destModalVisible, setDestModalVisible] = useState(false);
   const [destInput, setDestInput] = useState('');
+  const [destSuggestions, setDestSuggestions] = useState<any[]>([]);
+  const destDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [acceptedCategories, setAcceptedCategories] = useState<string[]>([]);
   const [catModalVisible, setCatModalVisible] = useState(false);
   // ─── Waiting Timer ────────────────────────────────────────────────────────────
@@ -508,6 +511,33 @@ export default function DriverHomeScreen() {
       setDriverDestination('');
     }
   };
+
+  // Fetch live Google Places suggestions for Driver Destination
+  useEffect(() => {
+    if (destDebounceRef.current) clearTimeout(destDebounceRef.current);
+    if (!destInput || destInput.trim().length < 2) {
+      setDestSuggestions([]);
+      return;
+    }
+    // Don't fetch if the input exactly matches the currently saved destination (meaning they just opened the modal)
+    if (destInput === driverDestination) return;
+    
+    destDebounceRef.current = setTimeout(async () => {
+      try {
+        const base = getApiBaseUrl();
+        const url = `${base}/api/places/autocomplete?input=${encodeURIComponent(destInput)}`;
+        const res = await fetch(url);
+        const data = await res.json() as { predictions: any[] };
+        const mapped = (data.predictions || []).map((p: any) => ({
+          name: p.structured_formatting?.main_text || p.description,
+          address: p.structured_formatting?.secondary_text || p.description,
+        }));
+        setDestSuggestions(mapped);
+      } catch {
+        setDestSuggestions([]);
+      }
+    }, 350);
+  }, [destInput, driverDestination]);
 
   // Waiting timer: starts when driver arrives at pickup, counts billable minutes after 3 free
   useEffect(() => {
@@ -1059,6 +1089,29 @@ export default function DriverHomeScreen() {
                 returnKeyType="done"
                 onSubmitEditing={() => { saveDestination(destInput); setDestModalVisible(false); }}
               />
+              
+              {destSuggestions.length > 0 && destInput.length > 1 && (
+                <ScrollView style={{ maxHeight: 200, marginTop: 10, borderRadius: 10, backgroundColor: '#1A1A1A', borderColor: BORDER, borderWidth: 1 }}>
+                  {destSuggestions.map((place, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      style={{ padding: 14, borderBottomWidth: i === destSuggestions.length - 1 ? 0 : 1, borderBottomColor: BORDER }}
+                      onPress={() => {
+                        setDestInput(place.name);
+                        setDestSuggestions([]);
+                        saveDestination(place.name);
+                        setDestModalVisible(false);
+                      }}
+                    >
+                      <Text style={{ color: TEXT, fontWeight: '600', fontSize: 15 }}>{place.name}</Text>
+                      {place.address && place.address !== place.name && (
+                        <Text style={{ color: MUTED, fontSize: 12, marginTop: 4 }} numberOfLines={1}>{place.address}</Text>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+
               <View style={styles.destModalActions}>
                 <TouchableOpacity
                   style={[styles.destModalBtn, { backgroundColor: '#1A1A1A', borderColor: BORDER }]}
