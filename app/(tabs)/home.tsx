@@ -4,7 +4,7 @@ import { useDriverPreferences } from '@/hooks/use-driver-preferences';
 import { RIDE_CATEGORIES } from '@/constants/rides';
 import { trpc } from '@/lib/trpc';
 import {
-  View, Text, TouchableOpacity, StyleSheet,
+  View, Text, TouchableOpacity, StyleSheet, ScrollView,
   Dimensions, Alert, ActivityIndicator, Animated, Image, Platform,
   Modal, TextInput, KeyboardAvoidingView, StatusBar
 } from 'react-native';
@@ -55,7 +55,6 @@ export default function DriverHomeScreen() {
   const [chatOpen, setChatOpen] = useState(false);
   const { unreadCount } = useUnreadChatCount(activeTrip?.id);
 
-  // Animation for the "Go Online" card pulse
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -71,7 +70,6 @@ export default function DriverHomeScreen() {
     }
   }, [isOnline]);
 
-  // Initial location and tracking
   useEffect(() => {
     let subscription: any;
     (async () => {
@@ -89,7 +87,6 @@ export default function DriverHomeScreen() {
     return () => subscription?.remove();
   }, []);
 
-  // Sync online status with profile
   useEffect(() => {
     if (driverProfile) {
       setIsOnline(driverProfile.is_online || false);
@@ -118,49 +115,54 @@ export default function DriverHomeScreen() {
     }
   };
 
-  const getGreeting = () => {
-    const hrs = new Date().getHours();
-    if (hrs < 12) return 'Good Morning';
-    if (hrs < 17) return 'Good Afternoon';
-    return 'Good Evening';
-  };
-
   const firstName = driverProfile?.full_name?.split(' ')[0] || 'Driver';
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-      {/* 1. THE MAP (Background) */}
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        provider={PROVIDER_GOOGLE}
-        customMapStyle={mapStyle}
-        initialRegion={{
-          latitude: location?.coords.latitude || 5.6037,
-          longitude: location?.coords.longitude || -0.1870,
-          latitudeDelta: 0.015,
-          longitudeDelta: 0.015,
-        }}
-        showsUserLocation={true}
-        showsMyLocationButton={false}
-        followsUserLocation={true}
-      >
-        {activeTrip && activeTrip.pickup?.lat && (
-          <Marker 
-            coordinate={{ latitude: activeTrip.pickup.lat, longitude: activeTrip.pickup.lng }}
-            title="Pickup"
-          >
-            <View style={styles.markerContainer}>
-              <MaterialIcons name="person-pin-circle" size={32} color={GREEN} />
-            </View>
-          </Marker>
-        )}
-      </MapView>
+      {/* 1. CONDITIONAL MAP (Only shown when Online) */}
+      {isOnline ? (
+        <MapView
+          ref={mapRef}
+          style={StyleSheet.absoluteFill}
+          provider={PROVIDER_GOOGLE}
+          customMapStyle={mapStyle}
+          initialRegion={{
+            latitude: location?.coords.latitude || 5.6037,
+            longitude: location?.coords.longitude || -0.1870,
+            latitudeDelta: 0.015,
+            longitudeDelta: 0.015,
+          }}
+          showsUserLocation={true}
+          showsMyLocationButton={false}
+          followsUserLocation={true}
+        >
+          {activeTrip && activeTrip.pickup?.lat && (
+            <Marker 
+              coordinate={{ latitude: activeTrip.pickup.lat, longitude: activeTrip.pickup.lng }}
+              title="Pickup"
+            >
+              <View style={styles.markerContainer}>
+                <MaterialIcons name="person-pin-circle" size={32} color={GREEN} />
+              </View>
+            </Marker>
+          )}
+        </MapView>
+      ) : (
+        <View style={[styles.offlineBg, { paddingTop: insets.top + 20 }]}>
+           <Image 
+            source={require('@/assets/images/icon.png')} 
+            style={styles.largeLogo} 
+            resizeMode="contain" 
+          />
+          <Text style={styles.offlineGreeting}>Hello, {firstName}!</Text>
+          <Text style={styles.offlineSub}>Ready to start your day?</Text>
+        </View>
+      )}
 
-      {/* 2. TOP FLOATING ELEMENTS */}
-      <View style={[styles.topOverlay, { paddingTop: insets.top + 10 }]}>
+      {/* 2. HEADER (Floats over map or offline bg) */}
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <View style={styles.statusBadge}>
           <View style={[styles.statusDot, { backgroundColor: isOnline ? GREEN : MUTED }]} />
           <Text style={styles.statusText}>{isOnline ? 'Online' : 'Offline'}</Text>
@@ -172,44 +174,48 @@ export default function DriverHomeScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* 3. BOTTOM FLOATING CARD (Matches Screenshot) */}
-      <View style={[styles.bottomOverlay, { paddingBottom: insets.bottom + 10 }]}>
-        <View style={styles.mainCard}>
-          <View style={styles.dragHandle} />
-          
-          <View style={styles.cardHeader}>
-            <View style={styles.offlineIconBox}>
-              <MaterialIcons 
-                name={isOnline ? "directions-car" : "wifi-off"} 
-                size={28} 
-                color={isOnline ? GREEN : MUTED} 
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>{isOnline ? "You're Online" : "You're Offline"}</Text>
-              <Text style={styles.cardSubtitle}>
-                {isOnline ? "Waiting for nearby trips..." : "Go online to start receiving trips"}
-              </Text>
+      {/* 3. SCROLLABLE CONTENT (The original "Go Online" card position) */}
+      <ScrollView 
+        style={styles.scroll} 
+        contentContainerStyle={{ paddingTop: 120, paddingBottom: 100 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.onlineCard}>
+          <View style={styles.onlineLeft}>
+            <Animated.View style={[styles.onlineDot, { backgroundColor: isOnline ? GREEN : MUTED, transform: [{ scale: isOnline ? pulseAnim : 1 }] }]} />
+            <View>
+              <Text style={styles.onlineStatus}>{isOnline ? 'You are Online' : 'You are Offline'}</Text>
+              <Text style={styles.onlineSubtext}>{isOnline ? 'Accepting ride requests' : 'Tap to start accepting rides'}</Text>
             </View>
           </View>
-
           <TouchableOpacity
-            style={[styles.goBtn, { backgroundColor: isOnline ? RED : GREEN }]}
+            style={[styles.toggleBtn, { backgroundColor: isOnline ? RED : GREEN }]}
             onPress={handleToggleOnline}
             disabled={togglingOnline}
             activeOpacity={0.85}
           >
             {togglingOnline ? (
-              <ActivityIndicator color="#FFF" />
+              <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <>
-                <MaterialIcons name={isOnline ? "power-settings-new" : "sensors"} size={22} color="#FFF" style={{ marginRight: 10 }} />
-                <Text style={styles.goBtnText}>{isOnline ? "Go Offline" : "Go Online"}</Text>
-              </>
+              <Text style={styles.toggleBtnText}>{isOnline ? 'Go Offline' : 'Go Online'}</Text>
             )}
           </TouchableOpacity>
         </View>
-      </View>
+
+        {/* Stats Row (Visible when offline or online) */}
+        {!activeTrip && (
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Today's Trips</Text>
+              <Text style={styles.statValue}>0</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Earnings</Text>
+              <Text style={styles.statValue}>GH₵0.00</Text>
+            </View>
+          </View>
+        )}
+      </ScrollView>
 
       {/* Chat Modal */}
       {activeTrip && (
@@ -226,108 +232,85 @@ export default function DriverHomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
-  map: { width: width, height: height + 100 }, // Slightly larger to cover safe areas
-  
-  // Top UI
-  topOverlay: {
+  offlineBg: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 100 },
+  largeLogo: { width: 120, height: 120, marginBottom: 20, opacity: 0.8 },
+  offlineGreeting: { color: TEXT, fontSize: 24, fontWeight: '900' },
+  offlineSub: { color: MUTED, fontSize: 16, marginTop: 8 },
+
+  header: {
     position: 'absolute',
     top: 0, left: 0, right: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    zIndex: 10,
+    zIndex: 20,
   },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#111111',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: 30,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 5,
+    borderColor: BORDER,
   },
-  statusDot: { width: 10, height: 10, borderRadius: 5, marginRight: 10 },
-  statusText: { color: '#FFF', fontWeight: '800', fontSize: 15 },
+  statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 10 },
+  statusText: { color: '#FFF', fontWeight: '800', fontSize: 14 },
   notifCircle: {
-    width: 50, height: 50,
-    borderRadius: 25,
+    width: 46, height: 46,
+    borderRadius: 23,
     backgroundColor: '#111111',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 5,
+    borderColor: BORDER,
   },
   notifDot: {
-    position: 'absolute', top: 14, right: 14,
-    width: 9, height: 9, borderRadius: 4.5,
-    backgroundColor: RED, borderWidth: 2, borderColor: '#111111',
+    position: 'absolute', top: 12, right: 12,
+    width: 8, height: 8, borderRadius: 4,
+    backgroundColor: RED, borderWidth: 1.5, borderColor: '#111111',
   },
 
-  // Bottom UI
-  bottomOverlay: {
-    position: 'absolute',
-    bottom: 0, left: 0, right: 0,
-    paddingHorizontal: 12,
-    zIndex: 10,
-  },
-  mainCard: {
-    backgroundColor: '#0F1117',
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    borderRadius: 32,
-    padding: 24,
-    paddingTop: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -10 },
-    shadowOpacity: 0.6,
-    shadowRadius: 25,
-    elevation: 15,
-  },
-  dragHandle: {
-    width: 40, height: 4,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 20,
-  },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, gap: 16 },
-  offlineIconBox: {
-    width: 54, height: 54,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardTitle: { color: '#FFF', fontSize: 20, fontWeight: '900' },
-  cardSubtitle: { color: MUTED, fontSize: 14, marginTop: 4, fontWeight: '500' },
-  goBtn: {
-    height: 64,
-    borderRadius: 20,
+  scroll: { flex: 1, zIndex: 10 },
+  onlineCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(17, 17, 17, 0.9)',
+    borderRadius: 20,
+    padding: 20,
+    marginHorizontal: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+    marginBottom: 20,
   },
-  goBtnText: { color: '#FFF', fontSize: 18, fontWeight: '900', letterSpacing: 0.5 },
+  onlineLeft: { flexDirection: 'row', alignItems: 'center', gap: 15, flex: 1 },
+  onlineDot: { width: 12, height: 12, borderRadius: 6 },
+  onlineStatus: { color: TEXT, fontSize: 18, fontWeight: '900' },
+  onlineSubtext: { color: MUTED, fontSize: 13, marginTop: 2 },
+  toggleBtn: {
+    paddingHorizontal: 20,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toggleBtnText: { color: '#FFF', fontSize: 15, fontWeight: '800' },
 
-  // Marker
+  statsRow: { flexDirection: 'row', gap: 12, marginHorizontal: 16 },
+  statItem: {
+    flex: 1,
+    backgroundColor: 'rgba(17, 17, 17, 0.9)',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+    alignItems: 'center',
+  },
+  statLabel: { color: MUTED, fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
+  statValue: { color: GOLD, fontSize: 18, fontWeight: '900', marginTop: 4 },
+
   markerContainer: {
     backgroundColor: 'rgba(0,0,0,0.6)',
     padding: 6,
