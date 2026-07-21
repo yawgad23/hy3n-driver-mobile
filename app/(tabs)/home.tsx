@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as ExpoLocation from 'expo-location';
 import { useDriverPreferences } from '@/hooks/use-driver-preferences';
-import { RIDE_CATEGORIES, FREE_WAITING_MINUTES } from '@/constants/rides';
+import { RIDE_CATEGORIES, FREE_WAITING_MINUTES, POPULAR_DESTINATIONS } from '@/constants/rides';
 import { trpc } from '@/lib/trpc';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
@@ -16,7 +16,7 @@ import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { router } from 'expo-router';
 import { Linking } from 'react-native';
 import { RideChatModal, useUnreadChatCount } from '@/components/ride-chat-modal';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE, Circle } from 'react-native-maps';
 import { Colors } from '@/constants/theme';
 
 const GOLD = '#D4AF37';
@@ -40,13 +40,19 @@ export default function DriverHomeScreen() {
   const [activeTrip, setActiveTrip] = useState<any>(null);
   const [togglingOnline, setTogglingOnline] = useState(false);
   
+  // Heatmap / Demand Zones
+  const [showHeatmap, setShowHeatmap] = useState(true);
+  const demandZones = useMemo(() => POPULAR_DESTINATIONS.map(d => ({
+    ...d,
+    intensity: Math.random() * 0.5 + 0.2 // Simulated demand intensity
+  })), []);
+
   // Wait Time Logic
   const [isArrived, setIsArrived] = useState(false);
   const [waitTime, setWaitTime] = useState(0);
   const waitTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const [notifOpen, setNotifOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
   const [destModalVisible, setDestModalVisible] = useState(false);
   const [destInput, setDestInput] = useState('');
 
@@ -65,7 +71,6 @@ export default function DriverHomeScreen() {
     }
   }, [isOnline]);
 
-  // Wait Timer Effect
   useEffect(() => {
     if (isArrived && !activeTrip?.started_at) {
       waitTimerRef.current = setInterval(() => {
@@ -78,11 +83,24 @@ export default function DriverHomeScreen() {
     return () => { if (waitTimerRef.current) clearInterval(waitTimerRef.current); };
   }, [isArrived, activeTrip?.started_at]);
 
-  const formatWaitTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+  useEffect(() => {
+    let subscription: any;
+    (async () => {
+      let { status } = await ExpoLocation.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      let loc = await ExpoLocation.getCurrentPositionAsync({});
+      setLocation(loc);
+      subscription = await ExpoLocation.watchPositionAsync(
+        { accuracy: ExpoLocation.Accuracy.Balanced, timeInterval: 5000, distanceInterval: 10 },
+        (newLoc) => setLocation(newLoc)
+      );
+    })();
+    return () => subscription?.remove();
+  }, []);
+
+  useEffect(() => {
+    if (driverProfile) setIsOnline(driverProfile.is_online || false);
+  }, [driverProfile]);
 
   const handleToggleOnline = async () => {
     if (!driverProfile) return;
@@ -119,7 +137,7 @@ export default function DriverHomeScreen() {
     <View style={[styles.container, dynamicStyles.container]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} translucent backgroundColor="transparent" />
 
-      {/* Conditional Map Background */}
+      {/* Map Layer */}
       {isOnline ? (
         <MapView
           ref={mapRef}
@@ -128,45 +146,70 @@ export default function DriverHomeScreen() {
           initialRegion={{
             latitude: location?.coords.latitude || 5.6037,
             longitude: location?.coords.longitude || -0.1870,
-            latitudeDelta: 0.015,
-            longitudeDelta: 0.015,
+            latitudeDelta: 0.05,
+            longitudeDelta: 0.05,
           }}
           showsUserLocation={true}
-          followsUserLocation={true}
-        />
+        >
+          {/* Heatmap Circles */}
+          {showHeatmap && demandZones.map((zone, idx) => (
+            <Circle
+              key={idx}
+              center={{ latitude: zone.lat, longitude: zone.lng }}
+              radius={800}
+              fillColor={`rgba(212, 175, 55, ${zone.intensity})`}
+              strokeColor="transparent"
+            />
+          ))}
+        </MapView>
       ) : (
         <View style={styles.offlineBg}>
            <Image source={require('@/assets/images/icon.png')} style={styles.largeLogo} resizeMode="contain" />
            <Text style={[styles.offlineGreeting, dynamicStyles.text]}>HY3N Driver</Text>
-           <Text style={dynamicStyles.muted}>Go online to start earning</Text>
+           <Text style={dynamicStyles.muted}>Go online to see high-demand areas</Text>
         </View>
       )}
 
-      {/* Header */}
+      {/* Floating Controls */}
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <View style={[styles.statusBadge, dynamicStyles.badge]}>
           <View style={[styles.statusDot, { backgroundColor: isOnline ? GREEN : themeColors.muted }]} />
           <Text style={[styles.statusText, dynamicStyles.text]}>{isOnline ? 'Online' : 'Offline'}</Text>
         </View>
+
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          {isOnline && (
+            <TouchableOpacity 
+              style={[styles.notifCircle, dynamicStyles.badge, { borderColor: showHeatmap ? GOLD : themeColors.border }]} 
+              onPress={() => setShowHeatmap(!showHeatmap)}
+            >
+              <MaterialIcons name="local-fire-department" size={24} color={showHeatmap ? GOLD : themeColors.text} />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={[styles.notifCircle, dynamicStyles.badge]} onPress={() => setNotifOpen(true)}>
+            <MaterialIcons name="notifications-none" size={26} color={themeColors.text} />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Bottom UI */}
+      {/* Bottom Interface */}
       <View style={[styles.bottomContainer, { paddingBottom: insets.bottom + 20 }]}>
-        {/* Wait Timer Card (Visible when arrived at pickup) */}
-        {isArrived && (
-          <View style={[styles.waitCard, dynamicStyles.card]}>
-            <View>
-              <Text style={[styles.waitLabel, dynamicStyles.text]}>Wait Time</Text>
-              <Text style={[styles.waitValue, { color: waitTime > FREE_WAITING_MINUTES * 60 ? RED : GREEN }]}>
-                {formatWaitTime(waitTime)}
-              </Text>
-            </View>
-            <View style={styles.waitInfo}>
-              <Text style={dynamicStyles.muted}>
-                {waitTime > FREE_WAITING_MINUTES * 60 ? 'Charging for wait...' : 'Free wait time'}
-              </Text>
-            </View>
-          </View>
+        {/* Quick Destination Filter (Uber/Bolt Style) */}
+        {isOnline && (
+          <TouchableOpacity 
+            style={[styles.destFilterBar, dynamicStyles.card]}
+            onPress={() => setDestModalVisible(true)}
+          >
+            <MaterialIcons name="navigation" size={20} color={prefs.destinationFilter ? GOLD : themeColors.muted} />
+            <Text style={[styles.destText, prefs.destinationFilter ? dynamicStyles.text : dynamicStyles.muted]}>
+              {prefs.destinationFilter ? `Heading to ${prefs.destinationFilter}` : "Set destination filter"}
+            </Text>
+            {prefs.destinationFilter && (
+              <TouchableOpacity onPress={() => setPrefs({ ...prefs, destinationFilter: null })}>
+                <MaterialIcons name="cancel" size={20} color={RED} />
+              </TouchableOpacity>
+            )}
+          </TouchableOpacity>
         )}
 
         <View style={[styles.onlineCard, dynamicStyles.card]}>
@@ -183,6 +226,29 @@ export default function DriverHomeScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Destination Modal */}
+      <Modal visible={destModalVisible} animationType="slide" presentationStyle="pageSheet">
+        <View style={[styles.modalContainer, dynamicStyles.container]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, dynamicStyles.text]}>Where are you heading?</Text>
+            <TouchableOpacity onPress={() => setDestModalVisible(false)}><MaterialIcons name="close" size={24} color={themeColors.text} /></TouchableOpacity>
+          </View>
+          <TextInput
+            style={[styles.modalInput, { color: themeColors.text, borderColor: themeColors.border }]}
+            placeholder="Search destination..."
+            placeholderTextColor="#999"
+            value={destInput}
+            onChangeText={setDestInput}
+          />
+          <TouchableOpacity 
+            style={[styles.applyBtn, { backgroundColor: GOLD }]}
+            onPress={() => { setPrefs({ ...prefs, destinationFilter: destInput }); setDestModalVisible(false); }}
+          >
+            <Text style={styles.applyBtnText}>Set Destination</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -192,19 +258,24 @@ const styles = StyleSheet.create({
   offlineBg: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   largeLogo: { width: 100, height: 100, marginBottom: 20, opacity: 0.5 },
   offlineGreeting: { fontSize: 22, fontWeight: '900', marginBottom: 4 },
-  header: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 20, zIndex: 10 },
+  header: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 20, zIndex: 10, flexDirection: 'row', justifyContent: 'space-between' },
   statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 30, borderWidth: 1 },
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 10 },
   statusText: { fontWeight: '800', fontSize: 14 },
-  bottomContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 16, gap: 12 },
-  waitCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderRadius: 20, borderWidth: 1 },
-  waitLabel: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
-  waitValue: { fontSize: 24, fontWeight: '900' },
-  waitInfo: { alignItems: 'flex-end' },
+  notifCircle: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  bottomContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 16, gap: 10 },
+  destFilterBar: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 16, borderWidth: 1, gap: 12 },
+  destText: { flex: 1, fontSize: 14, fontWeight: '700' },
   onlineCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 20, padding: 16, borderWidth: 1 },
   onlineLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   onlineDot: { width: 10, height: 10, borderRadius: 5 },
   onlineStatus: { fontSize: 16, fontWeight: '900' },
   toggleBtn: { paddingHorizontal: 20, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   toggleBtnText: { color: '#FFF', fontSize: 14, fontWeight: '800' },
+  modalContainer: { flex: 1, padding: 24 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 20, fontWeight: '900' },
+  modalInput: { height: 56, borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, fontSize: 16, marginBottom: 20 },
+  applyBtn: { height: 56, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  applyBtnText: { color: '#000', fontSize: 16, fontWeight: '800' }
 });
