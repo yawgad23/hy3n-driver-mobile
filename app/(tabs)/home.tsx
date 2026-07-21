@@ -53,6 +53,7 @@ export default function DriverHomeScreen() {
   const themeColors = Colors[isDark ? 'dark' : 'light'];
   
   const { user, driverProfile } = useDriverAuth();
+  const { prefs, toggle: togglePref, setPrefs } = useDriverPreferences();
   const mapRef = useRef<MapView>(null);
   
   const [isOnline, setIsOnline] = useState(false);
@@ -62,6 +63,9 @@ export default function DriverHomeScreen() {
   
   const [notifOpen, setNotifOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [destModalVisible, setDestModalVisible] = useState(false);
+  const [destInput, setDestInput] = useState('');
+  
   const { unreadCount } = useUnreadChatCount(activeTrip?.id);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -122,6 +126,25 @@ export default function DriverHomeScreen() {
     } finally {
       setTogglingOnline(false);
     }
+  };
+
+  const handleSOS = () => {
+    Alert.alert(
+      "Emergency SOS",
+      "This will alert HY3N security and share your live location. Are you sure?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "YES, ALERT SOS", style: "destructive", onPress: () => {
+          // Logic to send SOS to backend/emergency contacts
+          Alert.alert("SOS Sent", "Help is on the way. Stay calm.");
+        }}
+      ]
+    );
+  };
+
+  const saveDestination = (dest: string) => {
+    setPrefs({ ...prefs, destinationFilter: dest || null });
+    setDestModalVisible(false);
   };
 
   const firstName = driverProfile?.full_name?.split(' ')[0] || 'Driver';
@@ -191,10 +214,17 @@ export default function DriverHomeScreen() {
           <Text style={[styles.statusText, dynamicStyles.text]}>{isOnline ? 'Online' : 'Offline'}</Text>
         </View>
 
-        <TouchableOpacity style={[styles.notifCircle, dynamicStyles.badge]} onPress={() => setNotifOpen(true)}>
-          <MaterialIcons name="notifications-none" size={26} color={themeColors.text} />
-          <View style={styles.notifDot} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          {isOnline && (
+            <TouchableOpacity style={[styles.notifCircle, { backgroundColor: RED, borderColor: RED }]} onPress={handleSOS}>
+              <MaterialIcons name="emergency" size={24} color="#FFF" />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={[styles.notifCircle, dynamicStyles.badge]} onPress={() => setNotifOpen(true)}>
+            <MaterialIcons name="notifications-none" size={26} color={themeColors.text} />
+            <View style={styles.notifDot} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* 3. SCROLLABLE CONTENT */}
@@ -225,6 +255,29 @@ export default function DriverHomeScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Uber/Bolt Features Row */}
+        {isOnline && (
+          <View style={styles.featureRow}>
+            <TouchableOpacity 
+              style={[styles.featureCard, dynamicStyles.card]}
+              onPress={() => togglePref('autoAccept')}
+            >
+              <MaterialIcons name={prefs.autoAccept ? "check-circle" : "radio-button-unchecked"} size={20} color={prefs.autoAccept ? GREEN : themeColors.muted} />
+              <Text style={[styles.featureLabel, dynamicStyles.text]}>Auto Accept</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.featureCard, dynamicStyles.card]}
+              onPress={() => setDestModalVisible(true)}
+            >
+              <MaterialIcons name="location-on" size={20} color={prefs.destinationFilter ? GOLD : themeColors.muted} />
+              <Text style={[styles.featureLabel, dynamicStyles.text]}>
+                {prefs.destinationFilter ? "Filter On" : "Set Destination"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {!activeTrip && (
           <View style={styles.statsRow}>
             <View style={[styles.statItem, dynamicStyles.card]}>
@@ -238,6 +291,42 @@ export default function DriverHomeScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Destination Filter Modal */}
+      <Modal visible={destModalVisible} animationType="slide" presentationStyle="pageSheet">
+        <View style={[styles.modalContainer, dynamicStyles.container]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, dynamicStyles.text]}>Destination Filter</Text>
+            <TouchableOpacity onPress={() => setDestModalVisible(false)}>
+              <MaterialIcons name="close" size={24} color={themeColors.text} />
+            </TouchableOpacity>
+          </View>
+          <Text style={[styles.modalSub, dynamicStyles.muted]}>Only receive requests heading toward this area.</Text>
+          
+          <TextInput
+            style={[styles.modalInput, { color: themeColors.text, borderColor: themeColors.border }]}
+            placeholder="Enter area (e.g. East Legon)"
+            placeholderTextColor={MUTED}
+            value={destInput}
+            onChangeText={setDestInput}
+          />
+
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity 
+              style={[styles.modalBtn, { backgroundColor: BORDER, flex: 1 }]}
+              onPress={() => saveDestination('')}
+            >
+              <Text style={[styles.modalBtnText, { color: TEXT }]}>Clear</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.modalBtn, { backgroundColor: GOLD, flex: 2 }]}
+              onPress={() => saveDestination(destInput)}
+            >
+              <Text style={[styles.modalBtnText, { color: '#000' }]}>Apply Filter</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Chat Modal */}
       {activeTrip && (
@@ -309,7 +398,7 @@ const styles = StyleSheet.create({
     padding: 20,
     marginHorizontal: 16,
     borderWidth: 1,
-    marginBottom: 20,
+    marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
@@ -328,6 +417,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   toggleBtnText: { color: '#FFF', fontSize: 15, fontWeight: '800' },
+
+  featureRow: { flexDirection: 'row', gap: 12, marginHorizontal: 16, marginBottom: 12 },
+  featureCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  featureLabel: { fontSize: 14, fontWeight: '700' },
 
   statsRow: { flexDirection: 'row', gap: 12, marginHorizontal: 16 },
   statItem: {
@@ -351,5 +452,26 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     borderWidth: 2,
     borderColor: '#FFF',
-  }
+  },
+
+  // Modal
+  modalContainer: { flex: 1, padding: 24 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  modalTitle: { fontSize: 22, fontWeight: '900' },
+  modalSub: { fontSize: 14, marginBottom: 24 },
+  modalInput: {
+    height: 56,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    marginBottom: 24,
+  },
+  modalBtn: {
+    height: 56,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBtnText: { fontSize: 16, fontWeight: '800' }
 });

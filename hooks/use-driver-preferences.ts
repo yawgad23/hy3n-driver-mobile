@@ -18,6 +18,7 @@ export interface DriverPreferences {
   autoAccept: boolean;
   longTripsOnly: boolean;
   preferHighRated: boolean;
+  destinationFilter: string | null;
 }
 
 const STORAGE_KEY = 'hy3n_driver_preferences';
@@ -28,6 +29,7 @@ const DEFAULT_PREFS: DriverPreferences = {
   autoAccept: false,
   longTripsOnly: false,
   preferHighRated: true,
+  destinationFilter: null,
 };
 
 export function useDriverPreferences() {
