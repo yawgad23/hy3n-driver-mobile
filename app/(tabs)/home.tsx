@@ -6,7 +6,7 @@ import { trpc } from '@/lib/trpc';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   Dimensions, Alert, ActivityIndicator, Animated, Image, Platform,
-  Modal, TextInput, KeyboardAvoidingView, StatusBar
+  Modal, TextInput, KeyboardAvoidingView, StatusBar, useColorScheme
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -17,20 +17,16 @@ import { router } from 'expo-router';
 import { Linking } from 'react-native';
 import { RideChatModal, useUnreadChatCount } from '@/components/ride-chat-modal';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { Colors } from '@/constants/theme';
 
 const GOLD = '#D4AF37';
 const GREEN = '#22C55E';
 const RED = '#EF4444';
-const BG = '#0A0A0A';
-const CARD = '#111111';
-const BORDER = '#2A2A2A';
-const TEXT = '#FAFAFA';
-const MUTED = '#9CA3AF';
 
 const { width, height } = Dimensions.get('window');
 
-// Custom Map Style for Dark Mode
-const mapStyle = [
+// Custom Map Styles
+const darkMapStyle = [
   { "elementType": "geometry", "stylers": [{ "color": "#121212" }] },
   { "elementType": "labels.icon", "stylers": [{ "visibility": "off" }] },
   { "elementType": "labels.text.fill", "stylers": [{ "color": "#757575" }] },
@@ -41,8 +37,21 @@ const mapStyle = [
   { "featureType": "water", "elementType": "geometry", "stylers": [{ "color": "#000000" }] }
 ];
 
+const lightMapStyle = [
+  { "elementType": "geometry", "stylers": [{ "color": "#f5f5f5" }] },
+  { "elementType": "labels.icon", "stylers": [{ "visibility": "off" }] },
+  { "elementType": "labels.text.fill", "stylers": [{ "color": "#616161" }] },
+  { "elementType": "labels.text.stroke", "stylers": [{ "color": "#f5f5f5" }] },
+  { "featureType": "road", "elementType": "geometry.fill", "stylers": [{ "color": "#ffffff" }] },
+  { "featureType": "water", "elementType": "geometry", "stylers": [{ "color": "#e9e9e9" }] }
+];
+
 export default function DriverHomeScreen() {
   const insets = useSafeAreaInsets();
+  const systemScheme = useColorScheme();
+  const isDark = systemScheme === 'dark';
+  const themeColors = Colors[isDark ? 'dark' : 'light'];
+  
   const { user, driverProfile } = useDriverAuth();
   const mapRef = useRef<MapView>(null);
   
@@ -117,9 +126,23 @@ export default function DriverHomeScreen() {
 
   const firstName = driverProfile?.full_name?.split(' ')[0] || 'Driver';
 
+  const dynamicStyles = {
+    container: { backgroundColor: themeColors.background },
+    text: { color: themeColors.text },
+    muted: { color: themeColors.muted },
+    card: { 
+      backgroundColor: isDark ? 'rgba(17, 17, 17, 0.9)' : 'rgba(255, 255, 255, 0.95)',
+      borderColor: themeColors.border 
+    },
+    badge: {
+      backgroundColor: isDark ? '#111111' : '#FFFFFF',
+      borderColor: themeColors.border
+    }
+  };
+
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+    <View style={[styles.container, dynamicStyles.container]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} translucent backgroundColor="transparent" />
 
       {/* 1. CONDITIONAL MAP (Only shown when Online) */}
       {isOnline ? (
@@ -127,7 +150,7 @@ export default function DriverHomeScreen() {
           ref={mapRef}
           style={StyleSheet.absoluteFill}
           provider={PROVIDER_GOOGLE}
-          customMapStyle={mapStyle}
+          customMapStyle={isDark ? darkMapStyle : lightMapStyle}
           initialRegion={{
             latitude: location?.coords.latitude || 5.6037,
             longitude: location?.coords.longitude || -0.1870,
@@ -156,36 +179,36 @@ export default function DriverHomeScreen() {
             style={styles.largeLogo} 
             resizeMode="contain" 
           />
-          <Text style={styles.offlineGreeting}>Hello, {firstName}!</Text>
-          <Text style={styles.offlineSub}>Ready to start your day?</Text>
+          <Text style={[styles.offlineGreeting, dynamicStyles.text]}>Hello, {firstName}!</Text>
+          <Text style={[styles.offlineSub, dynamicStyles.muted]}>Ready to start your day?</Text>
         </View>
       )}
 
-      {/* 2. HEADER (Floats over map or offline bg) */}
+      {/* 2. HEADER */}
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-        <View style={styles.statusBadge}>
-          <View style={[styles.statusDot, { backgroundColor: isOnline ? GREEN : MUTED }]} />
-          <Text style={styles.statusText}>{isOnline ? 'Online' : 'Offline'}</Text>
+        <View style={[styles.statusBadge, dynamicStyles.badge]}>
+          <View style={[styles.statusDot, { backgroundColor: isOnline ? GREEN : themeColors.muted }]} />
+          <Text style={[styles.statusText, dynamicStyles.text]}>{isOnline ? 'Online' : 'Offline'}</Text>
         </View>
 
-        <TouchableOpacity style={styles.notifCircle} onPress={() => setNotifOpen(true)}>
-          <MaterialIcons name="notifications-none" size={26} color="#FFF" />
+        <TouchableOpacity style={[styles.notifCircle, dynamicStyles.badge]} onPress={() => setNotifOpen(true)}>
+          <MaterialIcons name="notifications-none" size={26} color={themeColors.text} />
           <View style={styles.notifDot} />
         </TouchableOpacity>
       </View>
 
-      {/* 3. SCROLLABLE CONTENT (The original "Go Online" card position) */}
+      {/* 3. SCROLLABLE CONTENT */}
       <ScrollView 
         style={styles.scroll} 
         contentContainerStyle={{ paddingTop: 120, paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.onlineCard}>
+        <View style={[styles.onlineCard, dynamicStyles.card]}>
           <View style={styles.onlineLeft}>
-            <Animated.View style={[styles.onlineDot, { backgroundColor: isOnline ? GREEN : MUTED, transform: [{ scale: isOnline ? pulseAnim : 1 }] }]} />
+            <Animated.View style={[styles.onlineDot, { backgroundColor: isOnline ? GREEN : themeColors.muted, transform: [{ scale: isOnline ? pulseAnim : 1 }] }]} />
             <View>
-              <Text style={styles.onlineStatus}>{isOnline ? 'You are Online' : 'You are Offline'}</Text>
-              <Text style={styles.onlineSubtext}>{isOnline ? 'Accepting ride requests' : 'Tap to start accepting rides'}</Text>
+              <Text style={[styles.onlineStatus, dynamicStyles.text]}>{isOnline ? 'You are Online' : 'You are Offline'}</Text>
+              <Text style={[styles.onlineSubtext, dynamicStyles.muted]}>{isOnline ? 'Accepting ride requests' : 'Tap to start accepting rides'}</Text>
             </View>
           </View>
           <TouchableOpacity
@@ -202,15 +225,14 @@ export default function DriverHomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Stats Row (Visible when offline or online) */}
         {!activeTrip && (
           <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Today's Trips</Text>
+            <View style={[styles.statItem, dynamicStyles.card]}>
+              <Text style={[styles.statLabel, dynamicStyles.muted]}>Today's Trips</Text>
               <Text style={styles.statValue}>0</Text>
             </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Earnings</Text>
+            <View style={[styles.statItem, dynamicStyles.card]}>
+              <Text style={[styles.statLabel, dynamicStyles.muted]}>Earnings</Text>
               <Text style={styles.statValue}>GH₵0.00</Text>
             </View>
           </View>
@@ -231,11 +253,11 @@ export default function DriverHomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG },
+  container: { flex: 1 },
   offlineBg: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 100 },
   largeLogo: { width: 120, height: 120, marginBottom: 20, opacity: 0.8 },
-  offlineGreeting: { color: TEXT, fontSize: 24, fontWeight: '900' },
-  offlineSub: { color: MUTED, fontSize: 16, marginTop: 8 },
+  offlineGreeting: { fontSize: 24, fontWeight: '900' },
+  offlineSub: { fontSize: 16, marginTop: 8 },
 
   header: {
     position: 'absolute',
@@ -248,28 +270,34 @@ const styles = StyleSheet.create({
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#111111',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 30,
     borderWidth: 1,
-    borderColor: BORDER,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 10 },
-  statusText: { color: '#FFF', fontWeight: '800', fontSize: 14 },
+  statusText: { fontWeight: '800', fontSize: 14 },
   notifCircle: {
     width: 46, height: 46,
     borderRadius: 23,
-    backgroundColor: '#111111',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: BORDER,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   notifDot: {
     position: 'absolute', top: 12, right: 12,
     width: 8, height: 8, borderRadius: 4,
-    backgroundColor: RED, borderWidth: 1.5, borderColor: '#111111',
+    backgroundColor: RED, borderWidth: 1.5, borderColor: '#FFF',
   },
 
   scroll: { flex: 1, zIndex: 10 },
@@ -277,18 +305,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(17, 17, 17, 0.9)',
     borderRadius: 20,
     padding: 20,
     marginHorizontal: 16,
     borderWidth: 1,
-    borderColor: BORDER,
     marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
   },
   onlineLeft: { flexDirection: 'row', alignItems: 'center', gap: 15, flex: 1 },
   onlineDot: { width: 12, height: 12, borderRadius: 6 },
-  onlineStatus: { color: TEXT, fontSize: 18, fontWeight: '900' },
-  onlineSubtext: { color: MUTED, fontSize: 13, marginTop: 2 },
+  onlineStatus: { fontSize: 18, fontWeight: '900' },
+  onlineSubtext: { fontSize: 13, marginTop: 2 },
   toggleBtn: {
     paddingHorizontal: 20,
     height: 48,
@@ -301,14 +332,17 @@ const styles = StyleSheet.create({
   statsRow: { flexDirection: 'row', gap: 12, marginHorizontal: 16 },
   statItem: {
     flex: 1,
-    backgroundColor: 'rgba(17, 17, 17, 0.9)',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: BORDER,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 2,
   },
-  statLabel: { color: MUTED, fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
+  statLabel: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
   statValue: { color: GOLD, fontSize: 18, fontWeight: '900', marginTop: 4 },
 
   markerContainer: {
