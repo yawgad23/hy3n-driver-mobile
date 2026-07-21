@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import * as ExpoLocation from 'expo-location';
 import { useDriverPreferences } from '@/hooks/use-driver-preferences';
 import { RIDE_CATEGORIES, FREE_WAITING_MINUTES, POPULAR_DESTINATIONS } from '@/constants/rides';
@@ -40,11 +40,32 @@ export default function DriverHomeScreen() {
   const [activeTrip, setActiveTrip] = useState<any>(null);
   const [togglingOnline, setTogglingOnline] = useState(false);
   
+  // Navigation Switcher Logic
+  const openNavigation = (lat: number, lng: number, label: string) => {
+    const scheme = Platform.select({ ios: 'maps:0,0?q=', android: 'geo:0,0?q=' });
+    const latLng = `${lat},${lng}`;
+    const url = Platform.select({
+      ios: `${scheme}${label}@${latLng}`,
+      android: `${scheme}${latLng}(${label})`
+    });
+
+    Alert.alert(
+      "Navigate with",
+      "Choose your preferred navigation app",
+      [
+        { text: "Google Maps", onPress: () => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${latLng}`) },
+        { text: "Waze", onPress: () => Linking.openURL(`https://waze.com/ul?ll=${latLng}&navigate=yes`) },
+        { text: Platform.OS === 'ios' ? "Apple Maps" : "Cancel", onPress: () => url && Linking.openURL(url) },
+        { text: "Cancel", style: "cancel" }
+      ]
+    );
+  };
+
   // Heatmap / Demand Zones
   const [showHeatmap, setShowHeatmap] = useState(true);
   const demandZones = useMemo(() => POPULAR_DESTINATIONS.map(d => ({
     ...d,
-    intensity: Math.random() * 0.5 + 0.2 // Simulated demand intensity
+    intensity: Math.random() * 0.5 + 0.2 
   })), []);
 
   // Wait Time Logic
@@ -151,7 +172,6 @@ export default function DriverHomeScreen() {
           }}
           showsUserLocation={true}
         >
-          {/* Heatmap Circles */}
           {showHeatmap && demandZones.map((zone, idx) => (
             <Circle
               key={idx}
@@ -166,7 +186,7 @@ export default function DriverHomeScreen() {
         <View style={styles.offlineBg}>
            <Image source={require('@/assets/images/icon.png')} style={styles.largeLogo} resizeMode="contain" />
            <Text style={[styles.offlineGreeting, dynamicStyles.text]}>HY3N Driver</Text>
-           <Text style={dynamicStyles.muted}>Go online to see high-demand areas</Text>
+           <Text style={dynamicStyles.muted}>Go online to start navigating</Text>
         </View>
       )}
 
@@ -194,13 +214,35 @@ export default function DriverHomeScreen() {
 
       {/* Bottom Interface */}
       <View style={[styles.bottomContainer, { paddingBottom: insets.bottom + 20 }]}>
-        {/* Quick Destination Filter (Uber/Bolt Style) */}
-        {isOnline && (
+        {/* Active Trip Navigation Card */}
+        {activeTrip && (
+          <View style={[styles.navCard, dynamicStyles.card]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.navTitle, dynamicStyles.text]}>Next: {activeTrip.started_at ? 'Dropoff' : 'Pickup'}</Text>
+              <Text style={[styles.navSub, dynamicStyles.muted]} numberOfLines={1}>
+                {activeTrip.started_at ? activeTrip.destination.address : activeTrip.pickup.address}
+              </Text>
+            </View>
+            <TouchableOpacity 
+              style={[styles.navBtn, { backgroundColor: BLUE }]}
+              onPress={() => {
+                const target = activeTrip.started_at ? activeTrip.destination : activeTrip.pickup;
+                openNavigation(target.lat, target.lng, target.address);
+              }}
+            >
+              <MaterialIcons name="navigation" size={24} color="#FFF" />
+              <Text style={styles.navBtnText}>NAVIGATE</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Quick Destination Filter */}
+        {isOnline && !activeTrip && (
           <TouchableOpacity 
             style={[styles.destFilterBar, dynamicStyles.card]}
             onPress={() => setDestModalVisible(true)}
           >
-            <MaterialIcons name="navigation" size={20} color={prefs.destinationFilter ? GOLD : themeColors.muted} />
+            <MaterialIcons name="home" size={20} color={prefs.destinationFilter ? GOLD : themeColors.muted} />
             <Text style={[styles.destText, prefs.destinationFilter ? dynamicStyles.text : dynamicStyles.muted]}>
               {prefs.destinationFilter ? `Heading to ${prefs.destinationFilter}` : "Set destination filter"}
             </Text>
@@ -253,6 +295,8 @@ export default function DriverHomeScreen() {
   );
 }
 
+const BLUE = '#3B82F6';
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
   offlineBg: { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -264,6 +308,13 @@ const styles = StyleSheet.create({
   statusText: { fontWeight: '800', fontSize: 14 },
   notifCircle: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
   bottomContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 16, gap: 10 },
+  
+  navCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 20, borderWidth: 1, gap: 12 },
+  navTitle: { fontSize: 16, fontWeight: '900' },
+  navSub: { fontSize: 13, marginTop: 2 },
+  navBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, height: 50, borderRadius: 12 },
+  navBtnText: { color: '#FFF', fontWeight: '900', fontSize: 13 },
+
   destFilterBar: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 16, borderWidth: 1, gap: 12 },
   destText: { flex: 1, fontSize: 14, fontWeight: '700' },
   onlineCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 20, padding: 16, borderWidth: 1 },
