@@ -38,6 +38,7 @@ export default function DriverHomeScreen() {
   const [isOnline, setIsOnline] = useState(false);
   const [location, setLocation] = useState<ExpoLocation.LocationObject | null>(null);
   const [activeTrip, setActiveTrip] = useState<any>(null);
+  const [incomingRide, setIncomingRide] = useState<any>(null);
   const [togglingOnline, setTogglingOnline] = useState(false);
   
   // Navigation Switcher Logic
@@ -123,6 +124,41 @@ export default function DriverHomeScreen() {
     if (driverProfile) setIsOnline(driverProfile.is_online || false);
   }, [driverProfile]);
 
+  // Subscribe to incoming rides — FIX: prevent duplicate ride requests
+  useEffect(() => {
+    if (!user?.id || !isOnline) return;
+    
+    const unsubscribe = firestoreDB.subscribe(COLLECTIONS.RIDES, (snapshot) => {
+      snapshot.forEach((change) => {
+        if (change.type === 'modified') {
+          const ride = change.doc.data();
+          // Only show incoming ride if:
+          // 1. The ride is matched to this driver
+          // 2. No active trip is in progress
+          // 3. No incoming ride is already shown (avoid duplicates)
+          if (
+            ride.status === 'matched' && 
+            ride.driver_id === user.id && 
+            !activeTrip && 
+            !incomingRide
+          ) {
+            setIncomingRide(ride);
+            // Show notification
+            Notifications.scheduleNotificationAsync({
+              content: {
+                title: 'New Ride Request!',
+                body: `Ride from ${ride.rider_name} - GH₵${ride.fare_estimate}`,
+              },
+              trigger: null,
+            });
+          }
+        }
+      });
+    });
+
+    return () => unsubscribe?.();
+  }, [user?.id, isOnline, activeTrip, incomingRide]);
+
   const handleToggleOnline = async () => {
     if (!driverProfile) return;
     setTogglingOnline(true);
@@ -137,6 +173,33 @@ export default function DriverHomeScreen() {
       Alert.alert('Error', 'Failed to update status');
     } finally {
       setTogglingOnline(false);
+    }
+  };
+
+  const handleAcceptRide = async () => {
+    if (!incomingRide || !driverProfile) return;
+    try {
+      await firestoreDB.update(COLLECTIONS.RIDES, incomingRide.id, {
+        status: 'driver_arriving'
+      });
+      setActiveTrip({ ...incomingRide, status: 'driver_arriving' });
+      setIncomingRide(null);
+    } catch (err) {
+      Alert.alert('Error', 'Failed to accept ride');
+    }
+  };
+
+  const handleDeclineRide = async () => {
+    if (!incomingRide) return;
+    try {
+      await firestoreDB.update(COLLECTIONS.RIDES, incomingRide.id, {
+        status: 'requested',
+        driver_id: null,
+        driver_name: null
+      });
+      setIncomingRide(null);
+    } catch (err) {
+      Alert.alert('Error', 'Failed to decline ride');
     }
   };
 
@@ -214,6 +277,37 @@ export default function DriverHomeScreen() {
 
       {/* Bottom Interface */}
       <View style={[styles.bottomContainer, { paddingBottom: insets.bottom + 20 }]}>
+        {/* Incoming Ride Request */}
+        {incomingRide && !activeTrip && (
+          <View style={[styles.rideRequestCard, dynamicStyles.card]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.rideTitle, dynamicStyles.text]}>New Ride Request</Text>
+              <Text style={[styles.rideName, dynamicStyles.text]}>{incomingRide.rider_name}</Text>
+              <Text style={[styles.rideDetails, dynamicStyles.muted]} numberOfLines={1}>
+                From: {incomingRide.pickup?.address || 'Pickup location'}
+              </Text>
+              <Text style={[styles.rideDetails, dynamicStyles.muted]} numberOfLines={1}>
+                To: {incomingRide.destination?.address || 'Destination'}
+              </Text>
+              <Text style={[styles.rideFare, { color: GOLD }]}>GH₵{incomingRide.fare_estimate}</Text>
+            </View>
+            <View style={styles.rideActions}>
+              <TouchableOpacity 
+                style={[styles.rideBtn, { backgroundColor: RED }]}
+                onPress={handleDeclineRide}
+              >
+                <MaterialIcons name="close" size={20} color="#FFF" />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.rideBtn, { backgroundColor: GREEN }]}
+                onPress={handleAcceptRide}
+              >
+                <MaterialIcons name="check" size={20} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* Active Trip Navigation Card */}
         {activeTrip && (
           <View style={[styles.navCard, dynamicStyles.card]}>
@@ -309,6 +403,14 @@ const styles = StyleSheet.create({
   notifCircle: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
   bottomContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 16, gap: 10 },
   
+  rideRequestCard: { flexDirection: 'row', padding: 16, borderRadius: 20, borderWidth: 1, gap: 12, alignItems: 'center' },
+  rideTitle: { fontSize: 12, fontWeight: '700', opacity: 0.8 },
+  rideName: { fontSize: 16, fontWeight: '900', marginTop: 4 },
+  rideDetails: { fontSize: 12, marginTop: 2 },
+  rideFare: { fontSize: 18, fontWeight: '900', marginTop: 8 },
+  rideActions: { flexDirection: 'row', gap: 8 },
+  rideBtn: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+
   navCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 20, borderWidth: 1, gap: 12 },
   navTitle: { fontSize: 16, fontWeight: '900' },
   navSub: { fontSize: 13, marginTop: 2 },
