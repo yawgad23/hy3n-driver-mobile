@@ -347,7 +347,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
         </View>
         <Text style={[styles.gateTitle, { color: colors.foreground }]}>Payment Pending</Text>
         <Text style={[styles.gateSubtitle, { color: colors.muted }]}>
-          We haven't received confirmation from your mobile network yet. If you have approved the prompt, please check again.
+          We haven&apos;t received confirmation from your mobile network yet. If you have approved the prompt, please check again.
         </Text>
 
         <TouchableOpacity
