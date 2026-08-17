@@ -1,30 +1,32 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as ExpoLocation from 'expo-location';
 import { useDriverPreferences } from '@/hooks/use-driver-preferences';
-import { RIDE_CATEGORIES, FREE_WAITING_MINUTES, POPULAR_DESTINATIONS } from '@/constants/rides';
-import { trpc } from '@/lib/trpc';
+import { RIDE_CATEGORIES, FREE_WAITING_MINUTES, POPULAR_DESTINATIONS, calculateFare, getFareBreakdown } from '@/constants/rides';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  Dimensions, Alert, ActivityIndicator, Animated, Image, Platform,
-  Modal, TextInput, KeyboardAvoidingView, StatusBar, useColorScheme
+  Dimensions, Alert, ActivityIndicator, Animated, Image, Platform, PanResponder,
+  Modal, TextInput, StatusBar, useColorScheme
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Notifications from 'expo-notifications';
+import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
-import { router } from 'expo-router';
 import { Linking } from 'react-native';
-import { RideChatModal, useUnreadChatCount } from '@/components/ride-chat-modal';
-import MapView, { Marker, PROVIDER_GOOGLE, Circle } from 'react-native-maps';
+import { RideChatModal } from '@/components/ride-chat-modal';
+import { InCallScreen, IncomingCallModal } from '@/components/in-call-screen';
+import { useVoiceCall } from '@/hooks/use-voice-call';
+import MapView, { PROVIDER_GOOGLE, Circle } from 'react-native-maps';
 import { Colors } from '@/constants/theme';
 
+const INCOMING_TRIP_ALERT = require('../../assets/audio/incoming-trip-alert.wav');
 const GOLD = '#D4AF37';
 const GREEN = '#22C55E';
 const RED = '#EF4444';
 const BLUE = '#3B82F6';
 
-const { width, height } = Dimensions.get('window');
+const { height } = Dimensions.get('window');
 
 export default function DriverHomeScreen() {
   const insets = useSafeAreaInsets();
@@ -35,6 +37,10 @@ export default function DriverHomeScreen() {
   const { user, driverProfile } = useDriverAuth();
   const { prefs, toggle: togglePref, setPrefs } = useDriverPreferences();
   const mapRef = useRef<MapView>(null);
+  const incomingTripPlayer = useAudioPlayer(INCOMING_TRIP_ALERT, {
+    downloadFirst: true,
+    keepAudioSessionActive: true,
+  });
   
   const [isOnline, setIsOnline] = useState(false);
   const [location, setLocation] = useState<ExpoLocation.LocationObject | null>(null);
@@ -46,6 +52,24 @@ export default function DriverHomeScreen() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [togglingOnline, setTogglingOnline] = useState(false);
   const [eta, setEta] = useState<number | null>(null);
+  const [nextRide, setNextRide] = useState<any>(null);
+  const [queuedRideToActivate, setQueuedRideToActivate] = useState<any>(null);
+  const [rideOfferSeconds, setRideOfferSeconds] = useState(20);
+  const [showOtp, setShowOtp] = useState(false);
+  const [pickupCode, setPickupCode] = useState('');
+  const [showCancel, setShowCancel] = useState(false);
+  const [showCallOptions, setShowCallOptions] = useState(false);
+  const [showFareScreen, setShowFareScreen] = useState(false);
+  const [showTripSummary, setShowTripSummary] = useState(false);
+  const [foundItem, setFoundItem] = useState('');
+  const [safetyReport, setSafetyReport] = useState('');
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [tripDistanceKm, setTripDistanceKm] = useState(0);
+  const [tripStartedAt, setTripStartedAt] = useState<string | null>(null);
+  const lastTripLocationRef = useRef<ExpoLocation.LocationObject | null>(null);
+  const lastSpeedRef = useRef<number | null>(null);
+  const lastSafetyEventAtRef = useRef(0);
+  const offerSwipeX = useRef(new Animated.Value(0)).current;
   
   // Navigation Switcher Logic
   const openNavigation = (lat: number, lng: number, label: string) => {
@@ -87,6 +111,23 @@ export default function DriverHomeScreen() {
   const [ratingFeedback, setRatingFeedback] = useState('');
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const call = useVoiceCall({
+    rideId: activeTrip?.id,
+    myId: user?.uid,
+    myName: driverProfile?.full_name || 'Driver',
+    myRole: 'driver',
+    otherName: activeTrip?.rider_name,
+  });
+
+  const riderPhone = activeTrip?.rider_phone || activeTrip?.passenger_phone || activeTrip?.phone || '';
+  const paymentLabel = (method?: string) => {
+    if (method === 'mobile_money') return 'MoMo';
+    if (method === 'wallet') return 'Wallet';
+    if (method === 'cash') return 'Cash';
+    if (method === 'card') return 'Card';
+    return 'Payment pending';
+  };
+  const isHighRiskArea = (address?: string) => /nima|mamobi|agbogbloshie|circle|darkuman|kasoa/i.test(address || '');
 
   useEffect(() => {
     if (isOnline) {
@@ -100,6 +141,43 @@ export default function DriverHomeScreen() {
       pulseAnim.setValue(1);
     }
   }, [isOnline]);
+
+  // Incoming-ride alert: play the distinctive local tone repeatedly until the
+  // driver accepts, declines, the offer expires, or sound alerts are disabled.
+  useEffect(() => {
+    setAudioModeAsync({
+      playsInSilentMode: true,
+      interruptionMode: 'duckOthers',
+      allowsRecording: false,
+      shouldPlayInBackground: false,
+      shouldRouteThroughEarpiece: false,
+    }).catch(() => {});
+
+    return () => {
+      incomingTripPlayer.pause();
+      incomingTripPlayer.seekTo(0).catch(() => {});
+    };
+  }, [incomingTripPlayer]);
+
+  useEffect(() => {
+    const shouldAlert = Boolean(incomingRide?.id) && !activeTrip && prefs.soundAlerts;
+    if (!shouldAlert) {
+      incomingTripPlayer.pause();
+      incomingTripPlayer.seekTo(0).catch(() => {});
+      return;
+    }
+
+    incomingTripPlayer.loop = true;
+    incomingTripPlayer.volume = 0.92;
+    incomingTripPlayer.seekTo(0)
+      .catch(() => {})
+      .finally(() => incomingTripPlayer.play());
+
+    return () => {
+      incomingTripPlayer.pause();
+      incomingTripPlayer.seekTo(0).catch(() => {});
+    };
+  }, [incomingRide?.id, activeTrip?.id, prefs.soundAlerts, incomingTripPlayer]);
 
   // Waiting time counter
   useEffect(() => {
@@ -133,40 +211,83 @@ export default function DriverHomeScreen() {
     if (driverProfile) setIsOnline(driverProfile.is_online || false);
   }, [driverProfile]);
 
-  // Subscribe to incoming rides — FIX: prevent duplicate ride requests
+  // Receive driver-assigned requests in real time. A ride is only shown when it
+  // meets the driver's saved preferences; active drivers may queue one next ride.
   useEffect(() => {
-    if (!user?.id || !isOnline) return;
-    
-    const unsubscribe = firestoreDB.subscribe(COLLECTIONS.RIDES, (snapshot) => {
-      snapshot.forEach((change) => {
-        if (change.type === 'modified') {
-          const ride = change.doc.data();
-          // Only show incoming ride if:
-          // 1. The ride is matched to this driver
-          // 2. No active trip is in progress
-          // 3. No incoming ride is already shown (avoid duplicates)
-          if (
-            ride.status === 'matched' && 
-            ride.driver_id === user.id && 
-            !activeTrip && 
-            !incomingRide
-          ) {
-            setIncomingRide(ride);
-            // Show notification
-            Notifications.scheduleNotificationAsync({
-              content: {
-                title: 'New Ride Request!',
-                body: `Ride from ${ride.rider_name} - GH₵${ride.fare_estimate}`,
-              },
-              trigger: null,
-            });
-          }
-        }
+    if (!user?.uid || !isOnline) return;
+
+    const unsubscribe = firestoreDB.subscribe(COLLECTIONS.RIDES, { driver_id: user.uid }, (rides) => {
+      const matched = rides.find((ride: any) => ride.status === 'matched');
+      if (!matched) return;
+
+      const estimatedDistance = Number(matched.distance_km || matched.estimated_distance_km || 0);
+      const eligibleForLongTrip = !prefs.longTripsOnly || estimatedDistance >= 8;
+      const eligibleForRating = !prefs.preferHighRated || Number(matched.rider_rating || 5) >= 4.5;
+      if (!eligibleForLongTrip || !eligibleForRating) return;
+
+      if (activeTrip) {
+        setNextRide((current: any) => current?.id === matched.id ? current : matched);
+        return;
+      }
+
+      setIncomingRide((current: any) => {
+        if (current?.id === matched.id) return current;
+        setRideOfferSeconds(20);
+        Notifications.scheduleNotificationAsync({
+          content: {
+            title: 'New Ride Request',
+            body: `Ride from ${matched.rider_name || 'a rider'} · GH₵${matched.fare_estimate || 0}`,
+            sound: 'default',
+            priority: Notifications.AndroidNotificationPriority.MAX,
+          },
+          trigger: null,
+        }).catch(() => {});
+        return matched;
       });
     });
 
     return () => unsubscribe?.();
-  }, [user?.id, isOnline, activeTrip, incomingRide]);
+  }, [user?.uid, isOnline, activeTrip, prefs.longTripsOnly, prefs.preferHighRated]);
+
+  // Recover a trip if the app is reopened while the driver is already assigned.
+  useEffect(() => {
+    if (!user?.uid) return;
+    firestoreDB.list(COLLECTIONS.RIDES, { driver_id: user.uid }, null).then((rides) => {
+      const current = rides.find((ride: any) => ['driver_arriving', 'in_progress'].includes(ride.status));
+      if (current) {
+        setActiveTrip(current);
+        setTripStartedAt(current.trip_started_at || null);
+        setArrivedAt(current.driver_arrived_at || null);
+      }
+    }).catch(() => {});
+  }, [user?.uid]);
+
+  // Automatically expire unanswered requests and optionally accept approved matches.
+  useEffect(() => {
+    if (!incomingRide || activeTrip) return;
+    const timer = setInterval(() => setRideOfferSeconds((seconds) => seconds - 1), 1000);
+    return () => clearInterval(timer);
+  }, [incomingRide, activeTrip]);
+
+  useEffect(() => {
+    if (!incomingRide || activeTrip || rideOfferSeconds > 0) return;
+    handleDeclineRide();
+  }, [rideOfferSeconds, incomingRide, activeTrip]);
+
+  useEffect(() => {
+    if (!incomingRide || activeTrip || !prefs.autoAccept) return;
+    const timer = setTimeout(() => handleAcceptRide(), 2500);
+    return () => clearTimeout(timer);
+  }, [incomingRide, activeTrip, prefs.autoAccept]);
+
+  // Server-backed notification center. Local notifications remain enabled for
+  // foreground alerts while this feed retains operational notifications.
+  useEffect(() => {
+    if (!user?.uid) return;
+    return firestoreDB.subscribe(COLLECTIONS.DRIVER_NOTIFICATIONS, { driver_id: user.uid }, (items) => {
+      setNotifications(items.sort((a: any, b: any) => String(b.created_date || '').localeCompare(String(a.created_date || ''))));
+    });
+  }, [user?.uid]);
 
   // Unread message counter
   useEffect(() => {
@@ -191,6 +312,48 @@ export default function DriverHomeScreen() {
 
   const openChat = () => { setShowChat(true); setUnreadCount(0); };
 
+  const haversineKm = (from: ExpoLocation.LocationObject, to: ExpoLocation.LocationObject) => {
+    const toRad = (value: number) => (value * Math.PI) / 180;
+    const radiusKm = 6371;
+    const dLat = toRad(to.coords.latitude - from.coords.latitude);
+    const dLng = toRad(to.coords.longitude - from.coords.longitude);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(from.coords.latitude)) * Math.cos(toRad(to.coords.latitude)) * Math.sin(dLng / 2) ** 2;
+    return radiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+
+  // Persist live driver location, distance travelled, and meaningful safety events.
+  useEffect(() => {
+    if (!location || !activeTrip || activeTrip.status !== 'in_progress') return;
+    const previous = lastTripLocationRef.current;
+    lastTripLocationRef.current = location;
+    if (!previous) return;
+
+    const increment = haversineKm(previous, location);
+    if (increment > 0 && increment < 2) setTripDistanceKm((distance) => distance + increment);
+    const speed = Math.max(0, Number(location.coords.speed || 0) * 3.6);
+    const priorSpeed = lastSpeedRef.current;
+    lastSpeedRef.current = speed;
+    const now = Date.now();
+
+    firestoreDB.update(COLLECTIONS.RIDES, activeTrip.id, {
+      driver_last_location: { latitude: location.coords.latitude, longitude: location.coords.longitude, speed_kmh: Number(speed.toFixed(1)), recorded_at: new Date().toISOString() },
+    }).catch(() => {});
+
+    if (priorSpeed !== null && priorSpeed - speed >= 28 && now - lastSafetyEventAtRef.current > 60000) {
+      lastSafetyEventAtRef.current = now;
+      firestoreDB.create(COLLECTIONS.DRIVER_SAFETY_EVENTS, {
+        driver_id: user?.uid,
+        ride_id: activeTrip.id,
+        type: 'hard_braking',
+        previous_speed_kmh: Number(priorSpeed.toFixed(1)),
+        current_speed_kmh: Number(speed.toFixed(1)),
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        created_at: new Date().toISOString(),
+      }).catch(() => {});
+    }
+  }, [location, activeTrip?.id, activeTrip?.status]);
+
   const handleToggleOnline = async () => {
     if (!driverProfile) return;
     setTogglingOnline(true);
@@ -212,12 +375,31 @@ export default function DriverHomeScreen() {
     if (!incomingRide || !driverProfile) return;
     try {
       await firestoreDB.update(COLLECTIONS.RIDES, incomingRide.id, {
-        status: 'driver_arriving'
+        status: 'driver_arriving',
+        driver_id: user?.uid,
+        driver_name: driverProfile.full_name || 'Driver',
+        driver_accepted_at: new Date().toISOString(),
       });
       setActiveTrip({ ...incomingRide, status: 'driver_arriving' });
       setIncomingRide(null);
+      setRideOfferSeconds(20);
     } catch (err) {
       Alert.alert('Error', 'Failed to accept ride');
+    }
+  };
+
+  const handleAcceptQueuedRide = async () => {
+    if (!nextRide || !activeTrip) return;
+    try {
+      await firestoreDB.update(COLLECTIONS.RIDES, nextRide.id, {
+        status: 'driver_queued',
+        queued_after_ride_id: activeTrip.id,
+        driver_queued_at: new Date().toISOString(),
+      });
+      setNextRide({ ...nextRide, status: 'driver_queued' });
+      Alert.alert('Next ride queued', `You will be connected to ${nextRide.rider_name || 'your next rider'} after this trip.`);
+    } catch {
+      Alert.alert('Unable to queue ride', 'Please try again.');
     }
   };
 
@@ -227,12 +409,66 @@ export default function DriverHomeScreen() {
       await firestoreDB.update(COLLECTIONS.RIDES, incomingRide.id, {
         status: 'requested',
         driver_id: null,
-        driver_name: null
+        driver_name: null,
+        declined_by_driver_at: new Date().toISOString(),
       });
       setIncomingRide(null);
+      setRideOfferSeconds(20);
     } catch (err) {
       Alert.alert('Error', 'Failed to decline ride');
     }
+  };
+
+  const offerPanResponder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_, gesture) => !!incomingRide && Math.abs(gesture.dx) > 8,
+    onPanResponderMove: Animated.event([null, { dx: offerSwipeX }], { useNativeDriver: false }),
+    onPanResponderRelease: (_, gesture) => {
+      if (gesture.dx > 110) handleAcceptRide();
+      else if (gesture.dx < -110) handleDeclineRide();
+      Animated.spring(offerSwipeX, { toValue: 0, useNativeDriver: true }).start();
+    },
+  }), [incomingRide, offerSwipeX, handleAcceptRide, handleDeclineRide]);
+
+  const handleCancelTrip = async (reason: string) => {
+    if (!activeTrip) return;
+    try {
+      await firestoreDB.update(COLLECTIONS.RIDES, activeTrip.id, {
+        status: 'cancelled',
+        cancelled_by: 'driver',
+        cancellation_reason: reason,
+        cancelled_at: new Date().toISOString(),
+      });
+      setActiveTrip(null);
+      setArrivedAt(null);
+      setShowCancel(false);
+      Alert.alert('Trip cancelled', 'The rider has been notified.');
+    } catch {
+      Alert.alert('Unable to cancel trip', 'Please try again.');
+    }
+  };
+
+  const triggerSOS = () => {
+    Alert.alert('Send emergency alert?', 'Your current location and active trip details will be shared with HY3N safety support.', [
+      { text: 'Not now', style: 'cancel' },
+      {
+        text: 'Send SOS', style: 'destructive', onPress: async () => {
+          try {
+            await firestoreDB.create(COLLECTIONS.SOS_INCIDENTS, {
+              driver_id: user?.uid,
+              driver_name: driverProfile?.full_name || 'Driver',
+              ride_id: activeTrip?.id || null,
+              status: 'open',
+              latitude: location?.coords.latitude || null,
+              longitude: location?.coords.longitude || null,
+              triggered_at: new Date().toISOString(),
+            });
+            Alert.alert('SOS sent', 'HY3N safety support has been alerted. If you are in immediate danger, call emergency services.');
+          } catch {
+            Alert.alert('SOS not sent', 'Please call emergency services or try again.');
+          }
+        },
+      },
+    ]);
   };
 
   // Driver arrival at pickup
@@ -271,61 +507,97 @@ export default function DriverHomeScreen() {
     return { waitingMinutes: parseFloat(chargeableMinutes.toFixed(1)), waitingFee: fee };
   };
 
-  // Start trip
-  const handleStartTrip = async () => {
-    if (!activeTrip) return;
+  const beginTrip = async (ride = activeTrip) => {
+    if (!ride) return;
     try {
-      const tripStartedAt = new Date().toISOString();
+      const startedAt = new Date().toISOString();
       const { waitingMinutes, waitingFee } = calculateWaitingFee();
-      await firestoreDB.update(COLLECTIONS.RIDES, activeTrip.id, {
+      await firestoreDB.update(COLLECTIONS.RIDES, ride.id, {
         status: 'in_progress',
-        trip_started_at: tripStartedAt,
+        trip_started_at: startedAt,
         waiting_time_minutes: waitingMinutes,
-        waiting_fee: waitingFee
+        waiting_fee: waitingFee,
       });
-      setActiveTrip({
-        ...activeTrip,
-        status: 'in_progress',
-        trip_started_at: tripStartedAt,
-        waiting_time_minutes: waitingMinutes,
-        waiting_fee: waitingFee
-      });
+      setActiveTrip({ ...ride, status: 'in_progress', trip_started_at: startedAt, waiting_time_minutes: waitingMinutes, waiting_fee: waitingFee });
+      setTripStartedAt(startedAt);
+      setTripDistanceKm(0);
+      lastTripLocationRef.current = location;
       setArrivedAt(null);
-    } catch (err) {
+    } catch {
       Alert.alert('Error', 'Failed to start trip');
     }
   };
 
-  // End trip
+  // Verify the rider's pickup code before the trip begins when a code was issued.
+  const handleStartTrip = async () => {
+    if (!activeTrip) return;
+    if (activeTrip.pickup_code && !activeTrip.pickup_verified_at) {
+      setShowOtp(true);
+      return;
+    }
+    await beginTrip();
+  };
+
+  const handleVerifyPickupCode = async () => {
+    if (!activeTrip) return;
+    if (pickupCode.trim() !== String(activeTrip.pickup_code).trim()) {
+      Alert.alert('Incorrect code', 'Ask the rider for the pickup code shown in their app.');
+      return;
+    }
+    const verifiedAt = new Date().toISOString();
+    try {
+      await firestoreDB.update(COLLECTIONS.RIDES, activeTrip.id, { pickup_verified_at: verifiedAt });
+      const verifiedTrip = { ...activeTrip, pickup_verified_at: verifiedAt };
+      setPickupCode('');
+      setShowOtp(false);
+      await beginTrip(verifiedTrip);
+    } catch {
+      Alert.alert('Unable to verify code', 'Please try again.');
+    }
+  };
+
+  // End trip and calculate a transparent category-based fare from tracked distance.
   const handleEndTrip = async () => {
     if (!activeTrip) return;
     try {
-      const baseFare = activeTrip.fare_estimate || 0;
-      const waitingFee = activeTrip.waiting_fee || 0;
+      const waitingFee = Number(activeTrip.waiting_fee || 0);
+      const durationMinutes = tripStartedAt ? Math.max(1, (Date.now() - new Date(tripStartedAt).getTime()) / 60000) : Number(activeTrip.duration_minutes || 0);
+      const calculatedFare = calculateFare(activeTrip.category || 'standard', tripDistanceKm || Number(activeTrip.distance_km || 0), durationMinutes, Number(activeTrip.surge_multiplier || 1));
+      const baseFare = Math.max(Number(activeTrip.fare_estimate || 0), calculatedFare);
       const totalFare = parseFloat((baseFare + waitingFee).toFixed(2));
-      
+      const fareBreakdown = getFareBreakdown(activeTrip.category || 'standard', tripDistanceKm || Number(activeTrip.distance_km || 0), durationMinutes, Number(activeTrip.surge_multiplier || 1));
+
       await firestoreDB.update(COLLECTIONS.RIDES, activeTrip.id, {
         status: 'completed',
         final_fare: totalFare,
-        waiting_fee: waitingFee
+        waiting_fee: waitingFee,
+        actual_distance_km: Number(tripDistanceKm.toFixed(2)),
+        actual_duration_minutes: Number(durationMinutes.toFixed(1)),
+        fare_breakdown: fareBreakdown,
+        completed_at: new Date().toISOString(),
       });
 
-      // Create earning record
-      await firestoreDB.add(COLLECTIONS.EARNINGS, {
-        driver_id: user.id,
+      await firestoreDB.create(COLLECTIONS.EARNINGS, {
+        driver_id: user?.uid,
         ride_id: activeTrip.id,
         amount: totalFare,
-        commission: totalFare * 0.15,
-        net_amount: totalFare * 0.85,
+        gross_amount: totalFare,
+        commission: Number((totalFare * 0.15).toFixed(2)),
+        net_amount: Number((totalFare * 0.85).toFixed(2)),
+        tip_amount: Number(activeTrip.tip_amount || 0),
         status: 'available',
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
       });
 
-      setCompletedRide({ ...activeTrip, final_fare: totalFare, waiting_fee: waitingFee });
+      const completed = { ...activeTrip, final_fare: totalFare, waiting_fee: waitingFee, actual_distance_km: tripDistanceKm, actual_duration_minutes: durationMinutes, fare_breakdown: fareBreakdown };
+      setCompletedRide(completed);
+      if (nextRide?.status === 'driver_queued') setQueuedRideToActivate(nextRide);
       setActiveTrip(null);
       setArrivedAt(null);
-      setShowRating(true);
-    } catch (err) {
+      setTripStartedAt(null);
+      lastTripLocationRef.current = null;
+      setShowFareScreen(true);
+    } catch {
       Alert.alert('Error', 'Failed to end trip');
     }
   };
@@ -350,22 +622,70 @@ export default function DriverHomeScreen() {
           { field: 'rider_id', operator: '==', value: completedRide.rider_id }
         ]);
         
-        const ratedRides = rides.filter(r => r.driver_rating > 0);
+        const ratedRides = rides.filter((r: any) => Number(r.driver_rating || 0) > 0);
         if (ratedRides.length > 0) {
-          const avgRating = ratedRides.reduce((sum, r) => sum + r.driver_rating, 0) / ratedRides.length;
+          const avgRating = ratedRides.reduce((sum: number, r: any) => sum + Number(r.driver_rating || 0), 0) / ratedRides.length;
           await firestoreDB.update(COLLECTIONS.RIDER_PROFILES, riderProfile.id, {
             rating: parseFloat(avgRating.toFixed(2))
           });
         }
       }
 
+      if (foundItem.trim()) {
+        await firestoreDB.create(COLLECTIONS.FOUND_ITEMS, {
+          driver_id: user?.uid,
+          ride_id: completedRide.id,
+          rider_id: completedRide.rider_id || null,
+          description: foundItem.trim(),
+          status: 'reported',
+          reported_at: new Date().toISOString(),
+        });
+      }
+      if (safetyReport.trim()) {
+        await firestoreDB.create(COLLECTIONS.RIDE_REPORTS, {
+          reporter_id: user?.uid,
+          reporter_role: 'driver',
+          ride_id: completedRide.id,
+          type: 'safety',
+          description: safetyReport.trim(),
+          status: 'open',
+          created_at: new Date().toISOString(),
+        });
+      }
+
       setShowRating(false);
       setCompletedRide(null);
       setRatingValue(0);
       setRatingFeedback('');
+      setFoundItem('');
+      setSafetyReport('');
     } catch (err) {
       Alert.alert('Error', 'Failed to submit rating');
     }
+  };
+
+  const handleFareAcknowledged = async () => {
+    setShowFareScreen(false);
+    setShowRating(true);
+    if (!queuedRideToActivate) return;
+    try {
+      await firestoreDB.update(COLLECTIONS.RIDES, queuedRideToActivate.id, {
+        status: 'driver_arriving',
+        queue_activated_at: new Date().toISOString(),
+      });
+      setActiveTrip({ ...queuedRideToActivate, status: 'driver_arriving' });
+      setNextRide(null);
+      setQueuedRideToActivate(null);
+    } catch {
+      Alert.alert('Queued ride pending', 'The next ride could not be activated automatically. Please refresh the app.');
+    }
+  };
+
+  const markNotificationRead = async (item: any) => {
+    if (item.read_at) return;
+    try {
+      await firestoreDB.update(COLLECTIONS.DRIVER_NOTIFICATIONS, item.id, { read_at: new Date().toISOString() });
+    } catch {}
   };
 
   // Check approval status
@@ -452,12 +772,13 @@ export default function DriverHomeScreen() {
           )}
           <TouchableOpacity 
             style={[styles.notifCircle, dynamicStyles.badge]} 
-            onPress={() => Alert.alert('SOS', 'Emergency assistance requested')}
+            onPress={triggerSOS}
           >
             <MaterialIcons name="emergency" size={26} color={RED} />
           </TouchableOpacity>
           <TouchableOpacity style={[styles.notifCircle, dynamicStyles.badge]} onPress={() => setNotifOpen(true)}>
             <MaterialIcons name="notifications-none" size={26} color={themeColors.text} />
+            {notifications.filter((item) => !item.read_at).length > 0 && <View style={styles.headerBadge}><Text style={styles.headerBadgeText}>{Math.min(9, notifications.filter((item) => !item.read_at).length)}</Text></View>}
           </TouchableOpacity>
         </View>
       </View>
@@ -466,13 +787,19 @@ export default function DriverHomeScreen() {
       <View style={[styles.bottomContainer, { paddingBottom: insets.bottom + 20 }]}>
         {/* Incoming Ride Request */}
         {incomingRide && !activeTrip && (
-          <View style={[styles.rideRequestCard, dynamicStyles.card]}>
+          <Animated.View {...offerPanResponder.panHandlers} style={[styles.rideRequestCard, dynamicStyles.card, { transform: [{ translateX: offerSwipeX }] }]}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.rideTitle, dynamicStyles.text]}>New Ride Request</Text>
+              <View style={styles.offerHeader}><Text style={[styles.rideTitle, dynamicStyles.text]}>New Ride Request</Text><Text style={[styles.offerTimer, { color: rideOfferSeconds <= 5 ? RED : GOLD }]}>{Math.max(0, rideOfferSeconds)}s</Text></View>
               <Text style={[styles.rideName, dynamicStyles.text]}>{incomingRide.rider_name}</Text>
+              <View style={styles.metaRow}>
+                {incomingRide.rider_rating && <Text style={[styles.metaText, dynamicStyles.muted]}>★ {Number(incomingRide.rider_rating).toFixed(1)}</Text>}
+                <Text style={[styles.categoryBadge, { color: GOLD }]}>{RIDE_CATEGORIES.find((category) => category.id === incomingRide.category)?.name || 'Standard'}</Text>
+                {!!(incomingRide.distance_km || incomingRide.estimated_distance_km) && <Text style={[styles.metaText, dynamicStyles.muted]}>{Number(incomingRide.distance_km || incomingRide.estimated_distance_km).toFixed(1)} km</Text>}
+              </View>
               <Text style={[styles.rideDetails, dynamicStyles.muted]} numberOfLines={1}>
                 From: {incomingRide.pickup_address || 'Pickup'}
               </Text>
+              {isHighRiskArea(incomingRide.pickup_address) && <View style={styles.riskBanner}><MaterialIcons name="warning-amber" size={14} color="#7C2D12" /><Text style={styles.riskText}>Use extra caution in this pickup area</Text></View>}
               <Text style={[styles.rideDetails, dynamicStyles.muted]} numberOfLines={1}>
                 To: {incomingRide.destination_address || 'Destination'}
               </Text>
@@ -508,7 +835,7 @@ export default function DriverHomeScreen() {
                 <MaterialIcons name="check" size={20} color="#FFF" />
               </TouchableOpacity>
             </View>
-          </View>
+          </Animated.View>
         )}
 
         {/* Active Trip Navigation Card */}
@@ -521,9 +848,15 @@ export default function DriverHomeScreen() {
                   : 'Trip in Progress'}
               </Text>
               <Text style={[styles.navTitle, dynamicStyles.text]}>{activeTrip.rider_name}</Text>
+              <View style={styles.metaRow}>
+                {activeTrip.rider_rating && <Text style={[styles.metaText, dynamicStyles.muted]}>★ {Number(activeTrip.rider_rating).toFixed(1)}</Text>}
+                <Text style={[styles.categoryBadge, { color: GOLD }]}>{RIDE_CATEGORIES.find((category) => category.id === activeTrip.category)?.name || 'Standard'}</Text>
+                <Text style={[styles.metaText, dynamicStyles.muted]}>{paymentLabel(activeTrip.payment_method)}</Text>
+              </View>
               <Text style={[styles.navSub, dynamicStyles.muted]} numberOfLines={1}>
                 {activeTrip.status === 'in_progress' ? activeTrip.destination_address : activeTrip.pickup_address}
               </Text>
+              {activeTrip.status === 'in_progress' && <Text style={[styles.tripTracking, dynamicStyles.muted]}>Tracked: {tripDistanceKm.toFixed(2)} km</Text>}
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 12 }}>
                 <Text style={[styles.navFare, { color: GOLD }]}>
                   GH₵{activeTrip.waiting_fee 
@@ -562,6 +895,17 @@ export default function DriverHomeScreen() {
           </View>
         )}
 
+        {/* Back-to-back ride queue */}
+        {activeTrip && nextRide && (
+          <View style={[styles.queueCard, dynamicStyles.card]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.queueTitle, dynamicStyles.text]}>Next ride available</Text>
+              <Text style={[styles.queueText, dynamicStyles.muted]} numberOfLines={1}>{nextRide.rider_name || 'Rider'} · {nextRide.pickup_address || 'Pickup'} → {nextRide.destination_address || 'Destination'}</Text>
+            </View>
+            {nextRide.status === 'driver_queued' ? <View style={styles.queuedTag}><Text style={styles.queuedTagText}>Queued</Text></View> : <TouchableOpacity style={styles.queueButton} onPress={handleAcceptQueuedRide}><Text style={styles.queueButtonText}>Queue</Text></TouchableOpacity>}
+          </View>
+        )}
+
         {/* Quick Destination Filter */}
         {isOnline && !activeTrip && (
           <TouchableOpacity 
@@ -584,17 +928,14 @@ export default function DriverHomeScreen() {
         <View style={{ flexDirection: 'row', gap: 8 }}>
           {activeTrip && (
             <>
-              <TouchableOpacity 
-                style={[styles.actionBtn, { backgroundColor: BLUE, flex: 1 }]}
-                onPress={openChat}
-              >
+              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: BLUE, flex: 1 }]} onPress={openChat}>
                 <MaterialIcons name="chat" size={18} color="#FFF" />
                 <Text style={styles.actionBtnText}>Chat</Text>
-                {unreadCount > 0 && (
-                  <View style={styles.unreadBadge}>
-                    <Text style={styles.unreadText}>{unreadCount}</Text>
-                  </View>
-                )}
+                {unreadCount > 0 && <View style={styles.unreadBadge}><Text style={styles.unreadText}>{unreadCount}</Text></View>}
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#475569', flex: 1 }]} onPress={() => setShowCallOptions(true)}>
+                <MaterialIcons name="phone" size={18} color="#FFF" />
+                <Text style={styles.actionBtnText}>Call</Text>
               </TouchableOpacity>
 
               {activeTrip.status === 'driver_arriving' ? (
@@ -616,14 +957,15 @@ export default function DriverHomeScreen() {
                   </TouchableOpacity>
                 )
               ) : (
-                <TouchableOpacity 
-                  style={[styles.actionBtn, { backgroundColor: RED, flex: 1 }]}
-                  onPress={handleEndTrip}
-                >
+                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: RED, flex: 1 }]} onPress={handleEndTrip}>
                   <MaterialIcons name="stop" size={18} color="#FFF" />
                   <Text style={styles.actionBtnText}>End</Text>
                 </TouchableOpacity>
               )}
+              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#64748B', flex: 0.7 }]} onPress={() => setShowCancel(true)}>
+                <MaterialIcons name="close" size={18} color="#FFF" />
+                <Text style={styles.actionBtnText}>Cancel</Text>
+              </TouchableOpacity>
             </>
           )}
         </View>
@@ -666,6 +1008,70 @@ export default function DriverHomeScreen() {
         </View>
       </Modal>
 
+      {/* Pickup-code verification */}
+      <Modal visible={showOtp} transparent animationType="fade" onRequestClose={() => setShowOtp(false)}>
+        <View style={styles.sheetOverlay}>
+          <View style={[styles.sheet, { backgroundColor: isDark ? '#1a1a1a' : '#fff' }]}>
+            <MaterialIcons name="lock" size={30} color={GOLD} />
+            <Text style={[styles.sheetTitle, dynamicStyles.text]}>Verify pickup code</Text>
+            <Text style={[styles.sheetText, dynamicStyles.muted]}>Ask the rider for the code in their HY3N app before starting this trip.</Text>
+            <TextInput style={[styles.codeInput, { color: themeColors.text, borderColor: themeColors.border }]} value={pickupCode} onChangeText={setPickupCode} keyboardType="number-pad" maxLength={6} placeholder="Enter code" placeholderTextColor="#999" />
+            <TouchableOpacity style={[styles.sheetPrimary, { backgroundColor: GOLD }]} onPress={handleVerifyPickupCode}><Text style={styles.sheetPrimaryText}>Verify & start trip</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.sheetSecondary} onPress={() => setShowOtp(false)}><Text style={[styles.sheetSecondaryText, dynamicStyles.text]}>Cancel</Text></TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Driver cancellation reasons */}
+      <Modal visible={showCancel} transparent animationType="slide" onRequestClose={() => setShowCancel(false)}>
+        <View style={styles.sheetOverlay}>
+          <View style={[styles.sheet, { backgroundColor: isDark ? '#1a1a1a' : '#fff' }]}>
+            <View style={styles.modalHeader}><Text style={[styles.sheetTitle, dynamicStyles.text]}>Cancel this trip</Text><TouchableOpacity onPress={() => setShowCancel(false)}><MaterialIcons name="close" size={22} color={themeColors.text} /></TouchableOpacity></View>
+            <Text style={[styles.sheetText, dynamicStyles.muted]}>Choose the reason that best explains the cancellation.</Text>
+            {['Rider did not show up', 'Unable to find rider', 'Vehicle issue', 'Safety concern', 'Other'].map((reason) => <TouchableOpacity key={reason} style={[styles.reasonRow, { borderColor: themeColors.border }]} onPress={() => handleCancelTrip(reason)}><Text style={[styles.reasonText, dynamicStyles.text]}>{reason}</Text><MaterialIcons name="chevron-right" size={20} color={themeColors.muted} /></TouchableOpacity>)}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Fare confirmation before the post-trip rating */}
+      <Modal visible={showFareScreen} transparent animationType="slide" onRequestClose={handleFareAcknowledged}>
+        <View style={styles.sheetOverlay}>
+          <View style={[styles.sheet, { backgroundColor: isDark ? '#1a1a1a' : '#fff' }]}>
+            <MaterialIcons name="receipt-long" size={32} color={GOLD} />
+            <Text style={[styles.sheetTitle, dynamicStyles.text]}>Trip completed</Text>
+            <Text style={[styles.sheetText, dynamicStyles.muted]}>{completedRide?.destination_address || 'Trip destination'}</Text>
+            <View style={[styles.fareTotal, { borderColor: themeColors.border }]}><Text style={[styles.fareTotalLabel, dynamicStyles.muted]}>Driver earnings (before commission)</Text><Text style={styles.fareTotalAmount}>GH₵{Number(completedRide?.final_fare || 0).toFixed(2)}</Text></View>
+            <View style={styles.fareRows}>
+              <Text style={[styles.fareRowText, dynamicStyles.muted]}>Distance · {Number(completedRide?.actual_distance_km || 0).toFixed(2)} km</Text>
+              <Text style={[styles.fareRowText, dynamicStyles.muted]}>Waiting fee · GH₵{Number(completedRide?.waiting_fee || 0).toFixed(2)}</Text>
+              <Text style={[styles.fareRowText, dynamicStyles.muted]}>Payment · {paymentLabel(completedRide?.payment_method)}</Text>
+            </View>
+            <TouchableOpacity style={[styles.sheetPrimary, { backgroundColor: GOLD }]} onPress={handleFareAcknowledged}><Text style={styles.sheetPrimaryText}>Continue</Text></TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Calling choice: secure in-app audio with mobile-network fallback */}
+      <Modal visible={showCallOptions} transparent animationType="fade" onRequestClose={() => setShowCallOptions(false)}>
+        <View style={styles.sheetOverlay}>
+          <View style={[styles.sheet, { backgroundColor: isDark ? '#1a1a1a' : '#fff' }]}>
+            <View style={styles.modalHeader}><Text style={[styles.sheetTitle, dynamicStyles.text]}>Contact rider</Text><TouchableOpacity onPress={() => setShowCallOptions(false)}><MaterialIcons name="close" size={22} color={themeColors.text} /></TouchableOpacity></View>
+            <TouchableOpacity style={[styles.callOption, { borderColor: themeColors.border }]} onPress={async () => { setShowCallOptions(false); if (activeTrip?.rider_id) await call.startCall(activeTrip.rider_id); else Alert.alert('Call unavailable', 'The rider does not have an in-app call identifier.'); }}><MaterialIcons name="wifi-calling-3" size={24} color={BLUE} /><View style={{ flex: 1 }}><Text style={[styles.reasonText, dynamicStyles.text]}>In-app voice call</Text><Text style={[styles.optionSub, dynamicStyles.muted]}>Uses your data connection</Text></View></TouchableOpacity>
+            <TouchableOpacity style={[styles.callOption, { borderColor: themeColors.border, opacity: riderPhone ? 1 : 0.45 }]} disabled={!riderPhone} onPress={() => { setShowCallOptions(false); Linking.openURL(`tel:${riderPhone}`).catch(() => Alert.alert('Unable to call', 'This phone cannot open the dialer.')); }}><MaterialIcons name="phone" size={24} color={GREEN} /><View style={{ flex: 1 }}><Text style={[styles.reasonText, dynamicStyles.text]}>Mobile network call</Text><Text style={[styles.optionSub, dynamicStyles.muted]}>{riderPhone || 'Phone number unavailable'}</Text></View></TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Notification center */}
+      <Modal visible={notifOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setNotifOpen(false)}>
+        <View style={[styles.modalContainer, dynamicStyles.container]}>
+          <View style={styles.modalHeader}><Text style={[styles.modalTitle, dynamicStyles.text]}>Notifications</Text><TouchableOpacity onPress={() => setNotifOpen(false)}><MaterialIcons name="close" size={24} color={themeColors.text} /></TouchableOpacity></View>
+          <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 24 }}>
+            {notifications.length === 0 ? <View style={styles.emptyNotifications}><MaterialIcons name="notifications-off" size={34} color={themeColors.muted} /><Text style={[styles.sheetText, dynamicStyles.muted]}>You are all caught up.</Text></View> : notifications.map((item) => <TouchableOpacity key={item.id} style={[styles.notificationRow, { borderColor: themeColors.border, opacity: item.read_at ? 0.62 : 1 }]} onPress={() => markNotificationRead(item)}><MaterialIcons name={(item.icon || 'notifications') as any} size={22} color={item.read_at ? themeColors.muted : GOLD} /><View style={{ flex: 1 }}><Text style={[styles.notificationTitle, dynamicStyles.text]}>{item.title || 'HY3N update'}</Text><Text style={[styles.optionSub, dynamicStyles.muted]}>{item.body || item.message || 'You have a new update.'}</Text></View>{!item.read_at && <View style={styles.unreadDot} />}</TouchableOpacity>)}
+          </ScrollView>
+        </View>
+      </Modal>
+
       {/* Rating Modal */}
       <Modal visible={showRating} animationType="slide" presentationStyle="pageSheet" transparent>
         <View style={styles.ratingOverlay}>
@@ -686,7 +1092,7 @@ export default function DriverHomeScreen() {
               ))}
             </View>
 
-            {/* Feedback */}
+            {/* Feedback, safety and lost-item report */}
             <TextInput
               style={[styles.feedbackInput, { color: themeColors.text, borderColor: themeColors.border }]}
               placeholder="Add feedback (optional)"
@@ -696,6 +1102,9 @@ export default function DriverHomeScreen() {
               value={ratingFeedback}
               onChangeText={setRatingFeedback}
             />
+
+            <TextInput style={[styles.compactInput, { color: themeColors.text, borderColor: themeColors.border }]} placeholder="Report a found item (optional)" placeholderTextColor="#999" value={foundItem} onChangeText={setFoundItem} />
+            <TextInput style={[styles.compactInput, { color: themeColors.text, borderColor: themeColors.border }]} placeholder="Report a safety concern (optional)" placeholderTextColor="#999" value={safetyReport} onChangeText={setSafetyReport} />
 
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <TouchableOpacity 
@@ -716,11 +1125,14 @@ export default function DriverHomeScreen() {
       </Modal>
 
       {/* Chat Modal */}
+      <IncomingCallModal call={call} otherName={activeTrip?.rider_name} otherRole="rider" />
+      <InCallScreen call={call} otherName={activeTrip?.rider_name} otherRole="rider" otherPhone={riderPhone} />
+
       <RideChatModal
         isOpen={showChat}
         onClose={() => setShowChat(false)}
         rideId={activeTrip?.id}
-        currentUserId={user?.id}
+        currentUserId={user?.uid || ''}
         currentUserRole="driver"
         currentUserName={driverProfile?.full_name || "Driver"}
       />
@@ -741,10 +1153,19 @@ const styles = StyleSheet.create({
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 10 },
   statusText: { fontWeight: '800', fontSize: 14 },
   notifCircle: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  headerBadge: { position: 'absolute', top: -3, right: -3, minWidth: 17, height: 17, borderRadius: 9, backgroundColor: RED, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
+  headerBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
   bottomContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 16, gap: 10 },
   
   rideRequestCard: { flexDirection: 'row', padding: 16, borderRadius: 20, borderWidth: 1, gap: 12, alignItems: 'center' },
   rideTitle: { fontSize: 11, fontWeight: '700', opacity: 0.7, textTransform: 'uppercase', letterSpacing: 0.5 },
+  offerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  offerTimer: { fontSize: 14, fontWeight: '900' },
+  metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 7, marginTop: 3 },
+  metaText: { fontSize: 11, fontWeight: '700' },
+  categoryBadge: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.4 },
+  riskBanner: { marginTop: 7, paddingVertical: 5, paddingHorizontal: 7, borderRadius: 7, backgroundColor: '#FEF3C7', flexDirection: 'row', gap: 5, alignItems: 'center' },
+  riskText: { color: '#7C2D12', fontSize: 10, fontWeight: '800' },
   rideName: { fontSize: 16, fontWeight: '900', marginTop: 4 },
   rideDetails: { fontSize: 12, marginTop: 2 },
   rideFare: { fontSize: 18, fontWeight: '900', marginTop: 4 },
@@ -759,11 +1180,19 @@ const styles = StyleSheet.create({
   navSub: { fontSize: 13, marginTop: 2 },
   navFare: { fontSize: 16, fontWeight: '900' },
   etaText: { fontSize: 12, fontWeight: '600' },
+  tripTracking: { fontSize: 11, fontWeight: '700', marginTop: 3 },
   navBtn: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
 
   timerCard: { flexDirection: 'row', padding: 12, borderRadius: 16, borderWidth: 1, alignItems: 'center', gap: 12 },
   timerText: { fontSize: 14, fontWeight: '900', flex: 1 },
   feeText: { fontSize: 12, fontWeight: '700' },
+  queueCard: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 16, borderWidth: 1, gap: 10 },
+  queueTitle: { fontSize: 13, fontWeight: '900' },
+  queueText: { fontSize: 11, marginTop: 3 },
+  queueButton: { backgroundColor: GOLD, paddingHorizontal: 13, paddingVertical: 8, borderRadius: 9 },
+  queueButtonText: { color: '#000', fontSize: 12, fontWeight: '900' },
+  queuedTag: { backgroundColor: '#DCFCE7', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 9 },
+  queuedTagText: { color: '#166534', fontSize: 11, fontWeight: '900' },
 
   destFilterBar: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 16, borderWidth: 1, gap: 12 },
   destText: { flex: 1, fontSize: 14, fontWeight: '700' },
@@ -786,13 +1215,36 @@ const styles = StyleSheet.create({
   modalInput: { height: 56, borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, fontSize: 16, marginBottom: 20 },
   applyBtn: { height: 56, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
   applyBtnText: { color: '#000', fontSize: 16, fontWeight: '800' },
+  sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.56)', justifyContent: 'flex-end' },
+  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 13 },
+  sheetTitle: { fontSize: 20, fontWeight: '900' },
+  sheetText: { fontSize: 14, lineHeight: 20 },
+  sheetPrimary: { height: 50, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  sheetPrimaryText: { color: '#000', fontWeight: '900', fontSize: 14 },
+  sheetSecondary: { height: 40, alignItems: 'center', justifyContent: 'center' },
+  sheetSecondaryText: { fontWeight: '800', fontSize: 14 },
+  codeInput: { height: 56, borderWidth: 1, borderRadius: 12, fontSize: 24, textAlign: 'center', letterSpacing: 6, fontWeight: '800' },
+  reasonRow: { minHeight: 48, borderWidth: 1, borderRadius: 10, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  reasonText: { fontSize: 14, fontWeight: '800' },
+  fareTotal: { borderWidth: 1, borderRadius: 14, padding: 14, marginVertical: 3 },
+  fareTotalLabel: { fontSize: 12, fontWeight: '700' },
+  fareTotalAmount: { color: GOLD, fontSize: 28, fontWeight: '900', marginTop: 3 },
+  fareRows: { gap: 6, marginBottom: 5 },
+  fareRowText: { fontSize: 12 },
+  callOption: { minHeight: 72, borderWidth: 1, borderRadius: 12, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  optionSub: { fontSize: 12, marginTop: 2 },
+  notificationRow: { minHeight: 74, borderWidth: 1, borderRadius: 12, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  notificationTitle: { fontSize: 14, fontWeight: '900' },
+  unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: GOLD },
+  emptyNotifications: { alignItems: 'center', gap: 10, paddingVertical: 70 },
 
   ratingOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
   ratingModal: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
   ratingTitle: { fontSize: 20, fontWeight: '900', marginBottom: 4 },
   ratingSubtitle: { fontSize: 14, marginBottom: 24 },
   starsContainer: { flexDirection: 'row', justifyContent: 'center', gap: 12, marginBottom: 24 },
-  feedbackInput: { height: 100, borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14, marginBottom: 20, textAlignVertical: 'top' },
+  feedbackInput: { height: 86, borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14, marginBottom: 10, textAlignVertical: 'top' },
+  compactInput: { height: 46, borderWidth: 1, borderRadius: 11, paddingHorizontal: 13, fontSize: 13, marginBottom: 9 },
   ratingBtn: { height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   ratingBtnText: { fontSize: 15, fontWeight: '800', color: '#000' }
 });

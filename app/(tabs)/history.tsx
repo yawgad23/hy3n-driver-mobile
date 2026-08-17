@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  TextInput, ActivityIndicator, Animated, Share,
+  TextInput, ActivityIndicator, Share,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -26,7 +26,11 @@ interface Trip {
   destination_address?: string;
   dropoff_location?: string;
   fare?: number;
+  final_fare?: number;
   fare_estimate?: number;
+  tip_amount?: number;
+  commission?: number;
+  commission_amount?: number;
   status: string;
   created_date?: string;
   trip_date?: string;
@@ -41,6 +45,8 @@ interface Trip {
   driver_feedback?: string;
   passenger_feedback?: string;
   payment_method?: string;
+  rider_rating?: number;
+  passenger_rating?: number;
 }
 
 type FilterKey = 'all' | 'today' | 'week' | 'completed' | 'cancelled';
@@ -86,7 +92,11 @@ function getDestination(t: Trip) {
   return t.destination_address || t.dropoff_location || t.destination || '—';
 }
 function getFare(t: Trip) {
-  return t.fare || t.fare_estimate || 0;
+  return t.final_fare ?? t.fare ?? t.fare_estimate ?? 0;
+}
+function getCommission(t: Trip) {
+  const fare = getFare(t);
+  return t.commission ?? t.commission_amount ?? fare * 0.15;
 }
 function getRiderName(t: Trip) {
   return t.rider_name || t.passenger_name || 'Rider';
@@ -179,15 +189,27 @@ function TripCard({ trip }: { trip: Trip }) {
       {/* Expanded details */}
       {expanded && (
         <View style={styles.expandedSection}>
+          {(trip.rider_rating || trip.passenger_rating) && (
+            <View style={styles.ratingBox}>
+              <MaterialIcons name="star" size={17} color={GOLD} />
+              <Text style={styles.ratingText}>Rider rating: {(trip.rider_rating || trip.passenger_rating)?.toFixed(1)} / 5.0</Text>
+            </View>
+          )}
           {(trip.driver_feedback || trip.passenger_feedback) && (
             <View style={styles.feedbackBox}>
               <Text style={styles.feedbackTitle}>Passenger Feedback</Text>
               <Text style={styles.feedbackText}>{trip.driver_feedback || trip.passenger_feedback}</Text>
             </View>
           )}
+          <View style={styles.receiptBox}>
+            <View style={styles.expandedRow}><Text style={styles.expandedLabel}>Gross fare</Text><Text style={styles.expandedValue}>GH₵{fare.toFixed(2)}</Text></View>
+            {Number(trip.tip_amount || 0) > 0 && <View style={styles.expandedRow}><Text style={styles.expandedLabel}>Tip</Text><Text style={[styles.expandedValue, { color: GREEN }]}>+ GH₵{Number(trip.tip_amount).toFixed(2)}</Text></View>}
+            {isCompleted && <View style={styles.expandedRow}><Text style={styles.expandedLabel}>Service commission</Text><Text style={[styles.expandedValue, { color: '#F87171' }]}>− GH₵{getCommission(trip).toFixed(2)}</Text></View>}
+            {isCompleted && <View style={[styles.expandedRow, styles.netRow]}><Text style={styles.netLabel}>Your net earnings</Text><Text style={styles.netValue}>GH₵{Math.max(0, fare - getCommission(trip) + Number(trip.tip_amount || 0)).toFixed(2)}</Text></View>}
+          </View>
           {trip.payment_method && (
             <View style={styles.expandedRow}>
-              <Text style={styles.expandedLabel}>Payment</Text>
+              <Text style={styles.expandedLabel}>Payment method</Text>
               <Text style={styles.expandedValue}>{trip.payment_method.charAt(0).toUpperCase() + trip.payment_method.slice(1)}</Text>
             </View>
           )}
@@ -213,7 +235,9 @@ function TripCard({ trip }: { trip: Trip }) {
                   meta ? `Trip: ${meta}` : null,
                   trip.category ? `Category: ${trip.category}` : null,
                   trip.payment_method ? `Payment: ${trip.payment_method.charAt(0).toUpperCase() + trip.payment_method.slice(1)}` : null,
-                  `Fare: GH₵${fare.toFixed(2)}`,
+                  `Gross fare: GH₵${fare.toFixed(2)}`,
+                  Number(trip.tip_amount || 0) > 0 ? `Tip: GH₵${Number(trip.tip_amount).toFixed(2)}` : null,
+                  isCompleted ? `Net earnings: GH₵${Math.max(0, fare - getCommission(trip) + Number(trip.tip_amount || 0)).toFixed(2)}` : null,
                   `Trip ID: ${trip.id?.slice(0, 12)}`,
                 ].filter(Boolean) as string[];
                 Share.share({ message: lines.join('\n'), title: 'HY3N Trip Receipt' });
@@ -268,7 +292,6 @@ export default function DriverHistoryScreen() {
   });
 
   const completedTrips = trips.filter(t => t.status === 'completed');
-  const now = new Date();
   const todayEarnings = completedTrips
     .filter(t => isToday(new Date(t.trip_date || t.created_date || '')))
     .reduce((s, t) => s + getFare(t), 0);
@@ -407,6 +430,12 @@ const styles = StyleSheet.create({
   categoryBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: BORDER },
   categoryText: { fontSize: 11, color: MUTED, fontWeight: '600' },
   expandedSection: { marginTop: 12, borderTopWidth: 0.5, borderTopColor: BORDER, paddingTop: 12, gap: 8 },
+  ratingBox: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#1A1400', borderRadius: 8, padding: 10, marginBottom: 10 },
+  ratingText: { color: '#FDE68A', fontSize: 12, fontWeight: '700' },
+  receiptBox: { backgroundColor: '#171717', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 2, marginBottom: 8 },
+  netRow: { borderTopWidth: 0.5, borderTopColor: BORDER, marginTop: 6, paddingTop: 10 },
+  netLabel: { color: TEXT, fontSize: 12, fontWeight: '800' },
+  netValue: { color: GOLD, fontSize: 14, fontWeight: '900' },
   feedbackBox: { backgroundColor: '#1A1A1A', borderRadius: 10, padding: 12 },
   feedbackTitle: { fontSize: 11, fontWeight: '700', color: MUTED, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   feedbackText: { fontSize: 13, color: TEXT, lineHeight: 18 },

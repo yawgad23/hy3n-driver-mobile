@@ -23,7 +23,11 @@ export interface DriverProfile {
   safety_metrics?: { overall_safety_score?: number };
   service_type?: 'car' | 'okada' | 'delivery';
   momo_number?: string;
+  momo_provider?: 'MTN MoMo' | 'Telecel Cash' | 'AirtelTigo Money' | string;
+  momo_account_name?: string;
+  momo_updated_at?: string;
   momo_network?: 'mtn-gh' | 'vodafone-gh' | 'tigo-gh';
+  referral_code?: string;
   accepted_categories?: string[];
   acceptance_rate?: number;
   preferences?: {

@@ -168,23 +168,45 @@ export default function DriverProfileScreen() {
           </View>
         </View>
 
+        {/* Driver operations */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Driver operations</Text>
+          <View style={styles.infoCard}>
+            <TouchableOpacity style={styles.menuRow} onPress={() => router.push('/driver/scheduled-rides' as any)} activeOpacity={0.7}>
+              <MaterialIcons name="event" size={20} color={GOLD} />
+              <View style={{ flex: 1 }}><Text style={styles.menuText}>Scheduled Rides</Text><Text style={styles.menuHint}>Review and reserve future pickups</Text></View>
+              <MaterialIcons name="chevron-right" size={20} color={MUTED} />
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.menuRow, styles.menuBorder]} onPress={() => router.push('/driver/momo-settings' as any)} activeOpacity={0.7}>
+              <MaterialIcons name="account-balance-wallet" size={20} color={GOLD} />
+              <View style={{ flex: 1 }}><Text style={styles.menuText}>MoMo Payout Settings</Text><Text style={styles.menuHint}>Manage your earnings payout account</Text></View>
+              <MaterialIcons name="chevron-right" size={20} color={MUTED} />
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.menuRow, styles.menuBorder]} onPress={() => router.push('/driver/referrals' as any)} activeOpacity={0.7}>
+              <MaterialIcons name="card-giftcard" size={20} color={GOLD} />
+              <View style={{ flex: 1 }}><Text style={styles.menuText}>Refer a Driver</Text><Text style={styles.menuHint}>Share your code and track rewards</Text></View>
+              <MaterialIcons name="chevron-right" size={20} color={MUTED} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Support */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Support</Text>
           <View style={styles.infoCard}>
-            <TouchableOpacity style={styles.menuRow} onPress={handleWhatsApp} activeOpacity={0.7}>
+            <TouchableOpacity style={styles.menuRow} onPress={() => router.push('/driver/support' as any)} activeOpacity={0.7}>
+              <MaterialIcons name="support-agent" size={20} color={GOLD} />
+              <View style={{ flex: 1 }}><Text style={styles.menuText}>Support Centre</Text><Text style={styles.menuHint}>Open and track support requests</Text></View>
+              <MaterialIcons name="chevron-right" size={20} color={MUTED} />
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.menuRow, styles.menuBorder]} onPress={handleWhatsApp} activeOpacity={0.7}>
               <MaterialIcons name="chat" size={20} color={GOLD} />
               <Text style={styles.menuText}>Live Chat (WhatsApp)</Text>
               <MaterialIcons name="chevron-right" size={20} color={MUTED} />
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.menuRow, { borderTopWidth: 0.5, borderTopColor: BORDER }]} onPress={handleSupport} activeOpacity={0.7}>
+            <TouchableOpacity style={[styles.menuRow, styles.menuBorder]} onPress={handleSupport} activeOpacity={0.7}>
               <MaterialIcons name="email" size={20} color={GOLD} />
               <Text style={styles.menuText}>Email Support</Text>
-              <MaterialIcons name="chevron-right" size={20} color={MUTED} />
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.menuRow, { borderTopWidth: 0.5, borderTopColor: BORDER }]} onPress={() => Linking.openURL('https://ridehy3n.com')} activeOpacity={0.7}>
-              <MaterialIcons name="language" size={20} color={GOLD} />
-              <Text style={styles.menuText}>Visit ridehy3n.com</Text>
               <MaterialIcons name="chevron-right" size={20} color={MUTED} />
             </TouchableOpacity>
           </View>
@@ -280,6 +302,8 @@ const styles = StyleSheet.create({
   safetyFill: { height: '100%', borderRadius: 3 },
   menuRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 12 },
   menuText: { flex: 1, color: TEXT, fontSize: 14, fontWeight: '500' },
+  menuHint: { color: MUTED, fontSize: 11, marginTop: 2 },
+  menuBorder: { borderTopWidth: 0.5, borderTopColor: BORDER },
   switchRiderBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: 16, marginBottom: 12, backgroundColor: '#1A1400', borderRadius: 14, paddingVertical: 16, paddingHorizontal: 20, borderWidth: 1, borderColor: '#3A2E00' },
   switchRiderText: { flex: 1, color: GOLD, fontSize: 15, fontWeight: '700', marginLeft: 10 },
   signOutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 16, marginBottom: 8, backgroundColor: '#2A0000', borderRadius: 14, paddingVertical: 16 },

@@ -104,6 +104,13 @@ export const COLLECTIONS = {
   RIDE_REPORTS: 'ride_reports',
   DRIVER_PROFILES: 'driver_profiles',
   DAILY_COMMISSION: 'daily_commissions',
+  EARNINGS: 'earnings',
+  RIDE_CALLS: 'ride_calls',
+  DRIVER_NOTIFICATIONS: 'driver_notifications',
+  DRIVER_SAFETY_EVENTS: 'driver_safety_events',
+  FOUND_ITEMS: 'found_items',
+  RIDE_MESSAGES: 'ride_messages',
+  DRIVER_REFERRALS: 'driver_referrals',
 };
 
 // ─── Auth Helpers ─────────────────────────────────────────────────────────────
@@ -198,6 +205,12 @@ export const firestoreDB = {
     }
   },
 
+  async query(collectionName: string, conditions: Array<{ field: string; operator: any; value: any }> = []) {
+    const constraints = conditions.map((condition) => where(condition.field, condition.operator, condition.value));
+    const snap = await getDocs(query(collection(db, collectionName), ...constraints));
+    return snapshotToArray(snap);
+  },
+
   async create(collectionName: string, data: Record<string, any>) {
     const payload = {
       ...data,
@@ -222,7 +235,15 @@ export const firestoreDB = {
     return { id };
   },
 
-  subscribe(collectionName: string, filters: Record<string, any>, callback: (data: any[]) => void) {
+  subscribe(
+    collectionName: string,
+    filtersOrCallback: Record<string, any> | ((data: any[]) => void),
+    maybeCallback?: (data: any[]) => void,
+  ) {
+    const filters = typeof filtersOrCallback === 'function' ? {} : filtersOrCallback;
+    const callback = typeof filtersOrCallback === 'function' ? filtersOrCallback : maybeCallback;
+    if (!callback) throw new Error('A Firestore subscription callback is required.');
+
     const colRef = collection(db, collectionName);
     const constraints: any[] = [];
     for (const [field, value] of Object.entries(filters)) {
