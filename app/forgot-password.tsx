@@ -36,7 +36,7 @@ export default function DriverForgotPasswordScreen() {
           <MaterialIcons name="arrow-back" size={22} color={TEXT} />
         </TouchableOpacity>
         <Text style={styles.title}>Reset Password</Text>
-        <Text style={styles.subtitle}>Enter your email and we'll send you a reset link</Text>
+        <Text style={styles.subtitle}>Enter your email and we&apos;ll send you a reset link</Text>
 
         {sent ? (
           <View style={styles.successCard}>

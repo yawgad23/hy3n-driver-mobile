@@ -54,7 +54,7 @@ export default function DriverLandingScreen() {
         <Text style={styles.brand}>HY3N Driver</Text>
         <Text style={styles.tagline}>Drive. Earn. Repeat.</Text>
         <Text style={styles.sub}>
-          Ghana's proudly homegrown ride-hailing platform.{'\n'}
+          Ghana&apos;s proudly homegrown ride-hailing platform.{'\n'}
           Join thousands of drivers earning daily.
         </Text>
       </View>
@@ -100,7 +100,7 @@ export default function DriverLandingScreen() {
 
       {/* Footer */}
       <Text style={styles.footer}>
-        By continuing, you agree to HY3N's{' '}
+        By continuing, you agree to HY3N&apos;s{' '}
         <Text style={{ color: GOLD }}>Terms of Service</Text>
         {' '}and{' '}
         <Text style={{ color: GOLD }}>Privacy Policy</Text>

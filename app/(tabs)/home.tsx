@@ -693,7 +693,7 @@ export default function DriverHomeScreen() {
           <ActivityIndicator size="large" color={GOLD} style={{ marginVertical: 20 }} />
           <Text style={[styles.approvalTitle, { color: themeColors.text }]}>Awaiting Approval</Text>
           <Text style={[styles.approvalSub, { color: themeColors.muted }]}>
-            Your documents are being reviewed. We'll notify you once approved.
+            Your documents are being reviewed. We&apos;ll notify you once approved.
           </Text>
         </View>
       </View>

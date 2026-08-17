@@ -186,7 +186,7 @@ export default function DriverLoginScreen() {
 
         {/* Footer */}
         <Text style={styles.footer}>
-          By continuing, you agree to HY3N's{' '}
+          By continuing, you agree to HY3N&apos;s{' '}
           <Text style={{ color: GOLD }}>Terms of Service</Text> and{' '}
           <Text style={{ color: GOLD }}>Privacy Policy</Text>
         </Text>
