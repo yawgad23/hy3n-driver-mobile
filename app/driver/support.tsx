@@ -1,42 +1,76 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { COLLECTIONS, firestoreDB } from '@/lib/firebase';
 import { useDriverAuth } from '@/lib/driver-auth-context';
+import { trpc } from '@/lib/trpc';
 
 const GOLD = '#D4AF37'; const BG = '#0A0A0A'; const CARD = '#111111'; const BORDER = '#2A2A2A'; const TEXT = '#FAFAFA'; const MUTED = '#9CA3AF'; const GREEN = '#22C55E';
-const TOPICS = ['Trip issue', 'Payment & earnings', 'Account & documents', 'Safety issue', 'Other'];
+const TOPICS = [
+  { label: 'Trip issue', value: 'trip' },
+  { label: 'Payment & earnings', value: 'payment' },
+  { label: 'Account & documents', value: 'account' },
+  { label: 'Safety issue', value: 'safety' },
+  { label: 'Technical issue', value: 'technical' },
+  { label: 'Other', value: 'other' },
+] as const;
 
-type Ticket = { id: string; subject?: string; category?: string; status?: string; created_date?: string; message?: string };
+type SupportCategory = (typeof TOPICS)[number]['value'];
+type Ticket = { id: string; subject?: string; category?: string; status?: string; created_at?: string; message?: string };
 
 export default function DriverSupportScreen() {
-  const insets = useSafeAreaInsets(); const { user, driverProfile } = useDriverAuth();
-  const [topic, setTopic] = useState(TOPICS[0]); const [message, setMessage] = useState(''); const [sending, setSending] = useState(false); const [tickets, setTickets] = useState<Ticket[]>([]);
-  const loadTickets = useCallback(async () => { if (!user?.uid) return; try { setTickets(await firestoreDB.list(COLLECTIONS.SUPPORT_TICKETS, { driver_id: user.uid }, 'created_date', 'desc') as Ticket[]); } catch {} }, [user?.uid]);
-  useEffect(() => { loadTickets(); }, [loadTickets]);
+  const insets = useSafeAreaInsets();
+  const { user } = useDriverAuth();
+  const [topic, setTopic] = useState<SupportCategory>('trip');
+  const [message, setMessage] = useState('');
+  const ticketsQuery = trpc.driverSupport.listTickets.useQuery(
+    { driverId: user?.uid || '' },
+    { enabled: Boolean(user?.uid) },
+  );
+  const submitTicket = trpc.driverSupport.createTicket.useMutation({
+    onSuccess: async () => {
+      setMessage('');
+      await ticketsQuery.refetch();
+      Alert.alert('Request submitted', 'HY3N support has received your request.');
+    },
+    onError: (error) => Alert.alert('Submission failed', error.message || 'Please try again or contact support directly.'),
+  });
 
-  const submit = async () => {
-    if (message.trim().length < 10) { Alert.alert('More details needed', 'Please describe the issue in at least a few words so our support team can help.'); return; }
-    setSending(true);
-    try {
-      await firestoreDB.create(COLLECTIONS.SUPPORT_TICKETS, { driver_id: user?.uid, driver_name: driverProfile?.full_name || 'Driver', category: topic, subject: topic, message: message.trim(), status: 'open', priority: topic === 'Safety issue' ? 'high' : 'normal', source: 'driver_mobile' });
-      setMessage(''); await loadTickets(); Alert.alert('Request submitted', 'HY3N support has received your request.');
-    } catch { Alert.alert('Submission failed', 'Please try again or contact support directly.'); } finally { setSending(false); }
+  const submit = () => {
+    if (!user?.uid) {
+      Alert.alert('Sign in required', 'Please sign in again before submitting a support request.');
+      return;
+    }
+    if (message.trim().length < 10) {
+      Alert.alert('More details needed', 'Please describe the issue in at least a few words so our support team can help.');
+      return;
+    }
+    const selectedTopic = TOPICS.find((item) => item.value === topic);
+    submitTicket.mutate({
+      driverId: user.uid,
+      category: topic,
+      subject: selectedTopic?.label || 'Driver support request',
+      message: message.trim(),
+    });
   };
+
   const openWhatsApp = () => Linking.openURL('https://wa.me/233200000000?text=Hi%20HY3N%20Support%2C%20I%20need%20driver%20assistance.').catch(() => Alert.alert('WhatsApp unavailable', 'Please email hello@ridehy3n.com.'));
+  const tickets = (ticketsQuery.data?.tickets || []) as Ticket[];
+  const loadingTickets = ticketsQuery.isLoading || ticketsQuery.isFetching;
 
   return <View style={[styles.container, { paddingTop: insets.top }]}>
     <View style={styles.header}><TouchableOpacity style={styles.backButton} onPress={() => router.back()}><MaterialIcons name="arrow-back" size={22} color={TEXT} /></TouchableOpacity><View><Text style={styles.headerTitle}>Driver support</Text><Text style={styles.headerSub}>We are here to help</Text></View></View>
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <View style={styles.contactCard}><View style={{ flex: 1 }}><Text style={styles.contactTitle}>Need immediate help?</Text><Text style={styles.contactText}>Chat with our driver support team or call emergency services if anyone is in danger.</Text></View><TouchableOpacity style={styles.whatsapp} onPress={openWhatsApp}><MaterialIcons name="chat" size={20} color="#000" /><Text style={styles.whatsappText}>Chat</Text></TouchableOpacity></View>
       <Text style={styles.sectionTitle}>Submit a request</Text>
-      <Text style={styles.label}>What can we help with?</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.topics}>{TOPICS.map((item) => <TouchableOpacity key={item} style={[styles.topic, topic === item && styles.topicActive]} onPress={() => setTopic(item)}><Text style={[styles.topicText, topic === item && styles.topicTextActive]}>{item}</Text></TouchableOpacity>)}</ScrollView>
+      <Text style={styles.label}>What can we help with?</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.topics}>{TOPICS.map((item) => <TouchableOpacity key={item.value} style={[styles.topic, topic === item.value && styles.topicActive]} onPress={() => setTopic(item.value)}><Text style={[styles.topicText, topic === item.value && styles.topicTextActive]}>{item.label}</Text></TouchableOpacity>)}</ScrollView>
       <Text style={styles.label}>Describe the issue</Text><TextInput style={styles.messageInput} value={message} onChangeText={setMessage} multiline textAlignVertical="top" placeholder="Include the ride details, time, or payment reference if relevant." placeholderTextColor="#6B7280" maxLength={1200} />
-      <Text style={styles.counter}>{message.length}/1200</Text><TouchableOpacity style={[styles.submitButton, sending && { opacity: 0.7 }]} disabled={sending} onPress={submit}>{sending ? <ActivityIndicator color="#000" /> : <Text style={styles.submitText}>Submit support request</Text>}</TouchableOpacity>
+      <Text style={styles.counter}>{message.length}/1200</Text><TouchableOpacity style={[styles.submitButton, submitTicket.isPending && { opacity: 0.7 }]} disabled={submitTicket.isPending} onPress={submit}>{submitTicket.isPending ? <ActivityIndicator color="#000" /> : <Text style={styles.submitText}>Submit support request</Text>}</TouchableOpacity>
       <Text style={[styles.sectionTitle, { marginTop: 30 }]}>Your requests</Text>
-      {tickets.length === 0 ? <Text style={styles.noTickets}>No previous support requests.</Text> : tickets.map((ticket) => <View key={ticket.id} style={styles.ticket}><View style={{ flex: 1 }}><Text style={styles.ticketTitle}>{ticket.subject || ticket.category || 'Support request'}</Text><Text style={styles.ticketDate}>{ticket.created_date ? new Date(ticket.created_date).toLocaleDateString() : 'Recently submitted'}</Text></View><View style={[styles.ticketStatus, { backgroundColor: ticket.status === 'resolved' ? '#052E16' : ticket.status === 'closed' ? '#1F2937' : '#1A1400' }]}><Text style={[styles.ticketStatusText, { color: ticket.status === 'resolved' ? GREEN : ticket.status === 'closed' ? MUTED : GOLD }]}>{ticket.status || 'open'}</Text></View></View>)}
+      {loadingTickets && tickets.length === 0 ? <ActivityIndicator color={GOLD} style={{ marginVertical: 18 }} /> : null}
+      {!loadingTickets && tickets.length === 0 ? <Text style={styles.noTickets}>No previous support requests.</Text> : null}
+      {tickets.map((ticket) => <View key={ticket.id} style={styles.ticket}><View style={{ flex: 1 }}><Text style={styles.ticketTitle}>{ticket.subject || ticket.category || 'Support request'}</Text><Text style={styles.ticketDate}>{ticket.created_at ? new Date(ticket.created_at).toLocaleDateString() : 'Recently submitted'}</Text></View><View style={[styles.ticketStatus, { backgroundColor: ticket.status === 'resolved' ? '#052E16' : ticket.status === 'closed' ? '#1F2937' : '#1A1400' }]}><Text style={[styles.ticketStatusText, { color: ticket.status === 'resolved' ? GREEN : ticket.status === 'closed' ? MUTED : GOLD }]}>{ticket.status || 'open'}</Text></View></View>)}
       <View style={styles.emailRow}><MaterialIcons name="email" size={18} color={MUTED} /><Text style={styles.emailText}>You can also email <Text style={{ color: GOLD }}>hello@ridehy3n.com</Text></Text></View>
     </ScrollView>
   </View>;

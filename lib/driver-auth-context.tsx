@@ -23,8 +23,11 @@ export interface DriverProfile {
   safety_metrics?: { overall_safety_score?: number };
   service_type?: 'car' | 'okada' | 'delivery';
   momo_number?: string;
+  momo_number_masked?: string;
   momo_provider?: 'MTN MoMo' | 'Telecel Cash' | 'AirtelTigo Money' | string;
   momo_account_name?: string;
+  momo_account_holder?: string;
+  city?: string;
   momo_updated_at?: string;
   momo_network?: 'mtn-gh' | 'vodafone-gh' | 'tigo-gh';
   referral_code?: string;
@@ -46,7 +49,7 @@ interface DriverAuthContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, fullName?: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   updateDriverProfile: (data: Partial<DriverProfile>) => Promise<void>;
@@ -120,8 +123,8 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
     await firebaseAuth.loginWithGoogle();
   };
 
-  const signUp = async (email: string, password: string) => {
-    await firebaseAuth.register(email, password, '');
+  const signUp = async (email: string, password: string, fullName = '') => {
+    await firebaseAuth.register(email, password, fullName);
   };
 
   const signOut = async () => {

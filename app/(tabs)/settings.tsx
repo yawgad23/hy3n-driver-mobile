@@ -130,10 +130,10 @@ export default function DriverSettingsScreen() {
                   <Text style={styles.prefDesc}>{row.desc}</Text>
                 </View>
                 <Switch
-                  value={prefs[row.key]}
+                  value={Boolean(prefs[row.key])}
                   onValueChange={() => toggle(row.key)}
                   trackColor={{ false: BORDER, true: GOLD + '80' }}
-                  thumbColor={prefs[row.key] ? GOLD : MUTED}
+                  thumbColor={Boolean(prefs[row.key]) ? GOLD : MUTED}
                   ios_backgroundColor={BORDER}
                 />
               </View>

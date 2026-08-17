@@ -10,7 +10,6 @@ import * as ImagePicker from 'expo-image-picker';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS, auth as firebaseAuthObj, firebaseAuth } from '@/lib/firebase';
 import { Linking } from 'react-native';
-import { trpc } from '@/lib/trpc';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const GOLD = '#D4AF37';
@@ -111,7 +110,6 @@ export default function DriverRegisterScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { signUp, signInWithGoogle, user, driverProfile } = useDriverAuth();
-  const sendVerification = trpc.auth.sendVerification.useMutation();
 
   const [step, setStep] = useState(1);
   const [email, setEmail] = useState('');
@@ -128,6 +126,17 @@ export default function DriverRegisterScreen() {
   const [city, setCity] = useState('');
   const [serviceType, setServiceType] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [ghanaCardFront, setGhanaCardFront] = useState('');
+  const [ghanaCardBack, setGhanaCardBack] = useState('');
+  const [licenseFront, setLicenseFront] = useState('');
+  const [licenseBack, setLicenseBack] = useState('');
+  const [driverPhoto, setDriverPhoto] = useState('');
+  const [vehiclePhoto, setVehiclePhoto] = useState('');
+  const [insurancePhoto, setInsurancePhoto] = useState('');
+  const [roadworthyPhoto, setRoadworthyPhoto] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load draft from AsyncStorage on mount
   useEffect(() => {
@@ -257,17 +266,6 @@ export default function DriverRegisterScreen() {
   };
 
   const availableCategories = serviceType ? ALL_CATEGORIES.filter(c => CATEGORIES_BY_SERVICE[serviceType]?.includes(c.id)) : [];
-  const [ghanaCardFront, setGhanaCardFront] = useState('');
-  const [ghanaCardBack, setGhanaCardBack] = useState('');
-  const [licenseFront, setLicenseFront] = useState('');
-  const [licenseBack, setLicenseBack] = useState('');
-  const [driverPhoto, setDriverPhoto] = useState('');
-  const [vehiclePhoto, setVehiclePhoto] = useState('');
-  const [insurancePhoto, setInsurancePhoto] = useState('');
-  const [roadworthyPhoto, setRoadworthyPhoto] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const selectedService = SERVICE_TYPES.find(s => s.id === serviceType);
 

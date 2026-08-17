@@ -10,7 +10,6 @@ import * as ImagePicker from 'expo-image-picker';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS, auth as firebaseAuthObj, firebaseAuth, firebaseStorage } from '@/lib/firebase';
 import { Linking } from 'react-native';
-import { trpc } from '@/lib/trpc';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const GOLD = '#D4AF37';
@@ -19,6 +18,7 @@ const CARD = '#1A1A1A';
 const BORDER = '#2A2A2A';
 const TEXT = '#FAFAFA';
 const MUTED = '#9CA3AF';
+const RED = '#EF4444';
 
 const ALL_CATEGORIES = [
   { id: 'standard',         label: 'Standard',          description: 'Everyday affordable rides',             icon: 'directions-car' as const },
@@ -111,7 +111,6 @@ export default function DriverRegisterScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { signUp, signIn, signInWithGoogle, user, driverProfile } = useDriverAuth();
-  const sendVerification = trpc.auth.sendVerification.useMutation();
 
   const [step, setStep] = useState(1);
   const [email, setEmail] = useState('');
@@ -225,15 +224,22 @@ export default function DriverRegisterScreen() {
     if (!user) return;
     setLoading(true);
     try {
+      const uploadSelectedImage = async (path: string, uri: string) => {
+        if (!uri) return null;
+        const response = await fetch(uri);
+        if (!response.ok) throw new Error('A selected document could not be read. Please select it again.');
+        const file = await response.blob();
+        return firebaseStorage.uploadFile(file, path);
+      };
       const docs = {
-        ghana_card_front: await firebaseStorage.uploadFile(`drivers/${user.uid}/ghana_card_front.jpg`, ghanaCardFront),
-        ghana_card_back: await firebaseStorage.uploadFile(`drivers/${user.uid}/ghana_card_back.jpg`, ghanaCardBack),
-        license_front: await firebaseStorage.uploadFile(`drivers/${user.uid}/license_front.jpg`, licenseFront),
-        license_back: await firebaseStorage.uploadFile(`drivers/${user.uid}/license_back.jpg`, licenseBack),
-        driver_photo: await firebaseStorage.uploadFile(`drivers/${user.uid}/driver_photo.jpg`, driverPhoto),
-        vehicle_photo: await firebaseStorage.uploadFile(`drivers/${user.uid}/vehicle_photo.jpg`, vehiclePhoto),
-        insurance_photo: insurancePhoto ? await firebaseStorage.uploadFile(`drivers/${user.uid}/insurance.jpg`, insurancePhoto) : null,
-        roadworthy_photo: roadworthyPhoto ? await firebaseStorage.uploadFile(`drivers/${user.uid}/roadworthy.jpg`, roadworthyPhoto) : null,
+        ghana_card_front: await uploadSelectedImage(`drivers/${user.uid}/ghana_card_front.jpg`, ghanaCardFront),
+        ghana_card_back: await uploadSelectedImage(`drivers/${user.uid}/ghana_card_back.jpg`, ghanaCardBack),
+        license_front: await uploadSelectedImage(`drivers/${user.uid}/license_front.jpg`, licenseFront),
+        license_back: await uploadSelectedImage(`drivers/${user.uid}/license_back.jpg`, licenseBack),
+        driver_photo: await uploadSelectedImage(`drivers/${user.uid}/driver_photo.jpg`, driverPhoto),
+        vehicle_photo: await uploadSelectedImage(`drivers/${user.uid}/vehicle_photo.jpg`, vehiclePhoto),
+        insurance_photo: await uploadSelectedImage(`drivers/${user.uid}/insurance.jpg`, insurancePhoto),
+        roadworthy_photo: await uploadSelectedImage(`drivers/${user.uid}/roadworthy.jpg`, roadworthyPhoto),
       };
 
       await firestoreDB.create(COLLECTIONS.DRIVER_PROFILES, {

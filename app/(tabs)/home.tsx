@@ -13,6 +13,7 @@ import * as Notifications from 'expo-notifications';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
+import { trpc } from '@/lib/trpc';
 import { Linking } from 'react-native';
 import { RideChatModal } from '@/components/ride-chat-modal';
 import { InCallScreen, IncomingCallModal } from '@/components/in-call-screen';
@@ -41,6 +42,17 @@ export default function DriverHomeScreen() {
     downloadFirst: true,
     keepAudioSessionActive: true,
   });
+  const setAvailability = trpc.driverOperations.setAvailability.useMutation();
+  const updateDriverLocation = trpc.driverOperations.updateLocation.useMutation();
+  const respondToOffer = trpc.driverTrips.respondToOffer.useMutation();
+  const arriveAtPickup = trpc.driverTrips.arrive.useMutation();
+  const verifyPickup = trpc.driverTrips.verifyPickup.useMutation();
+  const startTrip = trpc.driverTrips.start.useMutation();
+  const completeTrip = trpc.driverTrips.complete.useMutation();
+  const cancelTrip = trpc.driverTrips.cancel.useMutation();
+  const activateQueuedTrip = trpc.driverTrips.activateQueued.useMutation();
+  const createSos = trpc.driverSafety.createSos.useMutation();
+  const recordDrivingEvent = trpc.driverSafety.recordDrivingEvent.useMutation();
   
   const [isOnline, setIsOnline] = useState(false);
   const [location, setLocation] = useState<ExpoLocation.LocationObject | null>(null);
@@ -321,7 +333,19 @@ export default function DriverHomeScreen() {
     return radiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
 
-  // Persist live driver location, distance travelled, and meaningful safety events.
+  // Maintain secure server-side driver presence while online, including when the app is foregrounded during an active trip.
+  useEffect(() => {
+    if (!location || !user?.uid || !isOnline) return;
+    updateDriverLocation.mutate({
+      driverId: user.uid,
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+      heading: location.coords.heading === null ? undefined : location.coords.heading,
+      speedKmh: location.coords.speed === null || location.coords.speed === undefined ? undefined : Math.max(0, Number((location.coords.speed * 3.6).toFixed(1))),
+    });
+  }, [location, user?.uid, isOnline]);
+
+  // Track locally calculated trip distance and send meaningful safety events through the protected driver API.
   useEffect(() => {
     if (!location || !activeTrip || activeTrip.status !== 'in_progress') return;
     const previous = lastTripLocationRef.current;
@@ -335,33 +359,27 @@ export default function DriverHomeScreen() {
     lastSpeedRef.current = speed;
     const now = Date.now();
 
-    firestoreDB.update(COLLECTIONS.RIDES, activeTrip.id, {
-      driver_last_location: { latitude: location.coords.latitude, longitude: location.coords.longitude, speed_kmh: Number(speed.toFixed(1)), recorded_at: new Date().toISOString() },
-    }).catch(() => {});
-
-    if (priorSpeed !== null && priorSpeed - speed >= 28 && now - lastSafetyEventAtRef.current > 60000) {
+    if (priorSpeed !== null && priorSpeed - speed >= 28 && now - lastSafetyEventAtRef.current > 60000 && user?.uid) {
       lastSafetyEventAtRef.current = now;
-      firestoreDB.create(COLLECTIONS.DRIVER_SAFETY_EVENTS, {
-        driver_id: user?.uid,
-        ride_id: activeTrip.id,
+      recordDrivingEvent.mutate({
+        driverId: user.uid,
+        rideId: activeTrip.id,
         type: 'hard_braking',
-        previous_speed_kmh: Number(priorSpeed.toFixed(1)),
-        current_speed_kmh: Number(speed.toFixed(1)),
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-        created_at: new Date().toISOString(),
-      }).catch(() => {});
+        previousSpeedKmh: Number(priorSpeed.toFixed(1)),
+        currentSpeedKmh: Number(speed.toFixed(1)),
+        location: { latitude: location.coords.latitude, longitude: location.coords.longitude },
+      });
     }
-  }, [location, activeTrip?.id, activeTrip?.status]);
+  }, [location, activeTrip?.id, activeTrip?.status, user?.uid]);
 
   const handleToggleOnline = async () => {
-    if (!driverProfile) return;
+    if (!user?.uid) return;
     setTogglingOnline(true);
     try {
       const newStatus = !isOnline;
-      await firestoreDB.update(COLLECTIONS.DRIVER_PROFILES, driverProfile.id, {
-        is_online: newStatus,
-        last_online: new Date().toISOString()
+      await setAvailability.mutateAsync({
+        driverId: user.uid,
+        status: newStatus ? 'online' : 'offline',
       });
       setIsOnline(newStatus);
     } catch (err) {
@@ -372,15 +390,15 @@ export default function DriverHomeScreen() {
   };
 
   const handleAcceptRide = async () => {
-    if (!incomingRide || !driverProfile) return;
+    if (!incomingRide || !user?.uid) return;
     try {
-      await firestoreDB.update(COLLECTIONS.RIDES, incomingRide.id, {
-        status: 'driver_arriving',
-        driver_id: user?.uid,
-        driver_name: driverProfile.full_name || 'Driver',
-        driver_accepted_at: new Date().toISOString(),
+      const result = await respondToOffer.mutateAsync({
+        driverId: user.uid,
+        rideId: incomingRide.id,
+        decision: 'accept',
+        driverName: driverProfile?.full_name || undefined,
       });
-      setActiveTrip({ ...incomingRide, status: 'driver_arriving' });
+      setActiveTrip(result.ride);
       setIncomingRide(null);
       setRideOfferSeconds(20);
     } catch (err) {
@@ -389,14 +407,16 @@ export default function DriverHomeScreen() {
   };
 
   const handleAcceptQueuedRide = async () => {
-    if (!nextRide || !activeTrip) return;
+    if (!nextRide || !activeTrip || !user?.uid) return;
     try {
-      await firestoreDB.update(COLLECTIONS.RIDES, nextRide.id, {
-        status: 'driver_queued',
-        queued_after_ride_id: activeTrip.id,
-        driver_queued_at: new Date().toISOString(),
+      const result = await respondToOffer.mutateAsync({
+        driverId: user.uid,
+        rideId: nextRide.id,
+        decision: 'accept',
+        driverName: driverProfile?.full_name || undefined,
+        queueAfterRideId: activeTrip.id,
       });
-      setNextRide({ ...nextRide, status: 'driver_queued' });
+      setNextRide(result.ride);
       Alert.alert('Next ride queued', `You will be connected to ${nextRide.rider_name || 'your next rider'} after this trip.`);
     } catch {
       Alert.alert('Unable to queue ride', 'Please try again.');
@@ -404,14 +424,9 @@ export default function DriverHomeScreen() {
   };
 
   const handleDeclineRide = async () => {
-    if (!incomingRide) return;
+    if (!incomingRide || !user?.uid) return;
     try {
-      await firestoreDB.update(COLLECTIONS.RIDES, incomingRide.id, {
-        status: 'requested',
-        driver_id: null,
-        driver_name: null,
-        declined_by_driver_at: new Date().toISOString(),
-      });
+      await respondToOffer.mutateAsync({ driverId: user.uid, rideId: incomingRide.id, decision: 'decline' });
       setIncomingRide(null);
       setRideOfferSeconds(20);
     } catch (err) {
@@ -430,14 +445,9 @@ export default function DriverHomeScreen() {
   }), [incomingRide, offerSwipeX, handleAcceptRide, handleDeclineRide]);
 
   const handleCancelTrip = async (reason: string) => {
-    if (!activeTrip) return;
+    if (!activeTrip || !user?.uid) return;
     try {
-      await firestoreDB.update(COLLECTIONS.RIDES, activeTrip.id, {
-        status: 'cancelled',
-        cancelled_by: 'driver',
-        cancellation_reason: reason,
-        cancelled_at: new Date().toISOString(),
-      });
+      await cancelTrip.mutateAsync({ driverId: user.uid, rideId: activeTrip.id, reason });
       setActiveTrip(null);
       setArrivedAt(null);
       setShowCancel(false);
@@ -453,14 +463,13 @@ export default function DriverHomeScreen() {
       {
         text: 'Send SOS', style: 'destructive', onPress: async () => {
           try {
-            await firestoreDB.create(COLLECTIONS.SOS_INCIDENTS, {
-              driver_id: user?.uid,
-              driver_name: driverProfile?.full_name || 'Driver',
-              ride_id: activeTrip?.id || null,
-              status: 'open',
-              latitude: location?.coords.latitude || null,
-              longitude: location?.coords.longitude || null,
-              triggered_at: new Date().toISOString(),
+            if (!user?.uid) throw new Error('Sign in required');
+            await createSos.mutateAsync({
+              driverId: user.uid,
+              driverName: driverProfile?.full_name || undefined,
+              rideId: activeTrip?.id || undefined,
+              message: 'Emergency alert initiated from the driver app.',
+              ...(location ? { location: { latitude: location.coords.latitude, longitude: location.coords.longitude } } : {}),
             });
             Alert.alert('SOS sent', 'HY3N safety support has been alerted. If you are in immediate danger, call emergency services.');
           } catch {
@@ -473,15 +482,13 @@ export default function DriverHomeScreen() {
 
   // Driver arrival at pickup
   const handleArrivedAtPickup = async () => {
-    if (!activeTrip) return;
+    if (!activeTrip || !user?.uid) return;
     try {
-      const arrivedAtTime = new Date().toISOString();
-      await firestoreDB.update(COLLECTIONS.RIDES, activeTrip.id, {
-        driver_arrived_at: arrivedAtTime,
-        free_waiting_minutes: FREE_WAITING_MINUTES
-      });
+      const result = await arriveAtPickup.mutateAsync({ driverId: user.uid, rideId: activeTrip.id });
+      const updatedRide: any = result.ride;
+      const arrivedAtTime = updatedRide.driver_arrived_at || new Date().toISOString();
       setArrivedAt(arrivedAtTime);
-      setActiveTrip({ ...activeTrip, driver_arrived_at: arrivedAtTime });
+      setActiveTrip(updatedRide);
       Notifications.scheduleNotificationAsync({
         content: {
           title: 'Arrived at Pickup',
@@ -508,17 +515,18 @@ export default function DriverHomeScreen() {
   };
 
   const beginTrip = async (ride = activeTrip) => {
-    if (!ride) return;
+    if (!ride || !user?.uid) return;
     try {
-      const startedAt = new Date().toISOString();
       const { waitingMinutes, waitingFee } = calculateWaitingFee();
-      await firestoreDB.update(COLLECTIONS.RIDES, ride.id, {
-        status: 'in_progress',
-        trip_started_at: startedAt,
-        waiting_time_minutes: waitingMinutes,
-        waiting_fee: waitingFee,
+      const result = await startTrip.mutateAsync({
+        driverId: user.uid,
+        rideId: ride.id,
+        waitingTimeMinutes: waitingMinutes,
+        waitingFee,
       });
-      setActiveTrip({ ...ride, status: 'in_progress', trip_started_at: startedAt, waiting_time_minutes: waitingMinutes, waiting_fee: waitingFee });
+      const updatedRide: any = result.ride;
+      const startedAt = updatedRide.trip_started_at || new Date().toISOString();
+      setActiveTrip(updatedRide);
       setTripStartedAt(startedAt);
       setTripDistanceKm(0);
       lastTripLocationRef.current = location;
@@ -539,20 +547,18 @@ export default function DriverHomeScreen() {
   };
 
   const handleVerifyPickupCode = async () => {
-    if (!activeTrip) return;
-    if (pickupCode.trim() !== String(activeTrip.pickup_code).trim()) {
-      Alert.alert('Incorrect code', 'Ask the rider for the pickup code shown in their app.');
-      return;
-    }
-    const verifiedAt = new Date().toISOString();
+    if (!activeTrip || !user?.uid || !pickupCode.trim()) return;
     try {
-      await firestoreDB.update(COLLECTIONS.RIDES, activeTrip.id, { pickup_verified_at: verifiedAt });
-      const verifiedTrip = { ...activeTrip, pickup_verified_at: verifiedAt };
+      const result = await verifyPickup.mutateAsync({
+        driverId: user.uid,
+        rideId: activeTrip.id,
+        pickupCode: pickupCode.trim(),
+      });
       setPickupCode('');
       setShowOtp(false);
-      await beginTrip(verifiedTrip);
-    } catch {
-      Alert.alert('Unable to verify code', 'Please try again.');
+      await beginTrip(result.ride);
+    } catch (error: any) {
+      Alert.alert('Unable to verify code', error?.message || 'Please ask the rider for the code shown in their app.');
     }
   };
 
@@ -567,29 +573,18 @@ export default function DriverHomeScreen() {
       const totalFare = parseFloat((baseFare + waitingFee).toFixed(2));
       const fareBreakdown = getFareBreakdown(activeTrip.category || 'standard', tripDistanceKm || Number(activeTrip.distance_km || 0), durationMinutes, Number(activeTrip.surge_multiplier || 1));
 
-      await firestoreDB.update(COLLECTIONS.RIDES, activeTrip.id, {
-        status: 'completed',
-        final_fare: totalFare,
-        waiting_fee: waitingFee,
-        actual_distance_km: Number(tripDistanceKm.toFixed(2)),
-        actual_duration_minutes: Number(durationMinutes.toFixed(1)),
-        fare_breakdown: fareBreakdown,
-        completed_at: new Date().toISOString(),
+      if (!user?.uid) throw new Error('Sign in required');
+      const result = await completeTrip.mutateAsync({
+        driverId: user.uid,
+        rideId: activeTrip.id,
+        finalFare: totalFare,
+        tipAmount: Number(activeTrip.tip_amount || 0),
+        actualDistanceKm: Number(tripDistanceKm.toFixed(2)),
+        actualDurationMinutes: Number(durationMinutes.toFixed(1)),
+        fareBreakdown,
       });
 
-      await firestoreDB.create(COLLECTIONS.EARNINGS, {
-        driver_id: user?.uid,
-        ride_id: activeTrip.id,
-        amount: totalFare,
-        gross_amount: totalFare,
-        commission: Number((totalFare * 0.15).toFixed(2)),
-        net_amount: Number((totalFare * 0.85).toFixed(2)),
-        tip_amount: Number(activeTrip.tip_amount || 0),
-        status: 'available',
-        created_at: new Date().toISOString(),
-      });
-
-      const completed = { ...activeTrip, final_fare: totalFare, waiting_fee: waitingFee, actual_distance_km: tripDistanceKm, actual_duration_minutes: durationMinutes, fare_breakdown: fareBreakdown };
+      const completed = { ...result.ride, waiting_fee: waitingFee, actual_distance_km: tripDistanceKm, actual_duration_minutes: durationMinutes, fare_breakdown: fareBreakdown };
       setCompletedRide(completed);
       if (nextRide?.status === 'driver_queued') setQueuedRideToActivate(nextRide);
       setActiveTrip(null);
@@ -667,13 +662,14 @@ export default function DriverHomeScreen() {
   const handleFareAcknowledged = async () => {
     setShowFareScreen(false);
     setShowRating(true);
-    if (!queuedRideToActivate) return;
+    if (!queuedRideToActivate || !user?.uid) return;
     try {
-      await firestoreDB.update(COLLECTIONS.RIDES, queuedRideToActivate.id, {
-        status: 'driver_arriving',
-        queue_activated_at: new Date().toISOString(),
+      const result = await activateQueuedTrip.mutateAsync({
+        driverId: user.uid,
+        rideId: queuedRideToActivate.id,
+        completedRideId: completedRide?.id,
       });
-      setActiveTrip({ ...queuedRideToActivate, status: 'driver_arriving' });
+      setActiveTrip(result.ride);
       setNextRide(null);
       setQueuedRideToActivate(null);
     } catch {
