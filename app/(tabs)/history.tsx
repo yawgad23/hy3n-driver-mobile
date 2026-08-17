@@ -29,8 +29,6 @@ interface Trip {
   final_fare?: number;
   fare_estimate?: number;
   tip_amount?: number;
-  commission?: number;
-  commission_amount?: number;
   status: string;
   created_date?: string;
   trip_date?: string;
@@ -94,9 +92,8 @@ function getDestination(t: Trip) {
 function getFare(t: Trip) {
   return t.final_fare ?? t.fare ?? t.fare_estimate ?? 0;
 }
-function getCommission(t: Trip) {
-  const fare = getFare(t);
-  return t.commission ?? t.commission_amount ?? fare * 0.15;
+function getDriverEarnings(t: Trip) {
+  return getFare(t) + Number(t.tip_amount || 0);
 }
 function getRiderName(t: Trip) {
   return t.rider_name || t.passenger_name || 'Rider';
@@ -204,8 +201,8 @@ function TripCard({ trip }: { trip: Trip }) {
           <View style={styles.receiptBox}>
             <View style={styles.expandedRow}><Text style={styles.expandedLabel}>Gross fare</Text><Text style={styles.expandedValue}>GH₵{fare.toFixed(2)}</Text></View>
             {Number(trip.tip_amount || 0) > 0 && <View style={styles.expandedRow}><Text style={styles.expandedLabel}>Tip</Text><Text style={[styles.expandedValue, { color: GREEN }]}>+ GH₵{Number(trip.tip_amount).toFixed(2)}</Text></View>}
-            {isCompleted && <View style={styles.expandedRow}><Text style={styles.expandedLabel}>Service commission</Text><Text style={[styles.expandedValue, { color: '#F87171' }]}>− GH₵{getCommission(trip).toFixed(2)}</Text></View>}
-            {isCompleted && <View style={[styles.expandedRow, styles.netRow]}><Text style={styles.netLabel}>Your net earnings</Text><Text style={styles.netValue}>GH₵{Math.max(0, fare - getCommission(trip) + Number(trip.tip_amount || 0)).toFixed(2)}</Text></View>}
+            {isCompleted && <Text style={styles.dailyFeeNote}>You keep 100% of this fare and tip. HY3N’s GH₵50 platform fee is charged once daily, separately by MoMo.</Text>}
+            {isCompleted && <View style={[styles.expandedRow, styles.netRow]}><Text style={styles.netLabel}>Your trip earnings</Text><Text style={styles.netValue}>GH₵{getDriverEarnings(trip).toFixed(2)}</Text></View>}
           </View>
           {trip.payment_method && (
             <View style={styles.expandedRow}>
@@ -237,7 +234,8 @@ function TripCard({ trip }: { trip: Trip }) {
                   trip.payment_method ? `Payment: ${trip.payment_method.charAt(0).toUpperCase() + trip.payment_method.slice(1)}` : null,
                   `Gross fare: GH₵${fare.toFixed(2)}`,
                   Number(trip.tip_amount || 0) > 0 ? `Tip: GH₵${Number(trip.tip_amount).toFixed(2)}` : null,
-                  isCompleted ? `Net earnings: GH₵${Math.max(0, fare - getCommission(trip) + Number(trip.tip_amount || 0)).toFixed(2)}` : null,
+                  isCompleted ? `Trip earnings: GH₵${getDriverEarnings(trip).toFixed(2)} (100% of fare and tip)` : null,
+                  isCompleted ? 'Daily platform fee: GH₵50, charged separately by MoMo.' : null,
                   `Trip ID: ${trip.id?.slice(0, 12)}`,
                 ].filter(Boolean) as string[];
                 Share.share({ message: lines.join('\n'), title: 'HY3N Trip Receipt' });
@@ -436,6 +434,7 @@ const styles = StyleSheet.create({
   netRow: { borderTopWidth: 0.5, borderTopColor: BORDER, marginTop: 6, paddingTop: 10 },
   netLabel: { color: TEXT, fontSize: 12, fontWeight: '800' },
   netValue: { color: GOLD, fontSize: 14, fontWeight: '900' },
+  dailyFeeNote: { color: MUTED, fontSize: 11, lineHeight: 16, marginTop: 11 },
   feedbackBox: { backgroundColor: '#1A1A1A', borderRadius: 10, padding: 12 },
   feedbackTitle: { fontSize: 11, fontWeight: '700', color: MUTED, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   feedbackText: { fontSize: 13, color: TEXT, lineHeight: 18 },

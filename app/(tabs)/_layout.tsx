@@ -64,11 +64,8 @@ type CommissionStatus = 'idle' | 'processing' | 'ussd_sent' | 'checking_status' 
 function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () => void }) {
   const colors = useColors();
   const isDark = useColorScheme() === 'dark';
-  const vehicleType = (driver.service_type || driver.vehicle_type || driver.category || '').toLowerCase();
-  const isOkadaOrDelivery = vehicleType.includes('okada') || vehicleType.includes('motor') || vehicleType.includes('delivery') || vehicleType.includes('bike');
-  const feeAmount = process.env.EXPO_PUBLIC_DAILY_COMMISSION_AMOUNT
-    ? parseFloat(process.env.EXPO_PUBLIC_DAILY_COMMISSION_AMOUNT)
-    : (isOkadaOrDelivery ? 30 : 50);
+  // HY3N applies one fixed platform charge, independent of vehicle or service type.
+  const feeAmount = 50;
   const [commissionStatus, setCommissionStatus] = useState<CommissionStatus>('idle');
   const [commissionRecord, setCommissionRecord] = useState<any>(null);
   const [error, setError] = useState('');

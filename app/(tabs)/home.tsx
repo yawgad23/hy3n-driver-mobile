@@ -1036,7 +1036,7 @@ export default function DriverHomeScreen() {
             <MaterialIcons name="receipt-long" size={32} color={GOLD} />
             <Text style={[styles.sheetTitle, dynamicStyles.text]}>Trip completed</Text>
             <Text style={[styles.sheetText, dynamicStyles.muted]}>{completedRide?.destination_address || 'Trip destination'}</Text>
-            <View style={[styles.fareTotal, { borderColor: themeColors.border }]}><Text style={[styles.fareTotalLabel, dynamicStyles.muted]}>Driver earnings (before commission)</Text><Text style={styles.fareTotalAmount}>GH₵{Number(completedRide?.final_fare || 0).toFixed(2)}</Text></View>
+            <View style={[styles.fareTotal, { borderColor: themeColors.border }]}><Text style={[styles.fareTotalLabel, dynamicStyles.muted]}>Your trip earnings (100% of fare)</Text><Text style={styles.fareTotalAmount}>GH₵{Number(completedRide?.final_fare || 0).toFixed(2)}</Text></View>
             <View style={styles.fareRows}>
               <Text style={[styles.fareRowText, dynamicStyles.muted]}>Distance · {Number(completedRide?.actual_distance_km || 0).toFixed(2)} km</Text>
               <Text style={[styles.fareRowText, dynamicStyles.muted]}>Waiting fee · GH₵{Number(completedRide?.waiting_fee || 0).toFixed(2)}</Text>
