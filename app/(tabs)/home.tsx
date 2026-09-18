@@ -82,6 +82,15 @@ export default function DriverHomeScreen() {
   const lastSpeedRef = useRef<number | null>(null);
   const lastSafetyEventAtRef = useRef(0);
   const offerSwipeX = useRef(new Animated.Value(0)).current;
+  const incomingAlertRunRef = useRef(0);
+
+  const stopIncomingTripAlert = () => {
+    // Invalidate any pending seek/play chain before pausing. Without this,
+    // an async seek can finish after acceptance and restart the alert.
+    incomingAlertRunRef.current += 1;
+    incomingTripPlayer.pause();
+    incomingTripPlayer.seekTo(0).catch(() => {});
+  };
   
   // Navigation Switcher Logic
   const openNavigation = (lat: number, lng: number, label: string) => {
@@ -166,28 +175,26 @@ export default function DriverHomeScreen() {
     }).catch(() => {});
 
     return () => {
-      incomingTripPlayer.pause();
-      incomingTripPlayer.seekTo(0).catch(() => {});
+      stopIncomingTripAlert();
     };
   }, [incomingTripPlayer]);
 
   useEffect(() => {
     const shouldAlert = Boolean(incomingRide?.id) && !activeTrip && prefs.soundAlerts;
     if (!shouldAlert) {
-      incomingTripPlayer.pause();
-      incomingTripPlayer.seekTo(0).catch(() => {});
+      stopIncomingTripAlert();
       return;
     }
 
+    const alertRun = ++incomingAlertRunRef.current;
     incomingTripPlayer.loop = true;
     incomingTripPlayer.volume = 0.92;
-    incomingTripPlayer.seekTo(0)
-      .catch(() => {})
-      .finally(() => incomingTripPlayer.play());
+    incomingTripPlayer.seekTo(0).then(() => {
+      if (incomingAlertRunRef.current === alertRun) incomingTripPlayer.play();
+    }).catch(() => {});
 
     return () => {
-      incomingTripPlayer.pause();
-      incomingTripPlayer.seekTo(0).catch(() => {});
+      if (incomingAlertRunRef.current === alertRun) stopIncomingTripAlert();
     };
   }, [incomingRide?.id, activeTrip?.id, prefs.soundAlerts, incomingTripPlayer]);
 
@@ -391,6 +398,7 @@ export default function DriverHomeScreen() {
 
   const handleAcceptRide = async () => {
     if (!incomingRide || !user?.uid) return;
+    stopIncomingTripAlert();
     try {
       const result = await respondToOffer.mutateAsync({
         driverId: user.uid,
@@ -425,6 +433,7 @@ export default function DriverHomeScreen() {
 
   const handleDeclineRide = async () => {
     if (!incomingRide || !user?.uid) return;
+    stopIncomingTripAlert();
     try {
       await respondToOffer.mutateAsync({ driverId: user.uid, rideId: incomingRide.id, decision: 'decline' });
       setIncomingRide(null);
