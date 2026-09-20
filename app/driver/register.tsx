@@ -11,6 +11,7 @@ import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS, auth as firebaseAuthObj, firebaseAuth } from '@/lib/firebase';
 import { Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { buildVehicleFields } from '@/lib/vehicle';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -347,11 +348,7 @@ export default function DriverRegisterScreen() {
         phone,
         email: email || user.email || '',
         momo_number: momoNumber,
-        vehicle_make: vehicleMake,
-        vehicle_model: vehicleModel,
-        license_plate: vehiclePlate,
-        vehicle_color: vehicleColor,
-        vehicle_full_model: vehicleFullModel,
+        ...buildVehicleFields({ make: vehicleMake, model: vehicleModel, plate: vehiclePlate, colour: vehicleColor, year: vehicleFullModel }),
         city,
         service_type: serviceType,
         ride_categories: rideCategories,
@@ -376,6 +373,10 @@ export default function DriverRegisterScreen() {
       } else {
         await firestoreDB.create(COLLECTIONS.DRIVER_PROFILES, profileData);
       }
+      // The standalone backend addresses driver profiles by Firebase UID for
+      // location updates and ride acceptance. Keep this canonical document in
+      // sync even when an older profile was created with an auto-generated ID.
+      await firestoreDB.set(COLLECTIONS.DRIVER_PROFILES, user.uid, profileData);
       setStep(5);
     } catch (err: any) {
       setError(err?.message || 'Failed to submit application.');

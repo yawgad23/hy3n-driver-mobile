@@ -13,7 +13,10 @@ export interface DriverProfile {
   vehicle_make?: string;
   vehicle_model?: string;
   vehicle_color?: string;
+  vehicle_colour?: string;
+  vehicle_colour_hex?: string;
   vehicle_plate?: string;
+  license_plate?: string;
   license_number?: string;
   approval_status?: 'pending' | 'approved' | 'rejected';
   is_online?: boolean;
@@ -64,6 +67,16 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
 
   const loadProfile = async (firebaseUser: User) => {
     try {
+      // The standalone backend addresses driver profiles by Firebase UID.
+      const canonical = await firestoreDB.get(COLLECTIONS.DRIVER_PROFILES, firebaseUser.uid);
+      if (canonical) {
+        setDriverProfile(canonical as DriverProfile);
+        if (profileUnsubRef.current) profileUnsubRef.current();
+        profileUnsubRef.current = firestoreDB.subscribeDoc(COLLECTIONS.DRIVER_PROFILES, firebaseUser.uid, (updated) => {
+          if (updated) setDriverProfile(updated as DriverProfile);
+        });
+        return;
+      }
       // Try by user_id first
       let profiles = await firestoreDB.list(
         COLLECTIONS.DRIVER_PROFILES,

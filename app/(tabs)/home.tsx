@@ -20,6 +20,7 @@ import { InCallScreen, IncomingCallModal } from '@/components/in-call-screen';
 import { useVoiceCall } from '@/hooks/use-voice-call';
 import MapView, { PROVIDER_GOOGLE, Circle } from 'react-native-maps';
 import { Colors } from '@/constants/theme';
+import { buildVehicleFields } from '@/lib/vehicle';
 
 const INCOMING_TRIP_ALERT = require('../../assets/audio/incoming-trip-alert.wav');
 const GOLD = '#D4AF37';
@@ -405,6 +406,13 @@ export default function DriverHomeScreen() {
         rideId: incomingRide.id,
         decision: 'accept',
         driverName: driverProfile?.full_name || undefined,
+        ...buildVehicleFields({
+          make: driverProfile?.vehicle_make,
+          model: driverProfile?.vehicle_model,
+          plate: driverProfile?.vehicle_plate || driverProfile?.license_plate,
+          colour: driverProfile?.vehicle_colour || driverProfile?.vehicle_color,
+          year: (driverProfile as any)?.vehicle_full_model,
+        }),
       });
       setActiveTrip(result.ride);
       setIncomingRide(null);
@@ -422,6 +430,13 @@ export default function DriverHomeScreen() {
         rideId: nextRide.id,
         decision: 'accept',
         driverName: driverProfile?.full_name || undefined,
+        ...buildVehicleFields({
+          make: driverProfile?.vehicle_make,
+          model: driverProfile?.vehicle_model,
+          plate: driverProfile?.vehicle_plate || driverProfile?.license_plate,
+          colour: driverProfile?.vehicle_colour || driverProfile?.vehicle_color,
+          year: (driverProfile as any)?.vehicle_full_model,
+        }),
         queueAfterRideId: activeTrip.id,
       });
       setNextRide(result.ride);
