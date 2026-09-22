@@ -1149,10 +1149,6 @@ export default function DriverTabLayout() {
   if (loading || checkingCommission) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: '#000000', justifyContent: 'center', alignItems: 'center' }]}>
-        <Image 
-          source={require('@/assets/images/splash-icon.png')} 
-          style={{ width: 180, height: 180, resizeMode: 'contain', marginBottom: 24 }} 
-        />
         <ActivityIndicator size="large" color={GOLD} />
       </View>
     );
