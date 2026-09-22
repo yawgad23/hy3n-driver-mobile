@@ -906,7 +906,8 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
 function ApprovalGate({ driver }: { driver: any }) {
   const colors = useColors();
   const router = useRouter();
-  const isRejected = driver.approval_status === 'rejected';
+  const isRejected = [driver.approval_status, driver.application_status, driver.status]
+    .some((value) => String(value ?? '').trim().toLowerCase() === 'rejected');
   const rejectionReason = driver.rejection_reason || driver.rejection_note || driver.admin_note || '';
 
   // Timeline steps for pending state
@@ -1068,6 +1069,13 @@ function NoProfileGate() {
   );
 }
 
+function isDriverApproved(driver: any): boolean {
+  const normalizedStatus = String(
+    driver?.approval_status ?? driver?.application_status ?? driver?.status ?? '',
+  ).trim().toLowerCase();
+  return normalizedStatus === 'approved' || driver?.approved === true || driver?.is_approved === true;
+}
+
 // ─── Main Shell ───────────────────────────────────────────────────────────────
 export default function DriverTabLayout() {
   const pathname = usePathname();
@@ -1146,11 +1154,7 @@ export default function DriverTabLayout() {
 
   if (!driverProfile) return <NoProfileGate />;
 
-  if (
-    driverProfile.approval_status === 'pending' ||
-    driverProfile.approval_status === 'rejected' ||
-    !driverProfile.approval_status
-  ) {
+  if (!isDriverApproved(driverProfile)) {
     return <ApprovalGate driver={driverProfile} />;
   }
 
