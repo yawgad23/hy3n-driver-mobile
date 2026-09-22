@@ -9,6 +9,7 @@ import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { router } from 'expo-router';
 import { useDriverPreferences } from '@/hooks/use-driver-preferences';
+import { useThemeContext } from '@/lib/theme-provider';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -24,6 +25,7 @@ export default function DriverSettingsScreen() {
   const insets = useSafeAreaInsets();
   const [deleting, setDeleting] = useState(false);
   const { prefs, toggle, saving, loaded } = useDriverPreferences();
+  const { colorScheme, setColorScheme } = useThemeContext();
 
   const handleDeleteAccount = () => {
     Alert.alert(
@@ -140,6 +142,27 @@ export default function DriverSettingsScreen() {
               {i < prefRows.length - 1 && <View style={styles.divider} />}
             </View>
           ))}
+        </View>
+
+        {/* Appearance */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Appearance</Text>
+          <View style={styles.prefRow}>
+            <View style={[styles.prefIcon, { backgroundColor: GOLD + '20' }]}>
+              <MaterialIcons name={colorScheme === 'dark' ? 'dark-mode' : 'light-mode'} size={20} color={GOLD} />
+            </View>
+            <View style={styles.prefText}>
+              <Text style={styles.prefLabel}>Dark Mode</Text>
+              <Text style={styles.prefDesc}>{colorScheme === 'dark' ? 'Dark appearance is on' : 'Use a light appearance'}</Text>
+            </View>
+            <Switch
+              value={colorScheme === 'dark'}
+              onValueChange={(enabled) => setColorScheme(enabled ? 'dark' : 'light')}
+              trackColor={{ false: BORDER, true: GOLD + '80' }}
+              thumbColor={colorScheme === 'dark' ? GOLD : MUTED}
+              ios_backgroundColor={BORDER}
+            />
+          </View>
         </View>
 
         {/* Auto-Accept info banner */}
