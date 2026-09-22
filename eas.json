@@ -23,7 +23,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://api-yvurtipaxq-ew.a.run.app",
+        "EXPO_PUBLIC_API_BASE_URL": "https://skillful-imagination-production-6b46.up.railway.app",
         "EXPO_PUBLIC_DAILY_COMMISSION_AMOUNT": "0.11"
       }
     },
@@ -33,7 +33,7 @@
         "buildConfiguration": "Release"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://api-yvurtipaxq-ew.a.run.app",
+        "EXPO_PUBLIC_API_BASE_URL": "https://skillful-imagination-production-6b46.up.railway.app",
         "EXPO_PUBLIC_DAILY_COMMISSION_AMOUNT": "0.11"
       }
     },
@@ -46,7 +46,7 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://api-yvurtipaxq-ew.a.run.app",
+        "EXPO_PUBLIC_API_BASE_URL": "https://skillful-imagination-production-6b46.up.railway.app",
         "EXPO_PUBLIC_DAILY_COMMISSION_AMOUNT": "50"
       }
     }
