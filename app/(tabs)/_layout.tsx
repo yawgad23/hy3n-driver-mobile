@@ -1094,7 +1094,7 @@ export default function DriverTabLayout() {
   const checkPaid = trpc.commission.checkPaidToday.useQuery(
     { driverId },
     { 
-      enabled: !!driverProfile && driverProfile.approval_status === 'approved',
+      enabled: !!driverProfile && isDriverApproved(driverProfile),
       refetchInterval: 15000,
     }
   );

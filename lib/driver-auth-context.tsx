@@ -19,6 +19,10 @@ export interface DriverProfile {
   license_plate?: string;
   license_number?: string;
   approval_status?: 'pending' | 'approved' | 'rejected';
+  application_status?: string;
+  status?: string;
+  approved?: boolean;
+  is_approved?: boolean;
   is_online?: boolean;
   is_available?: boolean;
   rating?: number;
@@ -67,28 +71,28 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
 
   const loadProfile = async (firebaseUser: User) => {
     try {
-      // The standalone backend addresses driver profiles by Firebase UID.
+      // There may be both a UID-keyed document and an older auto-ID document.
+      // Read every matching record so a stale pending record cannot hide an
+      // approved record updated by the admin portal.
+      const candidates: any[] = [];
       const canonical = await firestoreDB.get(COLLECTIONS.DRIVER_PROFILES, firebaseUser.uid);
-      if (canonical) {
-        setDriverProfile(canonical as DriverProfile);
-        if (profileUnsubRef.current) profileUnsubRef.current();
-        profileUnsubRef.current = firestoreDB.subscribeDoc(COLLECTIONS.DRIVER_PROFILES, firebaseUser.uid, (updated) => {
-          if (updated) setDriverProfile(updated as DriverProfile);
-        });
-        return;
+      if (canonical) candidates.push(canonical);
+      const byUserId = await firestoreDB.list(COLLECTIONS.DRIVER_PROFILES, { user_id: firebaseUser.uid });
+      const byEmail = firebaseUser.email
+        ? await firestoreDB.list(COLLECTIONS.DRIVER_PROFILES, { email: firebaseUser.email })
+        : [];
+      for (const profile of [...byUserId, ...byEmail]) {
+        if (!candidates.some((existing) => existing.id === profile.id)) candidates.push(profile);
       }
-      // Try by user_id first
-      let profiles = await firestoreDB.list(
-        COLLECTIONS.DRIVER_PROFILES,
-        { user_id: firebaseUser.uid }
-      );
-      // Fallback: try by email
-      if (profiles.length === 0) {
-        profiles = await firestoreDB.list(
-          COLLECTIONS.DRIVER_PROFILES,
-          { email: firebaseUser.email }
-        );
-      }
+
+      const isApproved = (profile: any) => {
+        const status = String(profile?.approval_status ?? profile?.application_status ?? profile?.status ?? '').trim().toLowerCase();
+        return status === 'approved' || profile?.approved === true || profile?.is_approved === true;
+      };
+      const profiles = candidates.sort((a, b) => {
+        if (isApproved(a) !== isApproved(b)) return isApproved(a) ? -1 : 1;
+        return String(b.updated_date || b.created_date || '').localeCompare(String(a.updated_date || a.created_date || ''));
+      });
       if (profiles.length > 0) {
         const profile = profiles[0] as DriverProfile;
         // Ensure user_id is set
