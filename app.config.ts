@@ -27,7 +27,7 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    buildNumber: "28",
+    buildNumber: "29",
     "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -94,8 +94,8 @@ const config: ExpoConfig = {
     [
       "expo-splash-screen",
       {
-        image: "./assets/images/splash-icon.png",
-        imageWidth: 200,
+        image: "./assets/images/driver-splash-artwork.png",
+        imageWidth: 320,
         resizeMode: "contain",
         backgroundColor: "#000000",
         dark: {

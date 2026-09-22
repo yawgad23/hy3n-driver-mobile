@@ -64,8 +64,6 @@ type CommissionStatus = 'idle' | 'processing' | 'ussd_sent' | 'checking_status' 
 function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () => void }) {
   const colors = useColors();
   const isDark = useColorScheme() === 'dark';
-  // HY3N applies one fixed platform charge, independent of vehicle or service type.
-  const feeAmount = 50;
   const [commissionStatus, setCommissionStatus] = useState<CommissionStatus>('idle');
   const [commissionRecord, setCommissionRecord] = useState<any>(null);
   const [error, setError] = useState('');
@@ -73,6 +71,16 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
 
   const chargeMutation = trpc.commission.charge.useMutation();
   const trpcContext = trpc.useUtils();
+  // Cast until the mobile lockfile refreshes to the service-aware backend
+  // declaration; the live procedure accepts this optional service type.
+  const platformFeeQuery = ((trpc.commission as any).getPlatformFee as any).useQuery({
+    serviceType: driver.service_type || driver.serviceType || 'car',
+  }, {
+    staleTime: 60_000,
+  });
+  // The backend remains the source of truth for both test and production fees.
+  const feeAmount = Number(platformFeeQuery.data?.amount ?? 50);
+  const feeLabel = feeAmount.toFixed(2);
 
   // Determine MoMo network label for display
   const networkLabels: Record<string, string> = {
@@ -406,7 +414,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
         <View style={[styles.receiptCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={{ alignItems: 'center', paddingBottom: 16 }}>
             <Text style={{ color: colors.muted, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 }}>Amount Paid</Text>
-            <Text style={{ color: GOLD, fontSize: 32, fontWeight: '800', marginTop: 4 }}>GH₵ {feeAmount}.00</Text>
+            <Text style={{ color: GOLD, fontSize: 32, fontWeight: '800', marginTop: 4 }}>GH₵ {feeLabel}</Text>
           </View>
 
           <View style={[styles.receiptBadge, { backgroundColor: '#22C55E20' }]}>
@@ -473,11 +481,11 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
         <Text style={[styles.gateTitle, { color: colors.foreground }]}>Check Your Phone</Text>
         <Text style={[styles.gateSubtitle, { color: colors.muted }]}>
           A USSD prompt has been sent to your {networkLabel} number. Approve the payment of{' '}
-          <Text style={{ color: GOLD, fontWeight: '700' }}>GH₵{feeAmount}</Text> on your phone to continue.
+          <Text style={{ color: GOLD, fontWeight: '700' }}>GH₵{feeLabel}</Text> on your phone to continue.
         </Text>
         <View style={[styles.commissionCard, { backgroundColor: colors.surface, borderColor: '#F59E0B40' }]}>
           <Text style={[styles.commissionLabel, { color: colors.muted }]}>Awaiting Your Approval</Text>
-          <Text style={[styles.commissionAmount, { color: GOLD }]}>GH₵{feeAmount}.00</Text>
+          <Text style={[styles.commissionAmount, { color: GOLD }]}>GH₵{feeLabel}</Text>
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <Text style={[styles.commissionMomo, { color: colors.muted }]}>
             Network: <Text style={{ color: colors.foreground, fontWeight: '700' }}>{networkLabel}</Text>
@@ -543,7 +551,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
         <View style={[styles.receiptCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={{ alignItems: 'center', paddingBottom: 16 }}>
             <Text style={{ color: colors.muted, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 }}>Amount Unpaid</Text>
-            <Text style={{ color: GOLD, fontSize: 32, fontWeight: '800', marginTop: 4 }}>GH₵ {feeAmount}.00</Text>
+            <Text style={{ color: GOLD, fontSize: 32, fontWeight: '800', marginTop: 4 }}>GH₵ {feeLabel}</Text>
           </View>
 
           <View style={[styles.receiptBadge, { backgroundColor: '#EF444420' }]}>
@@ -723,7 +731,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
       ) : (
         <View style={[styles.commissionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Text style={[styles.commissionLabel, { color: colors.muted }]}>Daily Platform Fee</Text>
-          <Text style={[styles.commissionAmount, { color: GOLD }]}>GH₵ {feeAmount}.00</Text>
+          <Text style={[styles.commissionAmount, { color: GOLD }]}>GH₵ {feeLabel}</Text>
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           
           <View style={{ width: '100%', alignItems: 'center', marginVertical: 4 }}>
@@ -887,7 +895,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
                 onPress={handleCharge}
               >
                 <MaterialIcons name="payments" size={20} color="#000" style={{ marginRight: 6 }} />
-                <Text style={styles.submitBtnText}>Pay GH₵{feeAmount} via {networkLabel}</Text>
+                <Text style={styles.submitBtnText}>Pay GH₵{feeLabel} via {networkLabel}</Text>
               </TouchableOpacity>
             </View>
           )}

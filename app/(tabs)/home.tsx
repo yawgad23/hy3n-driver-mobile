@@ -263,7 +263,11 @@ export default function DriverHomeScreen() {
       if (!eligibleForLongTrip || !eligibleForRating) return;
 
       if (activeTrip) {
-        setNextRide((current: any) => current?.id === matched.id ? current : matched);
+        // Back-to-back trips are offered only after the rider is on board and
+        // the driver may hold exactly one next ride. Never replace a queued
+        // offer with another request while the current trip is in progress.
+        if (activeTrip.status !== 'in_progress') return;
+        setNextRide((current: any) => current || matched);
         return;
       }
 
