@@ -5,7 +5,7 @@ import { RIDE_CATEGORIES, FREE_WAITING_MINUTES, POPULAR_DESTINATIONS, calculateF
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   Dimensions, Alert, ActivityIndicator, Animated, Image, Platform, PanResponder,
-  Modal, TextInput, StatusBar, useColorScheme
+  Modal, TextInput, StatusBar
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -21,6 +21,7 @@ import { useVoiceCall } from '@/hooks/use-voice-call';
 import MapView, { PROVIDER_GOOGLE, Circle } from 'react-native-maps';
 import { Colors } from '@/constants/theme';
 import { buildVehicleFields } from '@/lib/vehicle';
+import { useThemeContext } from '@/lib/theme-provider';
 
 const INCOMING_TRIP_ALERT = require('../../assets/audio/incoming-trip-alert.wav');
 const GOLD = '#D4AF37';
@@ -28,12 +29,28 @@ const GREEN = '#22C55E';
 const RED = '#EF4444';
 const BLUE = '#3B82F6';
 
+const DARK_MAP_STYLE = [
+  { elementType: 'geometry', stylers: [{ color: '#1b1f24' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#d2d7de' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#1b1f24' }] },
+  { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#4b5563' }] },
+  { featureType: 'poi', elementType: 'geometry', stylers: [{ color: '#242b33' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#1d3a2a' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#303841' }] },
+  { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#3b4652' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#6b5725' }] },
+  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#e5e7eb' }] },
+  { featureType: 'transit', elementType: 'geometry', stylers: [{ color: '#26313a' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#102b46' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#9fc5e8' }] },
+];
+
 const { height } = Dimensions.get('window');
 
 export default function DriverHomeScreen() {
   const insets = useSafeAreaInsets();
-  const systemScheme = useColorScheme();
-  const isDark = systemScheme === 'dark';
+  const { colorScheme } = useThemeContext();
+  const isDark = colorScheme === 'dark';
   const themeColors = Colors[isDark ? 'dark' : 'light'];
   
   const { user, driverProfile } = useDriverAuth();
@@ -748,6 +765,7 @@ export default function DriverHomeScreen() {
           ref={mapRef}
           style={StyleSheet.absoluteFill}
           provider={PROVIDER_GOOGLE}
+          customMapStyle={isDark ? DARK_MAP_STYLE : undefined}
           initialRegion={{
             latitude: location?.coords.latitude || 5.6037,
             longitude: location?.coords.longitude || -0.1870,
