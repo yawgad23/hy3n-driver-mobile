@@ -1,13 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Linking, ActivityIndicator, Alert, TextInput, useColorScheme, KeyboardAvoidingView, Image } from 'react-native';
 import { Tabs, useRouter, usePathname } from 'expo-router';
 import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useDriverAuth } from '@/lib/driver-auth-context';
-import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
+import { firebaseAuth, firebaseConfig, firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { useColors } from '@/hooks/use-colors';
 import { trpc } from '@/lib/trpc';
+import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -111,9 +112,9 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
   const [otpError, setOtpError] = useState('');
   const [sendingOtp, setSendingOtp] = useState(false);
   const [verifyingOtp, setVerifyingOtp] = useState(false);
-
-  const sendOtpMutation = trpc.commission.sendOtp.useMutation();
-  const verifyOtpMutation = trpc.commission.verifyOtp.useMutation();
+  const [firebaseVerificationId, setFirebaseVerificationId] = useState('');
+  const [verifiedPhoneNumber, setVerifiedPhoneNumber] = useState('');
+  const recaptchaVerifier = useRef<any>(null);
 
   const handleSendOtp = async () => {
     if (!phoneInput) {
@@ -124,41 +125,41 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
     setSendingOtp(true);
     setOtpError('');
     try {
-      const result = await sendOtpMutation.mutateAsync({
-        phoneNumber: phoneInput,
-        driverId: driver.user_id || driver.id,
-      });
-      if (result.success) {
-        setOtpSent(true);
-      } else {
-        setError(result.message || 'Failed to send verification code.');
-      }
+      const result = await firebaseAuth.sendPhoneVerification(phoneInput, recaptchaVerifier.current);
+      setFirebaseVerificationId(result.verificationId);
+      setVerifiedPhoneNumber(result.phoneNumber);
+      setOtpSent(true);
     } catch (err: any) {
-      setError(err?.message || 'Error sending verification code.');
+      const message = String(err?.message || '');
+      setError(message.includes('too-many-requests')
+        ? 'Too many verification attempts. Please wait before trying again.'
+        : message || 'Firebase could not send the verification SMS. Please try again.');
     } finally {
       setSendingOtp(false);
     }
   };
 
   const handleVerifyOtp = async () => {
-    if (!otpCode) {
+    if (!otpCode || !firebaseVerificationId) {
       setOtpError('Please enter the 6-digit code');
       return;
     }
     setOtpError('');
     setVerifyingOtp(true);
     try {
-      const result = await verifyOtpMutation.mutateAsync({
-        driverId: driver.user_id || driver.id,
-        code: otpCode,
+      await firebaseAuth.confirmPhoneVerification(firebaseVerificationId, otpCode);
+      const profileId = driver.id || driver.user_id;
+      await firestoreDB.update(COLLECTIONS.DRIVER_PROFILES, profileId, {
+        momo_number: verifiedPhoneNumber || phoneInput,
+        momo_phone_verified: true,
+        momo_phone_verified_at: new Date().toISOString(),
       });
-      if (result.success) {
-        setOtpVerified(true);
-      } else {
-        setOtpError(result.message || 'Invalid verification code.');
-      }
+      setOtpVerified(true);
     } catch (err: any) {
-      setOtpError(err?.message || 'Verification failed. Please try again.');
+      const message = String(err?.message || '');
+      setOtpError(message.includes('invalid-verification-code')
+        ? 'That verification code is not correct. Please try again.'
+        : message || 'Firebase could not verify the code. Please try again.');
     } finally {
       setVerifyingOtp(false);
     }
@@ -617,6 +618,12 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
 
   // ── Idle (initial state — show fee info and Pay Now button) ──
   return (
+    <>
+    <FirebaseRecaptchaVerifierModal
+      ref={recaptchaVerifier}
+      firebaseConfig={firebaseConfig}
+      attemptInvisibleVerification
+    />
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{ flex: 1 }}
@@ -781,7 +788,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
                     Verify Your Phone Number
                   </Text>
                   <Text style={{ color: colors.muted, fontSize: 12, textAlign: 'center', marginHorizontal: 20 }}>
-                    Enter the 6-digit verification code sent to {phoneInput}
+                    Enter the Firebase verification code sent to {verifiedPhoneNumber || phoneInput}
                   </Text>
 
                   <TextInput
@@ -818,7 +825,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
                     ) : (
                       <>
                         <MaterialIcons name="verified-user" size={18} color="#000" style={{ marginRight: 6 }} />
-                        <Text style={styles.submitBtnText}>Verify OTP Code</Text>
+                        <Text style={styles.submitBtnText}>Verify Code</Text>
                       </>
                     )}
                   </TouchableOpacity>
@@ -849,7 +856,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
                     ) : (
                       <>
                         <MaterialIcons name="sms" size={18} color="#000" style={{ marginRight: 6 }} />
-                        <Text style={styles.submitBtnText}>Send Verification Code</Text>
+                        <Text style={styles.submitBtnText}>Send Firebase Verification Code</Text>
                       </>
                     )}
                   </TouchableOpacity>
@@ -887,6 +894,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
       </TouchableOpacity>
     </ScrollView>
     </KeyboardAvoidingView>
+    </>
   );
 }
 

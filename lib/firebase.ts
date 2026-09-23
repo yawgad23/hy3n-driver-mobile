@@ -15,6 +15,7 @@ import {
   sendEmailVerification,
   onAuthStateChanged,
   PhoneAuthProvider,
+  linkWithCredential,
   signInWithCredential,
   GoogleAuthProvider,
   signInWithPopup,
@@ -55,7 +56,7 @@ import {
 } from 'firebase/storage';
 
 // ─── Firebase Config ─────────────────────────────────────────────────────────
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: "AIzaSyDYUm2xv_8er3oGwk6qVXzAT51hoS4N4dE",
   authDomain: "hy3n26.firebaseapp.com",
   projectId: "hy3n26",
@@ -155,6 +156,45 @@ export const firebaseAuth = {
     const currentUser = auth.currentUser;
     if (!currentUser) throw new Error('No user logged in');
     await deleteUser(currentUser);
+  },
+
+  /** Sends a Firebase Authentication SMS to verify the Driver's own phone. */
+  async sendPhoneVerification(phoneInput: string, appVerifier: any) {
+    const digits = phoneInput.replace(/[^\d+]/g, '');
+    const normalized = digits.startsWith('+233')
+      ? digits
+      : digits.startsWith('233')
+        ? `+${digits}`
+        : digits.startsWith('0')
+          ? `+233${digits.slice(1)}`
+          : `+233${digits}`;
+    if (!/^\+233\d{9}$/.test(normalized)) {
+      throw new Error('Enter a valid Ghana mobile number.');
+    }
+    if (!appVerifier) {
+      throw new Error('Phone verification is not ready. Please try again.');
+    }
+    const provider = new PhoneAuthProvider(auth);
+    const verificationId = await provider.verifyPhoneNumber(normalized, appVerifier);
+    return { verificationId, phoneNumber: normalized };
+  },
+
+  /** Links the verified Firebase phone credential to the already signed-in Driver. */
+  async confirmPhoneVerification(verificationId: string, code: string) {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('Please sign in again before verifying your number.');
+    const credential = PhoneAuthProvider.credential(verificationId, code.trim());
+    try {
+      const linked = await linkWithCredential(currentUser, credential);
+      return linked.user;
+    } catch (error: any) {
+      // Firebase returns this when the signed-in Driver already has this exact
+      // verified number linked, which is a successful end state for this gate.
+      if (error?.code === 'auth/provider-already-linked' && currentUser.phoneNumber) {
+        return currentUser;
+      }
+      throw error;
+    }
   },
 };
 
