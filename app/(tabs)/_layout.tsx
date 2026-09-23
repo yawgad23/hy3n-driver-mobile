@@ -111,7 +111,6 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
   const [otpError, setOtpError] = useState('');
   const [sendingOtp, setSendingOtp] = useState(false);
   const [verifyingOtp, setVerifyingOtp] = useState(false);
-  const [devOtpHint, setDevOtpHint] = useState('');
 
   const sendOtpMutation = trpc.commission.sendOtp.useMutation();
   const verifyOtpMutation = trpc.commission.verifyOtp.useMutation();
@@ -131,7 +130,6 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
       });
       if (result.success) {
         setOtpSent(true);
-        setDevOtpHint(result.otpCode || '');
       } else {
         setError(result.message || 'Failed to send verification code.');
       }
@@ -807,24 +805,6 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
                     keyboardType="number-pad"
                     maxLength={6}
                   />
-
-                  {!!devOtpHint && (
-                    <View style={{
-                      backgroundColor: isDark ? '#1A1A1A' : '#FEF3C7',
-                      borderRadius: 8,
-                      paddingVertical: 6,
-                      paddingHorizontal: 12,
-                      borderWidth: 1,
-                      borderColor: GOLD,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 4,
-                    }}>
-                      <Text style={{ color: isDark ? GOLD : '#B45309', fontSize: 12, fontWeight: '700' }}>
-                        🔑 Dev Test OTP: <Text style={{ color: isDark ? '#FFF' : '#78350F' }}>{devOtpHint}</Text>
-                      </Text>
-                    </View>
-                  )}
 
                   {!!otpError && <Text style={{ color: '#EF4444', fontSize: 12, textAlign: 'center' }}>{otpError}</Text>}
 

@@ -149,6 +149,17 @@ export default function DriverHomeScreen() {
   const [ratingValue, setRatingValue] = useState(0);
   const [ratingFeedback, setRatingFeedback] = useState('');
 
+  // Offers are read from the backend rather than from a pre-assigned Firestore
+  // document. A Driver must be signed in, online, and explicitly accept before
+  // the Rider is ever told who the Driver is.
+  // The app's published GitHub backend package is one revision behind the
+  // deployed Railway router; use the live procedure until its declaration is
+  // synchronized, while keeping the endpoint fully server-validated.
+  const availableOffers = (trpc.driverTrips as any).availableOffers.useQuery(
+    { driverId: user?.uid || '' },
+    { enabled: Boolean(user?.uid && isOnline), refetchInterval: 4000 },
+  );
+
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const call = useVoiceCall({
     rideId: activeTrip?.id,
@@ -198,7 +209,7 @@ export default function DriverHomeScreen() {
   }, [incomingTripPlayer]);
 
   useEffect(() => {
-    const shouldAlert = Boolean(incomingRide?.id) && !activeTrip && prefs.soundAlerts;
+    const shouldAlert = isOnline && Boolean(incomingRide?.id) && !activeTrip && prefs.soundAlerts;
     if (!shouldAlert) {
       stopIncomingTripAlert();
       return;
@@ -214,7 +225,7 @@ export default function DriverHomeScreen() {
     return () => {
       if (incomingAlertRunRef.current === alertRun) stopIncomingTripAlert();
     };
-  }, [incomingRide?.id, activeTrip?.id, prefs.soundAlerts, incomingTripPlayer]);
+  }, [incomingRide?.id, activeTrip?.id, isOnline, prefs.soundAlerts, incomingTripPlayer]);
 
   // Waiting time counter
   useEffect(() => {
@@ -248,47 +259,55 @@ export default function DriverHomeScreen() {
     if (driverProfile) setIsOnline(driverProfile.is_online || false);
   }, [driverProfile]);
 
-  // Receive driver-assigned requests in real time. A ride is only shown when it
-  // meets the driver's saved preferences; active drivers may queue one next ride.
+  // Receive only server-filtered, unassigned offers. The backend verifies that
+  // the Driver is online and atomically assigns the ride only after Accept.
   useEffect(() => {
-    if (!user?.uid || !isOnline) return;
+    if (!user?.uid || !isOnline) {
+      stopIncomingTripAlert();
+      setIncomingRide(null);
+      return;
+    }
 
-    const unsubscribe = firestoreDB.subscribe(COLLECTIONS.RIDES, { driver_id: user.uid }, (rides) => {
-      const matched = rides.find((ride: any) => ride.status === 'matched');
-      if (!matched) return;
-
-      const estimatedDistance = Number(matched.distance_km || matched.estimated_distance_km || 0);
+    const offers: any[] = availableOffers.data?.offers || [];
+    const offeredRide = offers.find((ride: any) => {
+      const estimatedDistance = Number(ride.distance_km || ride.estimated_distance_km || 0);
       const eligibleForLongTrip = !prefs.longTripsOnly || estimatedDistance >= 8;
-      const eligibleForRating = !prefs.preferHighRated || Number(matched.rider_rating || 5) >= 4.5;
-      if (!eligibleForLongTrip || !eligibleForRating) return;
-
-      if (activeTrip) {
-        // Back-to-back trips are offered only after the rider is on board and
-        // the driver may hold exactly one next ride. Never replace a queued
-        // offer with another request while the current trip is in progress.
-        if (activeTrip.status !== 'in_progress') return;
-        setNextRide((current: any) => current || matched);
-        return;
-      }
-
-      setIncomingRide((current: any) => {
-        if (current?.id === matched.id) return current;
-        setRideOfferSeconds(20);
-        Notifications.scheduleNotificationAsync({
-          content: {
-            title: 'New Ride Request',
-            body: `Ride from ${matched.rider_name || 'a rider'} · GH₵${matched.fare_estimate || 0}`,
-            sound: 'default',
-            priority: Notifications.AndroidNotificationPriority.MAX,
-          },
-          trigger: null,
-        }).catch(() => {});
-        return matched;
-      });
+      const eligibleForRating = !prefs.preferHighRated || Number(ride.rider_rating || 5) >= 4.5;
+      return eligibleForLongTrip && eligibleForRating;
     });
 
-    return () => unsubscribe?.();
-  }, [user?.uid, isOnline, activeTrip, prefs.longTripsOnly, prefs.preferHighRated]);
+    if (!offeredRide) {
+      if (incomingRide) {
+        stopIncomingTripAlert();
+        setIncomingRide(null);
+      }
+      return;
+    }
+
+    if (activeTrip) {
+      // Back-to-back trips are offered only after the rider is on board and
+      // the driver may hold exactly one next ride. Never replace a queued
+      // offer with another request while the current trip is in progress.
+      if (activeTrip.status !== 'in_progress') return;
+      setNextRide((current: any) => current || offeredRide);
+      return;
+    }
+
+    setIncomingRide((current: any) => {
+      if (current?.id === offeredRide.id) return current;
+      setRideOfferSeconds(20);
+      Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'New Ride Request',
+          body: `Ride from ${offeredRide.rider_name || 'a rider'} · GH₵${offeredRide.fare_estimate || 0}`,
+          sound: 'default',
+          priority: Notifications.AndroidNotificationPriority.MAX,
+        },
+        trigger: null,
+      }).catch(() => {});
+      return offeredRide;
+    });
+  }, [user?.uid, isOnline, activeTrip, incomingRide, availableOffers.data?.offers, prefs.longTripsOnly, prefs.preferHighRated]);
 
   // Recover a trip if the app is reopened while the driver is already assigned.
   useEffect(() => {
@@ -410,6 +429,11 @@ export default function DriverHomeScreen() {
         driverId: user.uid,
         status: newStatus ? 'online' : 'offline',
       });
+      if (!newStatus) {
+        stopIncomingTripAlert();
+        setIncomingRide(null);
+        setNextRide(null);
+      }
       setIsOnline(newStatus);
     } catch (err) {
       Alert.alert('Error', 'Failed to update status');
