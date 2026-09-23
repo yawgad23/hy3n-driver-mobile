@@ -18,7 +18,7 @@ import { Linking } from 'react-native';
 import { RideChatModal } from '@/components/ride-chat-modal';
 import { InCallScreen, IncomingCallModal } from '@/components/in-call-screen';
 import { useVoiceCall } from '@/hooks/use-voice-call';
-import MapView, { PROVIDER_GOOGLE, Circle } from 'react-native-maps';
+import DriverLeafletMap from '@/components/DriverLeafletMap';
 import { Colors } from '@/constants/theme';
 import { buildVehicleFields } from '@/lib/vehicle';
 import { useThemeContext } from '@/lib/theme-provider';
@@ -55,7 +55,6 @@ export default function DriverHomeScreen() {
   
   const { user, driverProfile } = useDriverAuth();
   const { prefs, toggle: togglePref, setPrefs } = useDriverPreferences();
-  const mapRef = useRef<MapView>(null);
   const incomingTripPlayer = useAudioPlayer(INCOMING_TRIP_ALERT, {
     downloadFirst: true,
     keepAudioSessionActive: true,
@@ -67,6 +66,7 @@ export default function DriverHomeScreen() {
   const verifyPickup = trpc.driverTrips.verifyPickup.useMutation();
   const startTrip = trpc.driverTrips.start.useMutation();
   const completeTrip = trpc.driverTrips.complete.useMutation();
+  const rateRider = (trpc.driverTrips as any).rateRider.useMutation();
   const cancelTrip = trpc.driverTrips.cancel.useMutation();
   const activateQueuedTrip = trpc.driverTrips.activateQueued.useMutation();
   const createSos = trpc.driverSafety.createSos.useMutation();
@@ -131,12 +131,10 @@ export default function DriverHomeScreen() {
     );
   };
 
-  // Heatmap / Demand Zones
-  const [showHeatmap, setShowHeatmap] = useState(true);
-  const demandZones = useMemo(() => POPULAR_DESTINATIONS.map(d => ({
-    ...d,
-    intensity: Math.random() * 0.5 + 0.2 
-  })), []);
+  // The previous demand-zone circles obscured the map and were not real cars.
+  // Keep the control state only for backwards-compatible layout, but do not
+  // render artificial circles over the driver's location map.
+  const [showHeatmap, setShowHeatmap] = useState(false);
 
   // Waiting Time Logic
   const [arrivedAt, setArrivedAt] = useState<string | null>(null);
@@ -643,8 +641,10 @@ export default function DriverHomeScreen() {
       const waitingFee = Number(activeTrip.waiting_fee || 0);
       const durationMinutes = tripStartedAt ? Math.max(1, (Date.now() - new Date(tripStartedAt).getTime()) / 60000) : Number(activeTrip.duration_minutes || 0);
       const calculatedFare = calculateFare(activeTrip.category || 'standard', tripDistanceKm || Number(activeTrip.distance_km || 0), durationMinutes, Number(activeTrip.surge_multiplier || 1));
-      const baseFare = Math.max(Number(activeTrip.fare_estimate || 0), calculatedFare);
-      const totalFare = parseFloat((baseFare + waitingFee).toFixed(2));
+      // The accepted Rider fare is authoritative. GPS/time recalculation was
+      // making the Driver screen charge more while the vehicle was stationary.
+      const lockedFare = Number(activeTrip.fare_estimate ?? activeTrip.fare ?? calculatedFare);
+      const totalFare = parseFloat((lockedFare + waitingFee).toFixed(2));
       const fareBreakdown = getFareBreakdown(activeTrip.category || 'standard', tripDistanceKm || Number(activeTrip.distance_km || 0), durationMinutes, Number(activeTrip.surge_multiplier || 1));
 
       if (!user?.uid) throw new Error('Sign in required');
@@ -675,52 +675,8 @@ export default function DriverHomeScreen() {
   const handleSubmitRating = async () => {
     if (!completedRide) return;
     try {
-      await firestoreDB.update(COLLECTIONS.RIDES, completedRide.id, {
-        driver_rating: ratingValue,
-        driver_feedback: ratingFeedback
-      });
-
-      // Update rider's average rating
-      const riderProfiles = await firestoreDB.query(COLLECTIONS.RIDER_PROFILES, [
-        { field: 'user_id', operator: '==', value: completedRide.rider_id }
-      ]);
-
-      if (riderProfiles.length > 0) {
-        const riderProfile = riderProfiles[0];
-        const rides = await firestoreDB.query(COLLECTIONS.RIDES, [
-          { field: 'rider_id', operator: '==', value: completedRide.rider_id }
-        ]);
-        
-        const ratedRides = rides.filter((r: any) => Number(r.driver_rating || 0) > 0);
-        if (ratedRides.length > 0) {
-          const avgRating = ratedRides.reduce((sum: number, r: any) => sum + Number(r.driver_rating || 0), 0) / ratedRides.length;
-          await firestoreDB.update(COLLECTIONS.RIDER_PROFILES, riderProfile.id, {
-            rating: parseFloat(avgRating.toFixed(2))
-          });
-        }
-      }
-
-      if (foundItem.trim()) {
-        await firestoreDB.create(COLLECTIONS.FOUND_ITEMS, {
-          driver_id: user?.uid,
-          ride_id: completedRide.id,
-          rider_id: completedRide.rider_id || null,
-          description: foundItem.trim(),
-          status: 'reported',
-          reported_at: new Date().toISOString(),
-        });
-      }
-      if (safetyReport.trim()) {
-        await firestoreDB.create(COLLECTIONS.RIDE_REPORTS, {
-          reporter_id: user?.uid,
-          reporter_role: 'driver',
-          ride_id: completedRide.id,
-          type: 'safety',
-          description: safetyReport.trim(),
-          status: 'open',
-          created_at: new Date().toISOString(),
-        });
-      }
+      if (!user?.uid || !completedRide.rider_id || ratingValue < 1) throw new Error('Please choose a star rating.');
+      await rateRider.mutateAsync({ driverId: user.uid, rideId: completedRide.id, riderId: completedRide.rider_id, rating: ratingValue, feedback: ratingFeedback, foundItem, safetyReport });
 
       setShowRating(false);
       setCompletedRide(null);
@@ -794,29 +750,7 @@ export default function DriverHomeScreen() {
 
       {/* Map Layer */}
       {isOnline ? (
-        <MapView
-          ref={mapRef}
-          style={StyleSheet.absoluteFill}
-          provider={PROVIDER_GOOGLE}
-          customMapStyle={isDark ? DARK_MAP_STYLE : undefined}
-          initialRegion={{
-            latitude: location?.coords.latitude || 5.6037,
-            longitude: location?.coords.longitude || -0.1870,
-            latitudeDelta: 0.05,
-            longitudeDelta: 0.05,
-          }}
-          showsUserLocation={true}
-        >
-          {showHeatmap && demandZones.map((zone, idx) => (
-            <Circle
-              key={idx}
-              center={{ latitude: zone.lat, longitude: zone.lng }}
-              radius={800}
-              fillColor={`rgba(212, 175, 55, ${zone.intensity})`}
-              strokeColor="transparent"
-            />
-          ))}
-        </MapView>
+        <DriverLeafletMap latitude={location?.coords.latitude} longitude={location?.coords.longitude} dark={isDark} />
       ) : (
         <View style={styles.offlineBg}>
            <Image source={require('@/assets/images/icon.png')} style={styles.largeLogo} resizeMode="contain" />
@@ -833,7 +767,7 @@ export default function DriverHomeScreen() {
         </View>
 
         <View style={{ flexDirection: 'row', gap: 10 }}>
-          {isOnline && (
+          {false && isOnline && (
             <TouchableOpacity 
               style={[styles.notifCircle, dynamicStyles.badge, { borderColor: showHeatmap ? GOLD : themeColors.border }]} 
               onPress={() => setShowHeatmap(!showHeatmap)}
