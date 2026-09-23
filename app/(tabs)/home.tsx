@@ -351,24 +351,29 @@ export default function DriverHomeScreen() {
 
   // Unread message counter
   useEffect(() => {
-    if (!activeTrip?.id) {
+    if (!activeTrip?.id || !user?.uid) {
       setUnreadCount(0);
       return;
     }
-    
-    const unsubscribe = firestoreDB.subscribe(COLLECTIONS.RIDE_MESSAGES, (snapshot) => {
-      snapshot.forEach((change) => {
-        if (change.type === 'added') {
-          const msg = change.doc.data();
-          if (msg.ride_id === activeTrip.id && msg.sender_role === 'rider' && !showChat) {
-            setUnreadCount(prev => prev + 1);
-          }
-        }
-      });
-    });
+
+    // firestoreDB.subscribe returns message documents, not Firestore
+    // document-change objects. Count unread rider messages so the in-app
+    // badge works alongside the device notification.
+    const unsubscribe = firestoreDB.subscribe(
+      COLLECTIONS.RIDE_MESSAGES,
+      { ride_id: activeTrip.id },
+      (messages: any[]) => {
+        const unread = messages.filter((message) =>
+          message.sender_id !== user.uid &&
+          message.sender_role === 'rider' &&
+          !message.read_by_driver,
+        ).length;
+        setUnreadCount(showChat ? 0 : unread);
+      },
+    );
 
     return () => unsubscribe?.();
-  }, [activeTrip?.id, showChat]);
+  }, [activeTrip?.id, user?.uid, showChat]);
 
   const openChat = () => { setShowChat(true); setUnreadCount(0); };
 
