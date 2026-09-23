@@ -10,6 +10,7 @@ import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { router } from 'expo-router';
 import { useDriverPreferences } from '@/hooks/use-driver-preferences';
 import { useThemeContext } from '@/lib/theme-provider';
+import { useColors } from '@/hooks/use-colors';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -25,7 +26,8 @@ export default function DriverSettingsScreen() {
   const insets = useSafeAreaInsets();
   const [deleting, setDeleting] = useState(false);
   const { prefs, toggle, saving, loaded } = useDriverPreferences();
-  const { colorScheme, setColorScheme } = useThemeContext();
+  const { colorScheme } = useThemeContext();
+  const colors = useColors();
 
   const handleDeleteAccount = () => {
     Alert.alert(
@@ -100,9 +102,9 @@ export default function DriverSettingsScreen() {
   ];
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Settings</Text>
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <Text style={[styles.headerTitle, { color: colors.foreground }]}>Settings</Text>
         {saving && (
           <View style={styles.savingBadge}>
             <ActivityIndicator size="small" color={GOLD} />
@@ -119,8 +121,8 @@ export default function DriverSettingsScreen() {
 
       <ScrollView style={styles.scroll} contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 100 }}>
         {/* Driver Preferences */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Driver Preferences</Text>
+        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.sectionTitle, { color: colors.muted }]}>Driver Preferences</Text>
           {prefRows.map((row, i) => (
             <View key={row.key}>
               <View style={styles.prefRow}>
@@ -128,40 +130,36 @@ export default function DriverSettingsScreen() {
                   <MaterialIcons name={row.icon as any} size={20} color={row.iconColor} />
                 </View>
                 <View style={styles.prefText}>
-                  <Text style={styles.prefLabel}>{row.label}</Text>
-                  <Text style={styles.prefDesc}>{row.desc}</Text>
+                  <Text style={[styles.prefLabel, { color: colors.foreground }]}>{row.label}</Text>
+                  <Text style={[styles.prefDesc, { color: colors.muted }]}>{row.desc}</Text>
                 </View>
                 <Switch
                   value={Boolean(prefs[row.key])}
                   onValueChange={() => toggle(row.key)}
-                  trackColor={{ false: BORDER, true: GOLD + '80' }}
-                  thumbColor={Boolean(prefs[row.key]) ? GOLD : MUTED}
-                  ios_backgroundColor={BORDER}
+                  trackColor={{ false: colors.border, true: GOLD + '80' }}
+                  thumbColor={Boolean(prefs[row.key]) ? GOLD : colors.muted}
+                  ios_backgroundColor={colors.border}
                 />
               </View>
-              {i < prefRows.length - 1 && <View style={styles.divider} />}
+              {i < prefRows.length - 1 && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
             </View>
           ))}
         </View>
 
         {/* Appearance */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Appearance</Text>
+        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.sectionTitle, { color: colors.muted }]}>Appearance</Text>
           <View style={styles.prefRow}>
             <View style={[styles.prefIcon, { backgroundColor: GOLD + '20' }]}>
               <MaterialIcons name={colorScheme === 'dark' ? 'dark-mode' : 'light-mode'} size={20} color={GOLD} />
             </View>
             <View style={styles.prefText}>
-              <Text style={styles.prefLabel}>Dark Mode</Text>
-              <Text style={styles.prefDesc}>{colorScheme === 'dark' ? 'Dark appearance is on' : 'Use a light appearance'}</Text>
+              <Text style={[styles.prefLabel, { color: colors.foreground }]}>System Appearance</Text>
+              <Text style={[styles.prefDesc, { color: colors.muted }]}>
+                Using your phone setting · {colorScheme === 'dark' ? 'Dark' : 'Light'}
+              </Text>
             </View>
-            <Switch
-              value={colorScheme === 'dark'}
-              onValueChange={(enabled) => setColorScheme(enabled ? 'dark' : 'light')}
-              trackColor={{ false: BORDER, true: GOLD + '80' }}
-              thumbColor={colorScheme === 'dark' ? GOLD : MUTED}
-              ios_backgroundColor={BORDER}
-            />
+            <MaterialIcons name="settings-suggest" size={21} color={colors.muted} />
           </View>
         </View>
 
@@ -176,45 +174,45 @@ export default function DriverSettingsScreen() {
         )}
 
         {/* Account Info */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
+        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.sectionTitle, { color: colors.muted }]}>Account</Text>
           <View style={styles.infoRow}>
-            <MaterialIcons name="person" size={18} color={MUTED} />
-            <Text style={styles.infoLabel}>Name</Text>
-            <Text style={styles.infoValue}>{driverProfile?.full_name || '—'}</Text>
+            <MaterialIcons name="person" size={18} color={colors.muted} />
+            <Text style={[styles.infoLabel, { color: colors.muted }]}>Name</Text>
+            <Text style={[styles.infoValue, { color: colors.foreground }]}>{driverProfile?.full_name || '—'}</Text>
           </View>
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <View style={styles.infoRow}>
-            <MaterialIcons name="email" size={18} color={MUTED} />
-            <Text style={styles.infoLabel}>Email</Text>
-            <Text style={styles.infoValue}>{driverProfile?.email || '—'}</Text>
+            <MaterialIcons name="email" size={18} color={colors.muted} />
+            <Text style={[styles.infoLabel, { color: colors.muted }]}>Email</Text>
+            <Text style={[styles.infoValue, { color: colors.foreground }]}>{driverProfile?.email || '—'}</Text>
           </View>
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <View style={styles.infoRow}>
-            <MaterialIcons name="phone" size={18} color={MUTED} />
-            <Text style={styles.infoLabel}>Phone</Text>
-            <Text style={styles.infoValue}>{driverProfile?.phone || '—'}</Text>
+            <MaterialIcons name="phone" size={18} color={colors.muted} />
+            <Text style={[styles.infoLabel, { color: colors.muted }]}>Phone</Text>
+            <Text style={[styles.infoValue, { color: colors.foreground }]}>{driverProfile?.phone || '—'}</Text>
           </View>
         </View>
 
         {/* Support */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Support</Text>
+        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.sectionTitle, { color: colors.muted }]}>Support</Text>
           <TouchableOpacity
             style={styles.supportRow}
             onPress={() => Linking.openURL('https://wa.me/233546728330?text=I%20need%20help%20with%20my%20driver%20account')}
             activeOpacity={0.75}
           >
             <MaterialIcons name="help-outline" size={20} color={GOLD} />
-            <Text style={styles.supportText}>Help & Support</Text>
-            <MaterialIcons name="chevron-right" size={20} color={MUTED} />
+            <Text style={[styles.supportText, { color: colors.foreground }]}>Help & Support</Text>
+            <MaterialIcons name="chevron-right" size={20} color={colors.muted} />
           </TouchableOpacity>
         </View>
 
         {/* Danger Zone */}
-        <View style={[styles.section, styles.dangerSection]}>
+        <View style={[styles.section, styles.dangerSection, { backgroundColor: colors.card }]}>
           <Text style={[styles.sectionTitle, { color: RED }]}>Danger Zone</Text>
-          <Text style={styles.dangerDesc}>
+          <Text style={[styles.dangerDesc, { color: colors.muted }]}>
             Permanently delete your driver profile and all associated data. This action cannot be undone.
           </Text>
           <TouchableOpacity

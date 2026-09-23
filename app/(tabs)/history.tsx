@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
+import { useColors } from '@/hooks/use-colors';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -106,6 +107,7 @@ function getDistance(t: Trip) {
 }
 
 function TripCard({ trip }: { trip: Trip }) {
+  const colors = useColors();
   const [expanded, setExpanded] = useState(false);
   const fare = getFare(trip);
   const isCompleted = trip.status === 'completed';
@@ -118,7 +120,7 @@ function TripCard({ trip }: { trip: Trip }) {
 
   return (
     <TouchableOpacity
-      style={styles.tripCard}
+      style={[styles.tripCard, { backgroundColor: colors.card, borderColor: colors.border }]}
       onPress={() => setExpanded(p => !p)}
       activeOpacity={0.85}
     >
@@ -129,8 +131,8 @@ function TripCard({ trip }: { trip: Trip }) {
             <MaterialIcons name="directions-car" size={20} color={GOLD} />
           </View>
           <View>
-            <Text style={styles.riderName}>{getRiderName(trip)}</Text>
-            <Text style={styles.tripDate}>{formatTripDate(trip.trip_date || trip.created_date)}</Text>
+            <Text style={[styles.riderName, { color: colors.foreground }]}>{getRiderName(trip)}</Text>
+            <Text style={[styles.tripDate, { color: colors.muted }]}>{formatTripDate(trip.trip_date || trip.created_date)}</Text>
           </View>
         </View>
         <View style={styles.tripHeaderRight}>
@@ -147,17 +149,17 @@ function TripCard({ trip }: { trip: Trip }) {
       <View style={styles.tripRoute}>
         <View style={styles.routeRow}>
           <View style={[styles.routeDot, { backgroundColor: GREEN }]} />
-          <Text style={styles.routeText} numberOfLines={1}>{getPickup(trip)}</Text>
+          <Text style={[styles.routeText, { color: colors.foreground }]} numberOfLines={1}>{getPickup(trip)}</Text>
         </View>
-        <View style={styles.routeConnector} />
+        <View style={[styles.routeConnector, { backgroundColor: colors.border }]} />
         <View style={styles.routeRow}>
           <View style={[styles.routeDot, { backgroundColor: RED }]} />
-          <Text style={styles.routeText} numberOfLines={1}>{getDestination(trip)}</Text>
+          <Text style={[styles.routeText, { color: colors.foreground }]} numberOfLines={1}>{getDestination(trip)}</Text>
         </View>
       </View>
 
       {/* Meta row */}
-      <View style={styles.metaRow}>
+      <View style={[styles.metaRow, { borderTopColor: colors.border }]}>
         {dist && (
           <View style={styles.metaItem}>
             <MaterialIcons name="place" size={13} color={MUTED} />
@@ -254,6 +256,7 @@ function TripCard({ trip }: { trip: Trip }) {
 export default function DriverHistoryScreen() {
   const { user } = useDriverAuth();
   const insets = useSafeAreaInsets();
+  const colors = useColors();
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -298,44 +301,44 @@ export default function DriverHistoryScreen() {
     .reduce((s, t) => s + getFare(t), 0);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Trip History</Text>
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <Text style={[styles.headerTitle, { color: colors.foreground }]}>Trip History</Text>
       </View>
 
       {/* Summary Cards */}
       <View style={styles.summaryRow}>
-        <View style={styles.summaryCard}>
+        <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <MaterialIcons name="today" size={18} color={GOLD} />
-          <Text style={styles.summaryValue}>GH₵{Math.round(todayEarnings)}</Text>
-          <Text style={styles.summaryLabel}>Today</Text>
+          <Text style={[styles.summaryValue, { color: colors.foreground }]}>GH₵{Math.round(todayEarnings)}</Text>
+          <Text style={[styles.summaryLabel, { color: colors.muted }]}>Today</Text>
         </View>
-        <View style={styles.summaryCard}>
+        <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <MaterialIcons name="trending-up" size={18} color={GOLD} />
-          <Text style={styles.summaryValue}>GH₵{Math.round(weekEarnings)}</Text>
-          <Text style={styles.summaryLabel}>This Week</Text>
+          <Text style={[styles.summaryValue, { color: colors.foreground }]}>GH₵{Math.round(weekEarnings)}</Text>
+          <Text style={[styles.summaryLabel, { color: colors.muted }]}>This Week</Text>
         </View>
-        <View style={styles.summaryCard}>
+        <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <MaterialIcons name="check-circle" size={18} color={GREEN} />
-          <Text style={styles.summaryValue}>{completedTrips.length}</Text>
-          <Text style={styles.summaryLabel}>Completed</Text>
+          <Text style={[styles.summaryValue, { color: colors.foreground }]}>{completedTrips.length}</Text>
+          <Text style={[styles.summaryLabel, { color: colors.muted }]}>Completed</Text>
         </View>
       </View>
 
       {/* Search */}
-      <View style={styles.searchWrap}>
-        <MaterialIcons name="search" size={18} color={MUTED} style={{ marginRight: 8 }} />
+      <View style={[styles.searchWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <MaterialIcons name="search" size={18} color={colors.muted} style={{ marginRight: 8 }} />
         <TextInput
-          style={styles.searchInput}
+          style={[styles.searchInput, { color: colors.foreground }]}
           placeholder="Search by rider, pickup or dropoff…"
-          placeholderTextColor={MUTED}
+          placeholderTextColor={colors.muted}
           value={search}
           onChangeText={setSearch}
         />
         {search.length > 0 && (
           <TouchableOpacity onPress={() => setSearch('')}>
-            <MaterialIcons name="close" size={18} color={MUTED} />
+            <MaterialIcons name="close" size={18} color={colors.muted} />
           </TouchableOpacity>
         )}
       </View>
@@ -345,10 +348,10 @@ export default function DriverHistoryScreen() {
         {FILTERS.map(f => (
           <TouchableOpacity
             key={f.key}
-            style={[styles.filterBtn, filter === f.key && styles.filterBtnActive]}
+            style={[styles.filterBtn, { backgroundColor: colors.card, borderColor: colors.border }, filter === f.key && styles.filterBtnActive]}
             onPress={() => setFilter(f.key)}
           >
-            <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>
+            <Text style={[styles.filterText, { color: colors.muted }, filter === f.key && styles.filterTextActive]}>
               {f.label}
             </Text>
           </TouchableOpacity>
@@ -362,9 +365,9 @@ export default function DriverHistoryScreen() {
         </View>
       ) : filtered.length === 0 ? (
         <View style={styles.emptyWrap}>
-          <MaterialIcons name="history" size={48} color={MUTED} />
-          <Text style={styles.emptyTitle}>No trips found</Text>
-          <Text style={styles.emptyText}>
+          <MaterialIcons name="history" size={48} color={colors.muted} />
+          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No trips found</Text>
+          <Text style={[styles.emptyText, { color: colors.muted }]}>
             {trips.length === 0 ? 'Complete your first trip to see it here' : 'Try adjusting your search or filter'}
           </Text>
         </View>
@@ -376,7 +379,7 @@ export default function DriverHistoryScreen() {
           contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 100 }}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
-            <Text style={styles.resultCount}>
+            <Text style={[styles.resultCount, { color: colors.muted }]}>
               {filtered.length} trip{filtered.length !== 1 ? 's' : ''}
               {filter !== 'all' && ` · GH₵${Math.round(filtered.filter(t => t.status === 'completed').reduce((s, t) => s + getFare(t), 0))} earned`}
             </Text>

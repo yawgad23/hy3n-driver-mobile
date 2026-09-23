@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { router } from 'expo-router';
+import { useColors } from '@/hooks/use-colors';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -33,6 +34,7 @@ function getTier(trips: number) {
 export default function DriverProfileScreen() {
   const { driverProfile, user, signOut } = useDriverAuth();
   const insets = useSafeAreaInsets();
+  const colors = useColors();
   const [signingOut, setSigningOut] = useState(false);
 
   const handleSignOut = () => {
@@ -86,21 +88,21 @@ export default function DriverProfileScreen() {
   ];
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Driver Profile</Text>
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <Text style={[styles.headerTitle, { color: colors.foreground }]}>Driver Profile</Text>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
 
         {/* Profile Hero */}
-        <View style={styles.heroGradient}>
+        <View style={[styles.heroGradient, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
           <View style={styles.heroContent}>
             <View style={styles.avatar}>
               <MaterialIcons name="person" size={44} color={GOLD} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.driverName}>{driverProfile?.full_name || user?.displayName || 'Driver'}</Text>
+              <Text style={[styles.driverName, { color: colors.foreground }]}>{driverProfile?.full_name || user?.displayName || 'Driver'}</Text>
               <View style={styles.tierBadge}>
                 <MaterialIcons name="star" size={13} color={tier.color} />
                 <Text style={[styles.tierText, { color: tier.color }]}>{tier.label} Driver</Text>
@@ -109,7 +111,7 @@ export default function DriverProfileScreen() {
           </View>
 
           {/* Stats Row */}
-          <View style={styles.statsRow}>
+          <View style={[styles.statsRow, { borderTopColor: colors.border }]}>
             <StatCell value={(driverProfile?.rating ?? 5.0).toFixed(1)} label="⭐ Rating" color={GOLD} />
             <View style={styles.statDivider} />
             <StatCell value={String(trips)} label="🚗 Trips" color={TEXT} />
@@ -120,11 +122,11 @@ export default function DriverProfileScreen() {
 
         {/* Verification Checklist */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Verification</Text>
-          <View style={styles.infoCard}>
+          <Text style={[styles.sectionTitle, { color: colors.muted }]}>Verification</Text>
+          <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             {verificationItems.map((item, i) => (
-              <View key={item.label} style={[styles.verifyRow, i > 0 && { borderTopWidth: 0.5, borderTopColor: BORDER }]}>
-                <Text style={styles.verifyLabel}>{item.label}</Text>
+              <View key={item.label} style={[styles.verifyRow, i > 0 && { borderTopWidth: 0.5, borderTopColor: colors.border }]}>
+                <Text style={[styles.verifyLabel, { color: colors.foreground }]}>{item.label}</Text>
                 <MaterialIcons
                   name={item.done ? 'check-circle' : 'error-outline'}
                   size={18}
@@ -137,15 +139,15 @@ export default function DriverProfileScreen() {
 
         {/* Safety Score */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Safety Performance</Text>
-          <View style={styles.safetyCard}>
+          <Text style={[styles.sectionTitle, { color: colors.muted }]}>Safety Performance</Text>
+          <View style={[styles.safetyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={[styles.safetyGradeCircle, { borderColor: safetyGrade.color + '60' }]}>
               <Text style={[styles.safetyGrade, { color: safetyGrade.color }]}>{safetyGrade.grade}</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.safetyScoreText}>{safetyScore}/100</Text>
-              <Text style={styles.safetyLabel}>Safety Score</Text>
-              <View style={styles.safetyBar}>
+              <Text style={[styles.safetyScoreText, { color: colors.foreground }]}>{safetyScore}/100</Text>
+              <Text style={[styles.safetyLabel, { color: colors.muted }]}>Safety Score</Text>
+              <View style={[styles.safetyBar, { backgroundColor: colors.border }]}>
                 <View style={[styles.safetyFill, { width: `${safetyScore}%`, backgroundColor: safetyGrade.color }]} />
               </View>
             </View>
@@ -154,8 +156,8 @@ export default function DriverProfileScreen() {
 
         {/* Driver Info */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Driver Info</Text>
-          <View style={styles.infoCard}>
+          <Text style={[styles.sectionTitle, { color: colors.muted }]}>Driver Info</Text>
+          <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <InfoRow icon="phone" label="Phone" value={driverProfile?.phone} color={GREEN} />
             <InfoRow icon="email" label="Email" value={driverProfile?.email || user?.email} color={BLUE} />
             <InfoRow icon="directions-car" label="Vehicle" value={
@@ -170,56 +172,56 @@ export default function DriverProfileScreen() {
 
         {/* Driver operations */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Driver operations</Text>
-          <View style={styles.infoCard}>
+          <Text style={[styles.sectionTitle, { color: colors.muted }]}>Driver operations</Text>
+          <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <TouchableOpacity style={styles.menuRow} onPress={() => router.push('/driver/scheduled-rides' as any)} activeOpacity={0.7}>
               <MaterialIcons name="event" size={20} color={GOLD} />
-              <View style={{ flex: 1 }}><Text style={styles.menuText}>Scheduled Rides</Text><Text style={styles.menuHint}>Review and reserve future pickups</Text></View>
-              <MaterialIcons name="chevron-right" size={20} color={MUTED} />
+              <View style={{ flex: 1 }}><Text style={[styles.menuText, { color: colors.foreground }]}>Scheduled Rides</Text><Text style={[styles.menuHint, { color: colors.muted }]}>Review and reserve future pickups</Text></View>
+              <MaterialIcons name="chevron-right" size={20} color={colors.muted} />
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.menuRow, styles.menuBorder]} onPress={() => router.push('/driver/tools' as any)} activeOpacity={0.7}>
+            <TouchableOpacity style={[styles.menuRow, styles.menuBorder, { borderTopColor: colors.border }]} onPress={() => router.push('/driver/tools' as any)} activeOpacity={0.7}>
               <MaterialIcons name="tune" size={20} color={GOLD} />
-              <View style={{ flex: 1 }}><Text style={styles.menuText}>Driver Tools</Text><Text style={styles.menuHint}>Trip preferences, goals, incentives and road reports</Text></View>
-              <MaterialIcons name="chevron-right" size={20} color={MUTED} />
+              <View style={{ flex: 1 }}><Text style={[styles.menuText, { color: colors.foreground }]}>Driver Tools</Text><Text style={[styles.menuHint, { color: colors.muted }]}>Trip preferences, goals, incentives and road reports</Text></View>
+              <MaterialIcons name="chevron-right" size={20} color={colors.muted} />
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.menuRow, styles.menuBorder]} onPress={() => router.push('/driver/momo-settings' as any)} activeOpacity={0.7}>
+            <TouchableOpacity style={[styles.menuRow, styles.menuBorder, { borderTopColor: colors.border }]} onPress={() => router.push('/driver/momo-settings' as any)} activeOpacity={0.7}>
               <MaterialIcons name="account-balance-wallet" size={20} color={GOLD} />
-              <View style={{ flex: 1 }}><Text style={styles.menuText}>MoMo Payout Settings</Text><Text style={styles.menuHint}>Manage your earnings payout account</Text></View>
-              <MaterialIcons name="chevron-right" size={20} color={MUTED} />
+              <View style={{ flex: 1 }}><Text style={[styles.menuText, { color: colors.foreground }]}>MoMo Payout Settings</Text><Text style={[styles.menuHint, { color: colors.muted }]}>Manage your earnings payout account</Text></View>
+              <MaterialIcons name="chevron-right" size={20} color={colors.muted} />
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.menuRow, styles.menuBorder]} onPress={() => router.push('/driver/referrals' as any)} activeOpacity={0.7}>
+            <TouchableOpacity style={[styles.menuRow, styles.menuBorder, { borderTopColor: colors.border }]} onPress={() => router.push('/driver/referrals' as any)} activeOpacity={0.7}>
               <MaterialIcons name="card-giftcard" size={20} color={GOLD} />
-              <View style={{ flex: 1 }}><Text style={styles.menuText}>Refer a Driver</Text><Text style={styles.menuHint}>Share your code and track rewards</Text></View>
-              <MaterialIcons name="chevron-right" size={20} color={MUTED} />
+              <View style={{ flex: 1 }}><Text style={[styles.menuText, { color: colors.foreground }]}>Refer a Driver</Text><Text style={[styles.menuHint, { color: colors.muted }]}>Share your code and track rewards</Text></View>
+              <MaterialIcons name="chevron-right" size={20} color={colors.muted} />
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Support */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Support</Text>
-          <View style={styles.infoCard}>
+          <Text style={[styles.sectionTitle, { color: colors.muted }]}>Support</Text>
+          <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <TouchableOpacity style={styles.menuRow} onPress={() => router.push('/driver/support' as any)} activeOpacity={0.7}>
               <MaterialIcons name="support-agent" size={20} color={GOLD} />
-              <View style={{ flex: 1 }}><Text style={styles.menuText}>Support Centre</Text><Text style={styles.menuHint}>Open and track support requests</Text></View>
-              <MaterialIcons name="chevron-right" size={20} color={MUTED} />
+              <View style={{ flex: 1 }}><Text style={[styles.menuText, { color: colors.foreground }]}>Support Centre</Text><Text style={[styles.menuHint, { color: colors.muted }]}>Open and track support requests</Text></View>
+              <MaterialIcons name="chevron-right" size={20} color={colors.muted} />
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.menuRow, styles.menuBorder]} onPress={handleWhatsApp} activeOpacity={0.7}>
+            <TouchableOpacity style={[styles.menuRow, styles.menuBorder, { borderTopColor: colors.border }]} onPress={handleWhatsApp} activeOpacity={0.7}>
               <MaterialIcons name="chat" size={20} color={GOLD} />
-              <Text style={styles.menuText}>Live Chat (WhatsApp)</Text>
-              <MaterialIcons name="chevron-right" size={20} color={MUTED} />
+              <Text style={[styles.menuText, { color: colors.foreground }]}>Live Chat (WhatsApp)</Text>
+              <MaterialIcons name="chevron-right" size={20} color={colors.muted} />
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.menuRow, styles.menuBorder]} onPress={handleSupport} activeOpacity={0.7}>
+            <TouchableOpacity style={[styles.menuRow, styles.menuBorder, { borderTopColor: colors.border }]} onPress={handleSupport} activeOpacity={0.7}>
               <MaterialIcons name="email" size={20} color={GOLD} />
-              <Text style={styles.menuText}>Email Support</Text>
-              <MaterialIcons name="chevron-right" size={20} color={MUTED} />
+              <Text style={[styles.menuText, { color: colors.foreground }]}>Email Support</Text>
+              <MaterialIcons name="chevron-right" size={20} color={colors.muted} />
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Switch to Rider Mode */}
         <TouchableOpacity
-          style={styles.switchRiderBtn}
+          style={[styles.switchRiderBtn, { backgroundColor: `${GOLD}14`, borderColor: `${GOLD}55` }]}
           onPress={() => Linking.openURL('https://ridehy3n.com')}
           activeOpacity={0.85}
         >
@@ -230,7 +232,7 @@ export default function DriverProfileScreen() {
 
         {/* Sign Out */}
         <TouchableOpacity
-          style={[styles.signOutBtn, signingOut && { opacity: 0.6 }]}
+          style={[styles.signOutBtn, { backgroundColor: `${RED}12` }, signingOut && { opacity: 0.6 }]}
           onPress={handleSignOut}
           disabled={signingOut}
           activeOpacity={0.85}
@@ -239,30 +241,32 @@ export default function DriverProfileScreen() {
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
 
-        <Text style={styles.version}>HY3N Driver App · v1.0.0</Text>
+        <Text style={[styles.version, { color: colors.muted }]}>HY3N Driver App · v1.0.0</Text>
       </ScrollView>
     </View>
   );
 }
 
 function StatCell({ value, label, color }: { value: string; label: string; color: string }) {
+  const colors = useColors();
   return (
     <View style={{ flex: 1, alignItems: 'center' }}>
       <Text style={[statStyles.value, { color }]}>{value}</Text>
-      <Text style={statStyles.label}>{label}</Text>
+      <Text style={[statStyles.label, { color: colors.muted }]}>{label}</Text>
     </View>
   );
 }
 
 function InfoRow({ icon, label, value, color, last }: { icon: any; label: string; value?: string | null; color: string; last?: boolean }) {
+  const colors = useColors();
   return (
-    <View style={[infoStyles.row, !last && infoStyles.rowBorder]}>
+    <View style={[infoStyles.row, !last && infoStyles.rowBorder, !last && { borderBottomColor: colors.border }]}>
       <View style={[infoStyles.iconWrap, { backgroundColor: color + '15' }]}>
         <MaterialIcons name={icon} size={16} color={color} />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={infoStyles.label}>{label}</Text>
-        <Text style={infoStyles.value} numberOfLines={1}>{value || '—'}</Text>
+        <Text style={[infoStyles.label, { color: colors.muted }]}>{label}</Text>
+        <Text style={[infoStyles.value, { color: colors.foreground }]} numberOfLines={1}>{value || '—'}</Text>
       </View>
     </View>
   );

@@ -133,7 +133,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
       const message = String(err?.message || '');
       setError(message.includes('too-many-requests')
         ? 'Too many verification attempts. Please wait before trying again.'
-        : message || 'Firebase could not send the verification SMS. Please try again.');
+        : message || 'We could not send the verification code. Please try again.');
     } finally {
       setSendingOtp(false);
     }
@@ -159,7 +159,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
       const message = String(err?.message || '');
       setOtpError(message.includes('invalid-verification-code')
         ? 'That verification code is not correct. Please try again.'
-        : message || 'Firebase could not verify the code. Please try again.');
+        : message || 'We could not verify the code. Please try again.');
     } finally {
       setVerifyingOtp(false);
     }
@@ -788,7 +788,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
                     Verify Your Phone Number
                   </Text>
                   <Text style={{ color: colors.muted, fontSize: 12, textAlign: 'center', marginHorizontal: 20 }}>
-                    Enter the Firebase verification code sent to {verifiedPhoneNumber || phoneInput}
+                    Enter the 6-digit verification code sent to {verifiedPhoneNumber || phoneInput}
                   </Text>
 
                   <TextInput
@@ -856,7 +856,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
                     ) : (
                       <>
                         <MaterialIcons name="sms" size={18} color="#000" style={{ marginRight: 6 }} />
-                        <Text style={styles.submitBtnText}>Send Firebase Verification Code</Text>
+                        <Text style={styles.submitBtnText}>Send Verification Code</Text>
                       </>
                     )}
                   </TouchableOpacity>
@@ -1136,7 +1136,7 @@ export default function DriverTabLayout() {
 
   if (loading || checkingCommission) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: '#000000', justifyContent: 'center', alignItems: 'center' }]}>
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color={GOLD} />
       </View>
     );
@@ -1197,8 +1197,8 @@ export default function DriverTabLayout() {
             paddingTop: 8,
             paddingBottom: bottomPadding,
             height: tabBarHeight,
-            backgroundColor: BG,
-            borderTopColor: BORDER,
+            backgroundColor: colors.card,
+            borderTopColor: colors.border,
             borderTopWidth: 0.5,
           },
           tabBarLabelStyle: {
