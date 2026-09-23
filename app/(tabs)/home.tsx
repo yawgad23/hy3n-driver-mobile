@@ -3,7 +3,7 @@ import * as ExpoLocation from 'expo-location';
 import { useDriverPreferences } from '@/hooks/use-driver-preferences';
 import { RIDE_CATEGORIES, FREE_WAITING_MINUTES, POPULAR_DESTINATIONS, calculateFare, getFareBreakdown } from '@/constants/rides';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView,
+  View, Text, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView,
   Dimensions, Alert, ActivityIndicator, Animated, Image, Platform, PanResponder,
   Modal, TextInput, StatusBar
 } from 'react-native';
@@ -1028,9 +1028,12 @@ export default function DriverHomeScreen() {
                   <Text style={styles.actionBtnText}>End</Text>
                 </TouchableOpacity>
               )}
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#64748B', flex: 0.7 }]} onPress={() => setShowCancel(true)}>
-                <MaterialIcons name="close" size={18} color="#FFF" />
-                <Text style={styles.actionBtnText}>Cancel</Text>
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: RED, flex: 1.25, justifyContent: 'center' }]}
+                onPress={() => setShowCancel(true)}
+                accessibilityLabel="Cancel ride"
+              >
+                <Text style={[styles.actionBtnText, { textAlign: 'center' }]}>Cancel ride</Text>
               </TouchableOpacity>
             </>
           )}
@@ -1076,7 +1079,11 @@ export default function DriverHomeScreen() {
 
       {/* Pickup-code verification */}
       <Modal visible={showOtp} transparent animationType="fade" onRequestClose={() => setShowOtp(false)}>
-        <View style={styles.sheetOverlay}>
+        <KeyboardAvoidingView
+          style={styles.sheetOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={0}
+        >
           <View style={[styles.sheet, { backgroundColor: isDark ? '#1a1a1a' : '#fff' }]}>
             <MaterialIcons name="lock" size={30} color={GOLD} />
             <Text style={[styles.sheetTitle, dynamicStyles.text]}>Verify pickup code</Text>
@@ -1085,7 +1092,7 @@ export default function DriverHomeScreen() {
             <TouchableOpacity style={[styles.sheetPrimary, { backgroundColor: GOLD }]} onPress={handleVerifyPickupCode}><Text style={styles.sheetPrimaryText}>Verify & start trip</Text></TouchableOpacity>
             <TouchableOpacity style={styles.sheetSecondary} onPress={() => setShowOtp(false)}><Text style={[styles.sheetSecondaryText, dynamicStyles.text]}>Cancel</Text></TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Driver cancellation reasons */}
