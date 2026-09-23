@@ -948,16 +948,27 @@ export default function DriverHomeScreen() {
 
         {/* Waiting Timer */}
         {activeTrip && arrivedAt && activeTrip.status === 'driver_arriving' && (
-          <View style={[styles.timerCard, dynamicStyles.card]}>
-            <MaterialIcons name="schedule" size={20} color={GOLD} />
-            <Text style={[styles.timerText, dynamicStyles.text]}>
-              Waiting: {Math.floor(waitTime / 60)}m {waitTime % 60}s
+          <View style={[styles.timerCard, dynamicStyles.card, { alignItems: 'stretch', paddingVertical: 13 }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+              <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: waitTime < FREE_WAITING_MINUTES * 60 ? `${GREEN}20` : `${GOLD}24`, alignItems: 'center', justifyContent: 'center' }}>
+                <MaterialIcons name="schedule" size={19} color={waitTime < FREE_WAITING_MINUTES * 60 ? GREEN : GOLD} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: waitTime < FREE_WAITING_MINUTES * 60 ? GREEN : GOLD, fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  {waitTime < FREE_WAITING_MINUTES * 60 ? 'Rider wait · complimentary time' : 'Paid waiting time'}
+                </Text>
+                <Text style={[styles.timerText, dynamicStyles.text, { marginTop: 2 }]}>
+                  {waitTime < FREE_WAITING_MINUTES * 60
+                    ? `${Math.floor((FREE_WAITING_MINUTES * 60 - waitTime) / 60)}:${String((FREE_WAITING_MINUTES * 60 - waitTime) % 60).padStart(2, '0')} free time remaining`
+                    : `GH₵${calculateWaitingFee().waitingFee.toFixed(2)} earned so far`}
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.metaText, dynamicStyles.muted, { marginTop: 10, lineHeight: 16 }]}>
+              {waitTime < FREE_WAITING_MINUTES * 60
+                ? `Paid wait starts after ${FREE_WAITING_MINUTES} minutes. The rider sees the same countdown.`
+                : `The charge stops when the trip starts. Total wait: ${Math.floor(waitTime / 60)}m ${String(waitTime % 60).padStart(2, '0')}s.`}
             </Text>
-            {waitTime > FREE_WAITING_MINUTES * 60 && (
-              <Text style={[styles.feeText, { color: RED }]}>
-                Fee: GH₵{calculateWaitingFee().waitingFee}
-              </Text>
-            )}
           </View>
         )}
 
