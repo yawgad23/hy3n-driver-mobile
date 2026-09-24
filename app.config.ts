@@ -76,7 +76,14 @@ const config: ExpoConfig = {
     "expo-font",
     "expo-notifications",
     "expo-web-browser",
-    "@react-native-firebase/app",
+    [
+      "@react-native-firebase/app",
+      {
+        ios: {
+          disableSPM: true,
+        },
+      },
+    ],
     "@react-native-firebase/auth",
     [
       "expo-location",
