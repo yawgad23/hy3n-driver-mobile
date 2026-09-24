@@ -83,7 +83,10 @@ export default function DriverHomeScreen() {
   const respondToOffer = trpc.driverTrips.respondToOffer.useMutation();
   const arriveAtPickup = trpc.driverTrips.arrive.useMutation();
   const verifyPickup = trpc.driverTrips.verifyPickup.useMutation();
-  const startTrip = trpc.driverTrips.start.useMutation();
+  // The deployed backend accepts a startLocation for the server trip meter;
+  // the published package declaration is updated independently of the API.
+  const startTrip = (trpc.driverTrips.start as any).useMutation();
+  const recordTripLocation = (trpc.driverTrips as any).recordTripLocation.useMutation();
   const completeTrip = trpc.driverTrips.complete.useMutation();
   const rateRider = (trpc.driverTrips as any).rateRider.useMutation();
   const cancelTrip = trpc.driverTrips.cancel.useMutation();
@@ -444,6 +447,20 @@ export default function DriverHomeScreen() {
     });
   }, [location, user?.uid, isOnline]);
 
+  // Fare mileage is server-metered only after Start Trip. Each point is kept
+  // independent from the driver-presence update so the Rider can still see
+  // movement before pickup without any of that approach distance being billed.
+  useEffect(() => {
+    if (!location || !user?.uid || activeTrip?.status !== 'in_progress' || !activeTrip?.trip_started_at) return;
+    recordTripLocation.mutate({
+      driverId: user.uid,
+      rideId: activeTrip.id,
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+      recordedAt: new Date(location.timestamp || Date.now()).toISOString(),
+    });
+  }, [location, user?.uid, activeTrip?.id, activeTrip?.status, activeTrip?.trip_started_at]);
+
   // Track locally calculated trip distance and send meaningful safety events through the protected driver API.
   useEffect(() => {
     if (!location || !activeTrip || activeTrip.status !== 'in_progress') return;
@@ -672,6 +689,9 @@ export default function DriverHomeScreen() {
         rideId: ride.id,
         waitingTimeMinutes: waitingMinutes,
         waitingFee,
+        startLocation: location
+          ? { latitude: location.coords.latitude, longitude: location.coords.longitude }
+          : undefined,
       });
       const updatedRide: any = result.ride;
       const startedAt = updatedRide.trip_started_at || new Date().toISOString();
@@ -725,25 +745,32 @@ export default function DriverHomeScreen() {
     try {
       const waitingFee = Number(activeTrip.waiting_fee || 0);
       const durationMinutes = tripStartedAt ? Math.max(1, (Date.now() - new Date(tripStartedAt).getTime()) / 60000) : Number(activeTrip.duration_minutes || 0);
-      const calculatedFare = calculateFare(activeTrip.category || 'standard', tripDistanceKm || Number(activeTrip.distance_km || 0), durationMinutes, Number(activeTrip.surge_multiplier || 1));
-      // The accepted Rider fare is authoritative. GPS/time recalculation was
-      // making the Driver screen charge more while the vehicle was stationary.
-      const lockedFare = Number(activeTrip.fare_estimate ?? activeTrip.fare ?? calculatedFare);
-      const totalFare = parseFloat((lockedFare + waitingFee).toFixed(2));
-      const fareBreakdown = getFareBreakdown(activeTrip.category || 'standard', tripDistanceKm || Number(activeTrip.distance_km || 0), durationMinutes, Number(activeTrip.surge_multiplier || 1));
+      const calculatedFare = calculateFare(activeTrip.category || 'standard', tripDistanceKm, durationMinutes, Number(activeTrip.surge_multiplier || 1));
+      const fareBreakdown = getFareBreakdown(activeTrip.category || 'standard', tripDistanceKm, durationMinutes, Number(activeTrip.surge_multiplier || 1));
 
       if (!user?.uid) throw new Error('Sign in required');
+      if (location) {
+        // Send the final point before completion so the server includes the
+        // final travelled segment rather than the booking route estimate.
+        await recordTripLocation.mutateAsync({
+          driverId: user.uid,
+          rideId: activeTrip.id,
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+          recordedAt: new Date(location.timestamp || Date.now()).toISOString(),
+        });
+      }
       const result = await completeTrip.mutateAsync({
         driverId: user.uid,
         rideId: activeTrip.id,
-        finalFare: totalFare,
+        finalFare: calculatedFare,
         tipAmount: Number(activeTrip.tip_amount || 0),
         actualDistanceKm: Number(tripDistanceKm.toFixed(2)),
         actualDurationMinutes: Number(durationMinutes.toFixed(1)),
         fareBreakdown,
       });
 
-      const completed = { ...result.ride, waiting_fee: waitingFee, actual_distance_km: tripDistanceKm, actual_duration_minutes: durationMinutes, fare_breakdown: fareBreakdown };
+      const completed = { ...result.ride };
       setCompletedRide(completed);
       if (nextRide?.status === 'driver_queued') setQueuedRideToActivate(nextRide);
       setActiveTrip(null);
