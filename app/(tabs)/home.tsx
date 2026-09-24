@@ -158,6 +158,10 @@ export default function DriverHomeScreen() {
   const [arrivedAt, setArrivedAt] = useState<string | null>(null);
   const [waitTime, setWaitTime] = useState(0);
   const waitTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isDriverAtPickup = activeTrip?.status === 'driver_arrived';
+  const waitingStartedAt = isDriverAtPickup
+    ? (activeTrip?.driver_arrived_at || arrivedAt)
+    : null;
 
   const [notifOpen, setNotifOpen] = useState(false);
   const [destModalVisible, setDestModalVisible] = useState(false);
@@ -248,16 +252,19 @@ export default function DriverHomeScreen() {
 
   // Waiting time counter
   useEffect(() => {
-    if (arrivedAt && !activeTrip?.trip_started_at) {
-      waitTimerRef.current = setInterval(() => {
-        setWaitTime(prev => prev + 1);
-      }, 1000);
+    if (waitingStartedAt && !activeTrip?.trip_started_at) {
+      const updateWaitTime = () => {
+        const elapsed = Math.max(0, Math.floor((Date.now() - new Date(waitingStartedAt).getTime()) / 1000));
+        setWaitTime(elapsed);
+      };
+      updateWaitTime();
+      waitTimerRef.current = setInterval(updateWaitTime, 1000);
     } else {
       if (waitTimerRef.current) clearInterval(waitTimerRef.current);
       setWaitTime(0);
     }
     return () => { if (waitTimerRef.current) clearInterval(waitTimerRef.current); };
-  }, [arrivedAt, activeTrip?.trip_started_at]);
+  }, [waitingStartedAt, activeTrip?.trip_started_at]);
 
   useEffect(() => {
     let subscription: any;
@@ -339,7 +346,7 @@ export default function DriverHomeScreen() {
   useEffect(() => {
     if (!user?.uid) return;
     firestoreDB.list(COLLECTIONS.RIDES, { driver_id: user.uid }, null).then((rides) => {
-      const current = rides.find((ride: any) => ['driver_arriving', 'in_progress'].includes(ride.status));
+      const current = rides.find((ride: any) => ['driver_arriving', 'driver_arrived', 'in_progress'].includes(ride.status));
       if (current) {
         setActiveTrip(current);
         setTripStartedAt(current.trip_started_at || null);
@@ -632,8 +639,8 @@ export default function DriverHomeScreen() {
 
   // Calculate waiting fee
   const calculateWaitingFee = () => {
-    if (!arrivedAt) return { waitingMinutes: 0, waitingFee: 0 };
-    const arrivedAtTime = new Date(arrivedAt).getTime();
+    if (!waitingStartedAt) return { waitingMinutes: 0, waitingFee: 0 };
+    const arrivedAtTime = new Date(waitingStartedAt).getTime();
     const now = Date.now();
     const totalMinutes = (now - arrivedAtTime) / (1000 * 60);
     const chargeableMinutes = Math.max(0, totalMinutes - FREE_WAITING_MINUTES);
@@ -668,6 +675,10 @@ export default function DriverHomeScreen() {
   // Verify the rider's pickup code before the trip begins when a code was issued.
   const handleStartTrip = async () => {
     if (!activeTrip) return;
+    if (activeTrip.status !== 'driver_arrived') {
+      Alert.alert('Arrive first', 'Mark that you have arrived at the pickup point before starting the trip.');
+      return;
+    }
     if (activeTrip.pickup_code && !activeTrip.pickup_verified_at) {
       setShowOtp(true);
       return;
@@ -694,6 +705,10 @@ export default function DriverHomeScreen() {
   // End trip and calculate a transparent category-based fare from tracked distance.
   const handleEndTrip = async () => {
     if (!activeTrip) return;
+    if (activeTrip.status !== 'in_progress' || !activeTrip.trip_started_at) {
+      Alert.alert('Trip not started', 'A trip cannot be completed or charged until the rider is onboard and Start Trip has been confirmed.');
+      return;
+    }
     try {
       const waitingFee = Number(activeTrip.waiting_fee || 0);
       const durationMinutes = tripStartedAt ? Math.max(1, (Date.now() - new Date(tripStartedAt).getTime()) / 60000) : Number(activeTrip.duration_minutes || 0);
@@ -930,9 +945,11 @@ export default function DriverHomeScreen() {
           <View style={[styles.navCard, dynamicStyles.card]}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.navStatus, { color: GREEN }]}>
-                {activeTrip.status === 'driver_arriving' 
-                  ? (arrivedAt ? 'Waiting for Rider' : 'Navigate to Pickup') 
-                  : 'Trip in Progress'}
+                {activeTrip.status === 'driver_arrived'
+                  ? 'Waiting for Rider'
+                  : activeTrip.status === 'in_progress'
+                    ? 'Trip in Progress'
+                    : 'Navigate to Pickup'}
               </Text>
               <Text style={[styles.navTitle, dynamicStyles.text]}>{activeTrip.rider_name}</Text>
               <View style={styles.metaRow}>
@@ -950,7 +967,7 @@ export default function DriverHomeScreen() {
                     ? (activeTrip.fare_estimate + activeTrip.waiting_fee).toFixed(2) 
                     : activeTrip.fare_estimate}
                 </Text>
-                {activeNavigationEta && !arrivedAt && (
+                {activeNavigationEta && !isDriverAtPickup && (
                   <Text style={[styles.etaText, dynamicStyles.muted]}>{activeNavigationEta} min</Text>
                 )}
               </View>
@@ -968,7 +985,7 @@ export default function DriverHomeScreen() {
         )}
 
         {/* Waiting Timer */}
-        {activeTrip && arrivedAt && activeTrip.status === 'driver_arriving' && (
+        {activeTrip && waitingStartedAt && isDriverAtPickup && (
           <View style={[styles.timerCard, dynamicStyles.card, { alignItems: 'stretch', paddingVertical: 13 }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
               <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: waitTime < FREE_WAITING_MINUTES * 60 ? `${GREEN}20` : `${GOLD}24`, alignItems: 'center', justifyContent: 'center' }}>
@@ -1036,28 +1053,34 @@ export default function DriverHomeScreen() {
                 <Text style={styles.actionBtnText}>Call</Text>
               </TouchableOpacity>
 
-              {activeTrip.status === 'driver_arriving' ? (
-                arrivedAt ? (
-                  <TouchableOpacity 
-                    style={[styles.actionBtn, { backgroundColor: GREEN, flex: 1 }]}
-                    onPress={handleStartTrip}
-                  >
-                    <MaterialIcons name="check" size={18} color="#FFF" />
-                    <Text style={styles.actionBtnText}>Start</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity 
-                    style={[styles.actionBtn, { backgroundColor: '#F59E0B', flex: 1 }]}
-                    onPress={handleArrivedAtPickup}
-                  >
-                    <MaterialIcons name="location-on" size={18} color="#FFF" />
-                    <Text style={styles.actionBtnText}>Arrived</Text>
-                  </TouchableOpacity>
-                )
-              ) : (
+              {activeTrip.status === 'driver_arrived' ? (
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: GREEN, flex: 1 }]}
+                  onPress={handleStartTrip}
+                >
+                  <MaterialIcons name="check" size={18} color="#FFF" />
+                  <Text style={styles.actionBtnText}>Start Trip</Text>
+                </TouchableOpacity>
+              ) : activeTrip.status === 'driver_arriving' ? (
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: '#F59E0B', flex: 1 }]}
+                  onPress={handleArrivedAtPickup}
+                >
+                  <MaterialIcons name="location-on" size={18} color="#FFF" />
+                  <Text style={styles.actionBtnText}>Arrived</Text>
+                </TouchableOpacity>
+              ) : activeTrip.status === 'in_progress' ? (
                 <TouchableOpacity style={[styles.actionBtn, { backgroundColor: RED, flex: 1 }]} onPress={handleEndTrip}>
                   <MaterialIcons name="stop" size={18} color="#FFF" />
                   <Text style={styles.actionBtnText}>End</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: '#F59E0B', flex: 1 }]}
+                  onPress={handleArrivedAtPickup}
+                >
+                  <MaterialIcons name="location-on" size={18} color="#FFF" />
+                  <Text style={styles.actionBtnText}>Arrived</Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity
