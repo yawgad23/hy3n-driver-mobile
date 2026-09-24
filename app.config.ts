@@ -24,7 +24,11 @@ const config: ExpoConfig = {
   icon: "./assets/images/icon.png",
   scheme: env.scheme,
   userInterfaceStyle: "automatic",
-  newArchEnabled: true,
+  // Build 43's supplied iOS crash report faults in Hermes while React Native
+  // is invoking a TurboModule during launch. SDK 54 still supports the
+  // legacy bridge, which keeps native Firebase phone verification while
+  // avoiding that incompatible New Architecture startup path.
+  newArchEnabled: false,
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
@@ -135,7 +139,6 @@ const config: ExpoConfig = {
   ],
   experiments: {
     typedRoutes: true,
-    reactCompiler: true,
   },
   extra: {
     eas: {
