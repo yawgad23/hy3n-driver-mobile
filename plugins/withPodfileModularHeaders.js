@@ -1,26 +1,15 @@
 /**
- * expo-build-properties' `useModularHeaders` only enables modular headers for
- * Expo's own pods (ExpoModulesCore, React-Core, etc.) — it doesn't touch
- * third-party pods. @react-native-google-signin/google-signin pulls in
- * AppCheckCore, which depends on GoogleUtilities and RecaptchaInterop; none
- * of the three define modules, and CocoaPods refuses to build them as
- * static libraries without it:
- *
- *   [!] The following Swift pods cannot yet be integrated as static
- *   libraries: The Swift pod `AppCheckCore` depends upon `GoogleUtilities`
- *   and `RecaptchaInterop`, which do not define modules.
- *
- * A post_install hook is too late to fix this — CocoaPods validates static-
- * library integration during dependency resolution, before post_install
- * ever runs. The only place this can be fixed is the Podfile's own
- * top-level DSL, which is what CocoaPods' error message itself suggests
- * first: `use_modular_headers!` globally, before any `target` block.
+ * React Native Firebase's static CocoaPods configuration needs the global
+ * static-framework switch before the generated target block. The Driver app
+ * uses native Google Maps, whose static XCFrameworks cannot be embedded in a
+ * dynamic CocoaPods target, so Firebase's default SPM/dynamic route is not
+ * compatible with this app.
  */
 const { withDangerousMod } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
-const MARKER = '# @generated begin modular-headers-fix';
+const MARKER = '# @generated begin rnfirebase-static-framework-fix';
 
 module.exports = function withPodfileModularHeaders(config) {
   return withDangerousMod(config, [
@@ -33,8 +22,7 @@ module.exports = function withPodfileModularHeaders(config) {
         return config;
       }
 
-      const snippet = `${MARKER}\nuse_modular_headers!\n# @generated end modular-headers-fix\n\n`;
-
+      const snippet = `${MARKER}\n$RNFirebaseAsStaticFramework = true\n# @generated end rnfirebase-static-framework-fix\n\n`;
       const targetRegex = /(target ['"])/;
       if (targetRegex.test(contents)) {
         contents = contents.replace(targetRegex, `${snippet}$1`);

@@ -76,7 +76,14 @@ const config: ExpoConfig = {
     "expo-font",
     "expo-notifications",
     "expo-web-browser",
-    "@react-native-firebase/app",
+    [
+      "@react-native-firebase/app",
+      {
+        ios: {
+          disableSPM: true,
+        },
+      },
+    ],
     "@react-native-firebase/auth",
     [
       "expo-location",
@@ -118,11 +125,10 @@ const config: ExpoConfig = {
           minSdkVersion: 24,
         },
         ios: {
-          // RNFirebase uses Firebase SPM on React Native 0.81. Dynamic
-          // frameworks are required for that integration and prevent the
-          // FirebaseAuth Swift compatibility header build failure.
-          useFrameworks: "dynamic",
-          useModularHeaders: true,
+          // Google Maps ships static XCFrameworks. Static CocoaPods linkage
+          // keeps those compatible while the RNFirebase plugin above uses
+          // CocoaPods rather than Firebase's dynamic SPM integration.
+          useFrameworks: "static",
         },
       },
     ],
