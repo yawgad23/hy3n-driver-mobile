@@ -23,6 +23,7 @@ import DriverLeafletMap from '@/components/DriverLeafletMap';
 import { Colors } from '@/constants/theme';
 import { buildVehicleFields } from '@/lib/vehicle';
 import { useThemeContext } from '@/lib/theme-provider';
+import { startDriverBackgroundLocationUpdates, stopDriverBackgroundLocationUpdates } from '@/lib/driver-background-location';
 
 const INCOMING_TRIP_ALERT = require('../../assets/audio/incoming-trip-alert.wav');
 const GOLD = '#D4AF37';
@@ -288,6 +289,27 @@ export default function DriverHomeScreen() {
   useEffect(() => {
     if (driverProfile) setIsOnline(driverProfile.is_online || false);
   }, [driverProfile]);
+
+  // Keep the live vehicle marker updating for Riders when a Driver backgrounds
+  // the app. iOS displays its standard location indicator and the Driver can
+  // stop tracking at any time by going offline.
+  useEffect(() => {
+    if (!isOnline || !user?.uid) {
+      stopDriverBackgroundLocationUpdates().catch(() => {});
+      return;
+    }
+
+    let cancelled = false;
+    startDriverBackgroundLocationUpdates().then((result) => {
+      if (cancelled || result.started || result.reason === 'unsupported') return;
+      if (result.reason === 'background_denied') {
+        Alert.alert('Background location needed', 'Allow “Always” location so Riders can see your vehicle moving after you leave HY3N Driver. You can still drive while the app is open.');
+      } else {
+        Alert.alert('Location needed', 'Allow location to go online and receive rides.');
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [isOnline, user?.uid]);
 
   // Receive only server-filtered, unassigned offers. The backend verifies that
   // the Driver is online and atomically assigns the ride only after Accept.
