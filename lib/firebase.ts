@@ -158,8 +158,15 @@ export const firebaseAuth = {
     await deleteUser(currentUser);
   },
 
-  /** Sends a Firebase Authentication SMS to verify the Driver's own phone. */
-  async sendPhoneVerification(phoneInput: string, appVerifier: any) {
+  /**
+   * Sends a Firebase Authentication SMS to verify the Driver's own phone.
+   *
+   * Native builds deliberately use React Native Firebase here instead of the
+   * web SDK / embedded reCAPTCHA flow. Android can consequently use the
+   * registered HY3N signing certificate and Play Integrity app verification.
+   * The web-only path remains available for the browser preview.
+   */
+  async sendPhoneVerification(phoneInput: string, appVerifier?: any) {
     const digits = phoneInput.replace(/[^\d+]/g, '');
     const normalized = digits.startsWith('+233')
       ? digits
@@ -171,6 +178,19 @@ export const firebaseAuth = {
     if (!/^\+233\d{9}$/.test(normalized)) {
       throw new Error('Enter a valid Ghana mobile number.');
     }
+
+    if (Platform.OS !== 'web') {
+      // Require lazily so the existing browser preview retains its Firebase
+      // web SDK compatibility; native EAS builds resolve this module through
+      // the React Native Firebase config plugins.
+      const nativeAuth = require('@react-native-firebase/auth') as typeof import('@react-native-firebase/auth');
+      const snapshot = await nativeAuth.verifyPhoneNumber(nativeAuth.getAuth(), normalized);
+      if (!snapshot?.verificationId) {
+        throw new Error('We could not start secure phone verification. Please try again.');
+      }
+      return { verificationId: snapshot.verificationId, phoneNumber: normalized };
+    }
+
     if (!appVerifier) {
       throw new Error('Phone verification is not ready. Please try again.');
     }

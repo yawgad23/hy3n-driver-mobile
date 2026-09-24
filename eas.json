@@ -24,7 +24,7 @@
       },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://europe-west1-hy3n26.cloudfunctions.net/api",
-        "EXPO_PUBLIC_DAILY_COMMISSION_AMOUNT": "0.11"
+        "EXPO_PUBLIC_DAILY_COMMISSION_AMOUNT": "0.10"
       }
     },
     "testflight": {
@@ -34,7 +34,7 @@
       },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://europe-west1-hy3n26.cloudfunctions.net/api",
-        "EXPO_PUBLIC_DAILY_COMMISSION_AMOUNT": "0.11"
+        "EXPO_PUBLIC_DAILY_COMMISSION_AMOUNT": "0.10"
       }
     },
     "production": {

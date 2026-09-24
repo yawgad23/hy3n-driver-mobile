@@ -125,7 +125,10 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
     setSendingOtp(true);
     setOtpError('');
     try {
-      const result = await firebaseAuth.sendPhoneVerification(phoneInput, recaptchaVerifier.current);
+      const result = await firebaseAuth.sendPhoneVerification(
+        phoneInput,
+        Platform.OS === 'web' ? recaptchaVerifier.current : undefined,
+      );
       setFirebaseVerificationId(result.verificationId);
       setVerifiedPhoneNumber(result.phoneNumber);
       setOtpSent(true);
@@ -619,11 +622,13 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
   // ── Idle (initial state — show fee info and Pay Now button) ──
   return (
     <>
-    <FirebaseRecaptchaVerifierModal
-      ref={recaptchaVerifier}
-      firebaseConfig={firebaseConfig}
-      attemptInvisibleVerification
-    />
+    {Platform.OS === 'web' && (
+      <FirebaseRecaptchaVerifierModal
+        ref={recaptchaVerifier}
+        firebaseConfig={firebaseConfig}
+        attemptInvisibleVerification
+      />
+    )}
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{ flex: 1 }}
