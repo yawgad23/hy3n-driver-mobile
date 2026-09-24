@@ -8,6 +8,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { router } from 'expo-router';
 import { useColors } from '@/hooks/use-colors';
+import { openDriverSupportWhatsApp } from '@/lib/support-whatsapp';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -57,12 +58,14 @@ export default function DriverProfileScreen() {
   };
 
   const handleSupport = () => {
-    Linking.openURL('mailto:hello@ridehy3n.com?subject=Driver Support Request');
+    openDriverSupportWhatsApp('Hi HY3N Support, I need help as a driver.').catch(() => {
+      Alert.alert('WhatsApp unavailable', 'Please call HY3N Support on 055 727 8990.');
+    });
   };
 
   const handleWhatsApp = () => {
-    Linking.openURL('https://wa.me/233200000000?text=Hi HY3N Support, I need help as a driver.').catch(() => {
-      Alert.alert('WhatsApp not installed', 'Please email us at hello@ridehy3n.com');
+    openDriverSupportWhatsApp('Hi HY3N Support, I need help as a driver.').catch(() => {
+      Alert.alert('WhatsApp unavailable', 'Please call HY3N Support on 055 727 8990.');
     });
   };
 
@@ -212,8 +215,8 @@ export default function DriverProfileScreen() {
               <MaterialIcons name="chevron-right" size={20} color={colors.muted} />
             </TouchableOpacity>
             <TouchableOpacity style={[styles.menuRow, styles.menuBorder, { borderTopColor: colors.border }]} onPress={handleSupport} activeOpacity={0.7}>
-              <MaterialIcons name="email" size={20} color={GOLD} />
-              <Text style={[styles.menuText, { color: colors.foreground }]}>Email Support</Text>
+              <MaterialIcons name="chat" size={20} color={GOLD} />
+              <Text style={[styles.menuText, { color: colors.foreground }]}>Message Support (WhatsApp)</Text>
               <MaterialIcons name="chevron-right" size={20} color={colors.muted} />
             </TouchableOpacity>
           </View>

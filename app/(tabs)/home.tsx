@@ -157,6 +157,9 @@ export default function DriverHomeScreen() {
     { driverId: user?.uid || '' },
     { enabled: Boolean(user?.uid && isOnline), refetchInterval: 4000 },
   );
+  // A query may refetch several times while the same offer is outstanding.
+  // Keep a session-level record so one ride request produces one device alert.
+  const notifiedOfferIds = useRef<Set<string>>(new Set());
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const call = useVoiceCall({
@@ -294,15 +297,22 @@ export default function DriverHomeScreen() {
     setIncomingRide((current: any) => {
       if (current?.id === offeredRide.id) return current;
       setRideOfferSeconds(20);
-      Notifications.scheduleNotificationAsync({
-        content: {
-          title: 'New Ride Request',
-          body: `Ride from ${offeredRide.rider_name || 'a rider'} · GH₵${offeredRide.fare_estimate || 0}`,
-          sound: 'default',
-          priority: Notifications.AndroidNotificationPriority.MAX,
-        },
-        trigger: null,
-      }).catch(() => {});
+      const offerId = String(offeredRide.id);
+      if (!notifiedOfferIds.current.has(offerId)) {
+        if (notifiedOfferIds.current.size >= 100) notifiedOfferIds.current.clear();
+        notifiedOfferIds.current.add(offerId);
+        Notifications.scheduleNotificationAsync({
+          content: {
+            title: 'New Ride Request',
+            // Keep fares inside the protected in-app offer only; device push
+            // previews must not disclose an amount on the lock screen.
+            body: `Ride request from ${offeredRide.rider_name || 'a rider'}. Open HY3N Driver to review the trip.`,
+            sound: 'default',
+            priority: Notifications.AndroidNotificationPriority.MAX,
+          },
+          trigger: null,
+        }).catch(() => {});
+      }
       return offeredRide;
     });
   }, [user?.uid, isOnline, activeTrip, incomingRide, availableOffers.data?.offers, prefs.longTripsOnly, prefs.preferHighRated]);

@@ -9,9 +9,9 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as ImagePicker from 'expo-image-picker';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS, auth as firebaseAuthObj, firebaseAuth } from '@/lib/firebase';
-import { Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { buildVehicleFields } from '@/lib/vehicle';
+import { openDriverSupportWhatsApp } from '@/lib/support-whatsapp';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -673,7 +673,7 @@ export default function DriverRegisterScreen() {
       {/* Support */}
       <TouchableOpacity
         style={[styles.primaryBtn, { backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#2A2A2A', marginBottom: 12 }]}
-        onPress={() => Linking.openURL('https://wa.me/233546728330?text=Hi%2C%20I%20just%20applied%20to%20be%20an%20HY3N%20driver%20and%20need%20help.')}
+        onPress={() => openDriverSupportWhatsApp('Hi HY3N Support, I just applied to be an HY3N driver and need help.').catch(() => Alert.alert('WhatsApp unavailable', 'Please call HY3N Support on 055 727 8990.'))}
         activeOpacity={0.8}
       >
         <MaterialIcons name="support-agent" size={18} color={GOLD} />

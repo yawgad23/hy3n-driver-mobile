@@ -11,6 +11,7 @@ import { router } from 'expo-router';
 import { useDriverPreferences } from '@/hooks/use-driver-preferences';
 import { useThemeContext } from '@/lib/theme-provider';
 import { useColors } from '@/hooks/use-colors';
+import { openDriverSupportWhatsApp } from '@/lib/support-whatsapp';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -200,7 +201,7 @@ export default function DriverSettingsScreen() {
           <Text style={[styles.sectionTitle, { color: colors.muted }]}>Support</Text>
           <TouchableOpacity
             style={styles.supportRow}
-            onPress={() => Linking.openURL('https://wa.me/233546728330?text=I%20need%20help%20with%20my%20driver%20account')}
+            onPress={() => openDriverSupportWhatsApp('Hi HY3N Support, I need help with my driver account.').catch(() => Alert.alert('WhatsApp unavailable', 'Please call HY3N Support on 055 727 8990.'))}
             activeOpacity={0.75}
           >
             <MaterialIcons name="help-outline" size={20} color={GOLD} />

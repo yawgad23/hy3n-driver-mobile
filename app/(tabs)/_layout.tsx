@@ -9,11 +9,18 @@ import { firebaseAuth, firebaseConfig, firestoreDB, COLLECTIONS } from '@/lib/fi
 import { useColors } from '@/hooks/use-colors';
 import { trpc } from '@/lib/trpc';
 import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
+import { openDriverSupportWhatsApp } from '@/lib/support-whatsapp';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
 const BORDER = '#2A2A2A';
 const MUTED = '#9CA3AF';
+
+function openSupportWhatsApp(message: string) {
+  openDriverSupportWhatsApp(message).catch(() => {
+    Alert.alert('WhatsApp unavailable', 'Please call HY3N Support on 055 727 8990.');
+  });
+}
 
 export const unstable_settings = {
   anchor: 'home',
@@ -375,7 +382,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
           <Text style={[styles.submitBtnText, { color: MUTED }]}>Go Back</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => Linking.openURL('https://wa.me/233546728330?text=I%20need%20help%20with%20my%20daily%20commission%20payment')}>
+        <TouchableOpacity onPress={() => openSupportWhatsApp('Hi HY3N Support, I need help with my daily commission payment.')}>
           <Text style={{ color: colors.muted, fontSize: 13, textDecorationLine: 'underline', marginTop: 4 }}>Contact Support</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -516,7 +523,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
         >
           <Text style={[styles.submitBtnText, { color: MUTED }]}>Cancel &amp; Try Again</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => Linking.openURL('https://wa.me/233546728330?text=I%20need%20help%20with%20my%20daily%20commission%20payment')}>
+        <TouchableOpacity onPress={() => openSupportWhatsApp('Hi HY3N Support, I need help with my daily commission payment.')}>
           <Text style={{ color: colors.muted, fontSize: 13, textDecorationLine: 'underline', marginTop: 4 }}>Need help? Contact Support</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -612,7 +619,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
           <Text style={styles.submitBtnText}>Try Again</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => Linking.openURL('https://wa.me/233546728330?text=I%20need%20help%20with%20my%20daily%20commission%20payment')}>
+        <TouchableOpacity onPress={() => openSupportWhatsApp('Hi HY3N Support, I need help with my daily commission payment.')}>
           <Text style={{ color: colors.muted, fontSize: 13, textDecorationLine: 'underline', marginTop: 4 }}>Contact Support</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -894,7 +901,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
         </>
       )}
 
-      <TouchableOpacity onPress={() => Linking.openURL('https://wa.me/233546728330?text=I%20need%20help%20with%20my%20daily%20commission%20payment')}>
+      <TouchableOpacity onPress={() => openSupportWhatsApp('Hi HY3N Support, I need help with my daily commission payment.')}>
         <Text style={{ color: colors.muted, fontSize: 13, textDecorationLine: 'underline', marginTop: 4 }}>Need help? Contact Support</Text>
       </TouchableOpacity>
     </ScrollView>
@@ -977,7 +984,7 @@ function ApprovalGate({ driver }: { driver: any }) {
         </TouchableOpacity>
         <TouchableOpacity
           style={{ marginTop: 4 }}
-          onPress={() => Linking.openURL('https://wa.me/233546728330?text=My%20driver%20application%20was%20rejected.%20Can%20you%20help%3F')}
+          onPress={() => openSupportWhatsApp('Hi HY3N Support, my driver application was rejected. Can you help?')}
         >
           <Text style={{ color: colors.muted, fontSize: 13, textDecorationLine: 'underline', textAlign: 'center' }}>Contact Support via WhatsApp</Text>
         </TouchableOpacity>
@@ -1036,7 +1043,7 @@ function ApprovalGate({ driver }: { driver: any }) {
 
       <TouchableOpacity
         style={[styles.submitBtn, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}
-        onPress={() => Linking.openURL('https://wa.me/233546728330?text=I%20need%20help%20with%20my%20driver%20application')}
+        onPress={() => openSupportWhatsApp('Hi HY3N Support, I need help with my driver application.')}
       >
         <MaterialIcons name="support-agent" size={18} color={colors.foreground} style={{ marginRight: 6 }} />
         <Text style={[styles.submitBtnText, { color: colors.foreground }]}>Contact Support</Text>
