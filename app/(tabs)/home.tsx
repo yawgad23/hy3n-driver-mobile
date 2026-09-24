@@ -14,6 +14,7 @@ import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { trpc } from '@/lib/trpc';
+import { submitDriverSos } from '@/lib/safety';
 import { Linking } from 'react-native';
 import { RideChatModal } from '@/components/ride-chat-modal';
 import { InCallScreen, IncomingCallModal } from '@/components/in-call-screen';
@@ -69,7 +70,6 @@ export default function DriverHomeScreen() {
   const rateRider = (trpc.driverTrips as any).rateRider.useMutation();
   const cancelTrip = trpc.driverTrips.cancel.useMutation();
   const activateQueuedTrip = trpc.driverTrips.activateQueued.useMutation();
-  const createSos = trpc.driverSafety.createSos.useMutation();
   const recordDrivingEvent = trpc.driverSafety.recordDrivingEvent.useMutation();
   
   const [isOnline, setIsOnline] = useState(false);
@@ -536,16 +536,22 @@ export default function DriverHomeScreen() {
         text: 'Send SOS', style: 'destructive', onPress: async () => {
           try {
             if (!user?.uid) throw new Error('Sign in required');
-            await createSos.mutateAsync({
-              driverId: user.uid,
-              driverName: driverProfile?.full_name || undefined,
+            let sosLocation = location;
+            if (!sosLocation) {
+              try {
+                sosLocation = await ExpoLocation.getCurrentPositionAsync({ accuracy: ExpoLocation.Accuracy.Balanced });
+              } catch {
+                // An SOS remains valid even when the device cannot obtain a fresh location.
+              }
+            }
+            const result = await submitDriverSos({
               rideId: activeTrip?.id || undefined,
-              message: 'Emergency alert initiated from the driver app.',
-              ...(location ? { location: { latitude: location.coords.latitude, longitude: location.coords.longitude } } : {}),
+              message: 'Emergency alert initiated from the Driver app.',
+              ...(sosLocation ? { location: { latitude: sosLocation.coords.latitude, longitude: sosLocation.coords.longitude } } : {}),
             });
-            Alert.alert('SOS sent', 'HY3N safety support has been alerted. If you are in immediate danger, call emergency services.');
-          } catch {
-            Alert.alert('SOS not sent', 'Please call emergency services or try again.');
+            Alert.alert('SOS received', `Your emergency alert was recorded in the HY3N Safety queue (reference ${result.incidentId.slice(0, 8)}). If you are in immediate danger, call emergency services now.`);
+          } catch (error: any) {
+            Alert.alert('SOS not sent', error?.message || 'HY3N Safety could not confirm your SOS report. Please call emergency services.');
           }
         },
       },
