@@ -21,9 +21,9 @@ export const RIDE_CATEGORIES: RideCategory[] = [
     id: "standard",
     name: "Standard",
     description: "Affordable everyday rides",
-    basePrice: 11.00,
-    pricePerKm: 4.18,
-    pricePerMin: 0.44,
+    basePrice: 10.00,
+    pricePerKm: 3.65,
+    pricePerMin: 0.43,
     waitingFeePerMin: 0.55,
     minFare: 16.50,
     seats: 4,
@@ -33,9 +33,9 @@ export const RIDE_CATEGORIES: RideCategory[] = [
     id: "comfort",
     name: "Comfort",
     description: "Comfortable rides with extra amenities",
-    basePrice: 16.50,
-    pricePerKm: 5.06,
-    pricePerMin: 0.66,
+    basePrice: 16.20,
+    pricePerKm: 4.95,
+    pricePerMin: 0.65,
     waitingFeePerMin: 0.88,
     minFare: 27.50,
     seats: 4,
@@ -45,11 +45,12 @@ export const RIDE_CATEGORIES: RideCategory[] = [
     id: "kantanka",
     name: "Kantanka",
     description: "Proudly Ghanaian-made mini SUVs",
-    basePrice: 13.20,
-    pricePerKm: 4.62,
-    pricePerMin: 0.55,
-    waitingFeePerMin: 0.66,
-    minFare: 22.00,
+    // Kantanka always follows Comfort pricing for the same trip.
+    basePrice: 16.20,
+    pricePerKm: 4.95,
+    pricePerMin: 0.65,
+    waitingFeePerMin: 0.88,
+    minFare: 27.50,
     seats: 4,
     icon: "directions-car",
   },
@@ -92,6 +93,13 @@ export const RIDE_CATEGORIES: RideCategory[] = [
 ];
 
 export const FREE_WAITING_MINUTES = 3;
+export const BOOKING_FEE = 2.50;
+
+export function roundGhsFare(value: number): number {
+  if (!Number.isFinite(value) || value < 0) return 0;
+  const whole = Math.floor(value);
+  return whole + (value - whole > 0.5 ? 1 : 0);
+}
 
 export const PAYMENT_METHODS = [
   { id: "cash", name: "Cash", icon: "payments" as const },
@@ -136,9 +144,9 @@ export function calculateFare(
   const timeFare = durationMinutes * category.pricePerMin;
   const subtotal = distanceFare + timeFare;
   const withSurge = subtotal * surgeMultiplier;
-  const final = Math.max(withSurge, category.minFare);
+  const final = Math.max(withSurge, category.minFare) + BOOKING_FEE;
   
-  return parseFloat(final.toFixed(2));
+  return roundGhsFare(final);
 }
 
 export function calculateDiscount(code: string, fare: number): number {
@@ -158,19 +166,20 @@ export function getFareBreakdown(
   surgeMultiplier: number = 1.0
 ) {
   const category = RIDE_CATEGORIES.find(c => c.id === categoryId);
-  if (!category) return { baseFare: 0, distanceFare: 0, timeFare: 0, total: 0 };
+  if (!category) return { baseFare: 0, distanceFare: 0, timeFare: 0, bookingFee: 0, total: 0 };
 
   const baseFare = category.basePrice;
   const distanceFare = distanceKm * category.pricePerKm;
   const timeFare = durationMinutes * category.pricePerMin;
   const subtotal = baseFare + distanceFare + timeFare;
   const withSurge = subtotal * surgeMultiplier;
-  const total = Math.max(withSurge, category.minFare);
+  const total = Math.max(withSurge, category.minFare) + BOOKING_FEE;
 
   return {
     baseFare: parseFloat(baseFare.toFixed(2)),
     distanceFare: parseFloat(distanceFare.toFixed(2)),
     timeFare: parseFloat(timeFare.toFixed(2)),
-    total: parseFloat(total.toFixed(2)),
+    bookingFee: BOOKING_FEE,
+    total: roundGhsFare(total),
   };
 }
