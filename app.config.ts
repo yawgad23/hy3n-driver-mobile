@@ -125,16 +125,12 @@ const config: ExpoConfig = {
           minSdkVersion: 24,
         },
         ios: {
-          // Google Maps ships static XCFrameworks. Static CocoaPods linkage
-          // keeps those compatible while the RNFirebase plugin above uses
-          // CocoaPods rather than Firebase's dynamic SPM integration.
+          // With CocoaPods static frameworks, every used React Native Firebase
+          // module must be forced to static linking on Expo SDK 54.
           useFrameworks: "static",
+          forceStaticLinking: ["RNFBApp", "RNFBAuth"],
         },
       },
-    ],
-    [
-      "./plugins/withPodfileModularHeaders",
-      {},
     ],
   ],
   experiments: {
