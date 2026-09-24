@@ -684,8 +684,9 @@ export default function DriverHomeScreen() {
       setRatingFeedback('');
       setFoundItem('');
       setSafetyReport('');
-    } catch (err) {
-      Alert.alert('Error', 'Failed to submit rating');
+    } catch (err: any) {
+      const message = String(err?.message || '').trim();
+      Alert.alert('Unable to submit rating', message || 'Please check your connection and try again.');
     }
   };
 
