@@ -1,15 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Linking, ActivityIndicator, Alert, TextInput, useColorScheme, KeyboardAvoidingView, Image } from 'react-native';
 import { Tabs, useRouter, usePathname } from 'expo-router';
 import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useDriverAuth } from '@/lib/driver-auth-context';
-import { auth, firebaseAuth, firestoreDB, COLLECTIONS } from '@/lib/firebase';
+import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { useColors } from '@/hooks/use-colors';
 import { trpc } from '@/lib/trpc';
-import { RecaptchaVerifier } from 'firebase/auth';
 import { openDriverSupportWhatsApp } from '@/lib/support-whatsapp';
+import { requestDriverPhoneOtp, verifyDriverPhoneOtp } from '@/lib/driver-phone-verification';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -119,25 +119,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
   const [otpError, setOtpError] = useState('');
   const [sendingOtp, setSendingOtp] = useState(false);
   const [verifyingOtp, setVerifyingOtp] = useState(false);
-  const [firebaseVerificationId, setFirebaseVerificationId] = useState('');
   const [verifiedPhoneNumber, setVerifiedPhoneNumber] = useState('');
-  const recaptchaVerifier = useRef<RecaptchaVerifier | null>(null);
-
-  // Native applications use React Native Firebase app verification and never
-  // render a web verifier. The browser preview retains an invisible Firebase
-  // verifier without an extra native reCAPTCHA package.
-  useEffect(() => {
-    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
-    const container = document.getElementById('driver-phone-recaptcha');
-    if (!container) return;
-    const verifier = new RecaptchaVerifier(auth, container, { size: 'invisible' });
-    recaptchaVerifier.current = verifier;
-    verifier.render().catch(() => {});
-    return () => {
-      verifier.clear();
-      if (recaptchaVerifier.current === verifier) recaptchaVerifier.current = null;
-    };
-  }, []);
 
   const handleSendOtp = async () => {
     if (!phoneInput) {
@@ -148,44 +130,29 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
     setSendingOtp(true);
     setOtpError('');
     try {
-      const result = await firebaseAuth.sendPhoneVerification(
-        phoneInput,
-        Platform.OS === 'web' ? recaptchaVerifier.current : undefined,
-      );
-      setFirebaseVerificationId(result.verificationId);
+      const result = await requestDriverPhoneOtp(phoneInput);
       setVerifiedPhoneNumber(result.phoneNumber);
       setOtpSent(true);
     } catch (err: any) {
-      const message = String(err?.message || '');
-      setError(message.includes('too-many-requests')
-        ? 'Too many verification attempts. Please wait before trying again.'
-        : message || 'We could not send the verification code. Please try again.');
+      setError(String(err?.message || 'We could not send the verification code. Please try again.'));
     } finally {
       setSendingOtp(false);
     }
   };
 
   const handleVerifyOtp = async () => {
-    if (!otpCode || !firebaseVerificationId) {
+    if (!otpCode) {
       setOtpError('Please enter the 6-digit code');
       return;
     }
     setOtpError('');
     setVerifyingOtp(true);
     try {
-      await firebaseAuth.confirmPhoneVerification(firebaseVerificationId, otpCode);
-      const profileId = driver.id || driver.user_id;
-      await firestoreDB.update(COLLECTIONS.DRIVER_PROFILES, profileId, {
-        momo_number: verifiedPhoneNumber || phoneInput,
-        momo_phone_verified: true,
-        momo_phone_verified_at: new Date().toISOString(),
-      });
+      const result = await verifyDriverPhoneOtp(otpCode);
+      setVerifiedPhoneNumber(result.phoneNumber || verifiedPhoneNumber || phoneInput);
       setOtpVerified(true);
     } catch (err: any) {
-      const message = String(err?.message || '');
-      setOtpError(message.includes('invalid-verification-code')
-        ? 'That verification code is not correct. Please try again.'
-        : message || 'We could not verify the code. Please try again.');
+      setOtpError(String(err?.message || 'We could not verify the code. Please try again.'));
     } finally {
       setVerifyingOtp(false);
     }
@@ -645,9 +612,6 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
   // ── Idle (initial state — show fee info and Pay Now button) ──
   return (
     <>
-    {Platform.OS === 'web' && (
-      <View nativeID="driver-phone-recaptcha" style={{ width: 1, height: 1, overflow: 'hidden' }} />
-    )}
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{ flex: 1 }}
