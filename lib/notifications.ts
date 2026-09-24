@@ -150,3 +150,16 @@ export async function notifyPromo(title: string, body: string) {
     ...(Platform.OS === 'android' ? { channelId: 'promos' } : {}),
   } as any);
 }
+
+export async function notifyChatMessage(senderName: string, message: string) {
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: `Message from ${senderName || 'Rider'}`,
+      body: message,
+      data: { type: 'chat_message' },
+      sound: 'default',
+    },
+    trigger: null,
+    ...(Platform.OS === 'android' ? { channelId: 'rides' } : {}),
+  } as any);
+}

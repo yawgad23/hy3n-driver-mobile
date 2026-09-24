@@ -10,6 +10,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Notifications from 'expo-notifications';
+import { notifyChatMessage } from '@/lib/notifications';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
@@ -119,6 +120,7 @@ export default function DriverHomeScreen() {
   const lastSafetyEventAtRef = useRef(0);
   const offerSwipeX = useRef(new Animated.Value(0)).current;
   const incomingAlertRunRef = useRef(0);
+  const seenChatMessageIdsRef = useRef<Set<string> | null>(null);
 
   const stopIncomingTripAlert = () => {
     // Invalidate any pending seek/play chain before pausing. Without this,
@@ -386,8 +388,11 @@ export default function DriverHomeScreen() {
   useEffect(() => {
     if (!activeTrip?.id || !user?.uid) {
       setUnreadCount(0);
+      seenChatMessageIdsRef.current = null;
       return;
     }
+
+    seenChatMessageIdsRef.current = null;
 
     // firestoreDB.subscribe returns message documents, not Firestore
     // document-change objects. Count unread rider messages so the in-app
@@ -396,6 +401,17 @@ export default function DriverHomeScreen() {
       COLLECTIONS.RIDE_MESSAGES,
       { ride_id: activeTrip.id },
       (messages: any[]) => {
+        const seenIds = seenChatMessageIdsRef.current;
+        const currentIds = new Set(messages.map((message) => String(message.id)));
+        if (seenIds) {
+          messages
+            .filter((message) => !seenIds.has(String(message.id)))
+            .filter((message) => message.sender_id !== user.uid && message.sender_role === 'rider')
+            .forEach((message) => {
+              notifyChatMessage(message.sender_name || 'Rider', String(message.message || '')).catch(() => {});
+            });
+        }
+        seenChatMessageIdsRef.current = currentIds;
         const unread = messages.filter((message) =>
           message.sender_id !== user.uid &&
           message.sender_role === 'rider' &&
