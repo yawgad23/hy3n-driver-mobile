@@ -1,10 +1,8 @@
 /**
- * The Driver app combines native Firebase phone authentication with native
- * Google Maps. Firebase must use CocoaPods static frameworks because Google
- * Maps includes static XCFrameworks. Under Expo SDK 54 / React Native 0.81,
- * the framework pod targets import React headers, which Xcode otherwise
- * treats as a non-modular include error. Apply the documented allowance only
- * to the Firebase and react-native-maps pod targets.
+ * The Driver app uses native Firebase phone authentication. Under Expo SDK 54
+ * / React Native 0.81, Firebase framework pod targets import React headers,
+ * which Xcode otherwise treats as a non-modular include error. Apply the
+ * documented allowance only to Firebase targets.
  */
 const { withDangerousMod } = require('@expo/config-plugins');
 const fs = require('fs');
@@ -31,7 +29,7 @@ module.exports = function withPodfileModularHeaders(config) {
       }
 
       if (!contents.includes(HEADER_MARKER)) {
-        const headerSnippet = `  ${HEADER_MARKER}\n  installer.pods_project.targets.each do |target|\n    if target.name.start_with?('RNFB') || ['react-native-maps', 'react-native-google-maps'].include?(target.name)\n      target.build_configurations.each do |build_configuration|\n        build_configuration.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'\n      end\n    end\n  end\n  # @generated end native-framework-header-compatibility\n\n`;
+        const headerSnippet = `  ${HEADER_MARKER}\n  installer.pods_project.targets.each do |target|\n    if target.name.start_with?('RNFB')\n      target.build_configurations.each do |build_configuration|\n        build_configuration.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'\n      end\n    end\n  end\n  # @generated end native-framework-header-compatibility\n\n`;
         const postInstallRegex = /(post_install do \|installer\|\n)/;
         if (!postInstallRegex.test(contents)) {
           throw new Error('Could not find the generated Podfile post_install block.');
