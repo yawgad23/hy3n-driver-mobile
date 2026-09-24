@@ -24,10 +24,10 @@ const config: ExpoConfig = {
   icon: "./assets/images/icon.png",
   scheme: env.scheme,
   userInterfaceStyle: "automatic",
-  // Build 43 crashes on iOS 27 in the React New-Architecture TurboModule path.
-  // Firebase 25 retains native phone verification while supporting Expo SDK 54's
-  // legacy bridge, so this release explicitly avoids that unsafe startup path.
-  newArchEnabled: false,
+  // Reanimated 4 in Expo SDK 54 requires the New Architecture. Build 43 used
+  // Firebase 26 in this runtime and crashed on iOS 27, so the native Firebase
+  // modules are pinned to Firebase 25 while this required architecture remains on.
+  newArchEnabled: true,
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
