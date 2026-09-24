@@ -401,6 +401,11 @@ export default function DriverHomeScreen() {
       COLLECTIONS.RIDE_MESSAGES,
       { ride_id: activeTrip.id },
       (messages: any[]) => {
+        messages
+          .filter((message) => message.sender_id !== user.uid && message.sender_role === 'rider' && !message.delivered_to_driver)
+          .forEach((message) => {
+            firestoreDB.update(COLLECTIONS.RIDE_MESSAGES, message.id, { delivered_to_driver: true }).catch(() => {});
+          });
         const seenIds = seenChatMessageIdsRef.current;
         const currentIds = new Set(messages.map((message) => String(message.id)));
         if (seenIds) {
