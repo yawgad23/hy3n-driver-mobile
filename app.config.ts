@@ -24,15 +24,15 @@ const config: ExpoConfig = {
   icon: "./assets/images/icon.png",
   scheme: env.scheme,
   userInterfaceStyle: "automatic",
-  // Build 43's supplied iOS crash report faults in Hermes while React Native
-  // is invoking a TurboModule during launch. SDK 54 still supports the
-  // legacy bridge, which keeps native Firebase phone verification while
-  // avoiding that incompatible New Architecture startup path.
-  newArchEnabled: false,
+  // React Native Firebase 26 requires the New Architecture. Build 43's crash
+  // is inside Hermes while a TurboModule exception is converted at startup,
+  // so use JSC on iOS while retaining the architecture Firebase requires.
+  newArchEnabled: true,
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
     buildNumber: "44",
+    jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     ...(iosGoogleMapsApiKey ? { config: { googleMapsApiKey: iosGoogleMapsApiKey } } : {}),
     "infoPlist": {
