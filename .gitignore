@@ -72,5 +72,9 @@ Thumbs.db
 # secrets
 .env
 google-play-service-account.json
-GoogleService-Info.plist
-google-services.json
+
+# Firebase client configuration is required by the native phone-auth plugins.
+# These files contain project identifiers rather than server credentials and
+# are intentionally tracked and included in EAS release archives.
+!firebase/GoogleService-Info.plist
+!firebase/google-services.json
