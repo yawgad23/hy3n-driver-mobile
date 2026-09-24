@@ -5,10 +5,10 @@ import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useDriverAuth } from '@/lib/driver-auth-context';
-import { firebaseAuth, firebaseConfig, firestoreDB, COLLECTIONS } from '@/lib/firebase';
+import { auth, firebaseAuth, firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { useColors } from '@/hooks/use-colors';
 import { trpc } from '@/lib/trpc';
-import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
+import { RecaptchaVerifier } from 'firebase/auth';
 import { openDriverSupportWhatsApp } from '@/lib/support-whatsapp';
 
 const GOLD = '#D4AF37';
@@ -121,7 +121,23 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
   const [verifyingOtp, setVerifyingOtp] = useState(false);
   const [firebaseVerificationId, setFirebaseVerificationId] = useState('');
   const [verifiedPhoneNumber, setVerifiedPhoneNumber] = useState('');
-  const recaptchaVerifier = useRef<any>(null);
+  const recaptchaVerifier = useRef<RecaptchaVerifier | null>(null);
+
+  // Native applications use React Native Firebase app verification and never
+  // render a web verifier. The browser preview retains an invisible Firebase
+  // verifier without an extra native reCAPTCHA package.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const container = document.getElementById('driver-phone-recaptcha');
+    if (!container) return;
+    const verifier = new RecaptchaVerifier(auth, container, { size: 'invisible' });
+    recaptchaVerifier.current = verifier;
+    verifier.render().catch(() => {});
+    return () => {
+      verifier.clear();
+      if (recaptchaVerifier.current === verifier) recaptchaVerifier.current = null;
+    };
+  }, []);
 
   const handleSendOtp = async () => {
     if (!phoneInput) {
@@ -630,11 +646,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
   return (
     <>
     {Platform.OS === 'web' && (
-      <FirebaseRecaptchaVerifierModal
-        ref={recaptchaVerifier}
-        firebaseConfig={firebaseConfig}
-        attemptInvisibleVerification
-      />
+      <View nativeID="driver-phone-recaptcha" style={{ width: 1, height: 1, overflow: 'hidden' }} />
     )}
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
