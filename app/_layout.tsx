@@ -8,9 +8,10 @@ import "react-native-reanimated";
 import { Platform, View, Image, Animated } from "react-native";
 import "@/lib/_core/nativewind-pressable";
 import { ThemeProvider } from "@/lib/theme-provider";
-import { DriverAuthProvider } from "@/lib/driver-auth-context";
+import { DriverAuthProvider, useDriverAuth } from "@/lib/driver-auth-context";
 import * as Notifications from 'expo-notifications';
-import { registerForPushNotificationsAsync, setupNotificationChannels } from '@/lib/notifications';
+import { setupNotificationChannels } from '@/lib/notifications';
+import { listenForPushTokenRotation, registerAuthenticatedPushDevice } from '@/lib/push-device';
 import {
   SafeAreaFrameContext,
   SafeAreaInsetsContext,
@@ -27,6 +28,25 @@ const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
 export const unstable_settings = {
   anchor: "(tabs)",
 };
+
+function DriverPushDeviceRegistration() {
+  const { user } = useDriverAuth();
+
+  useEffect(() => {
+    if (!user || Platform.OS === 'web') return;
+    let disposed = false;
+    registerAuthenticatedPushDevice(user, 'driver').catch((error) => {
+      if (!disposed) console.warn('[HY3N] Driver push registration failed:', error);
+    });
+    const subscription = listenForPushTokenRotation(user, 'driver');
+    return () => {
+      disposed = true;
+      subscription?.remove();
+    };
+  }, [user?.uid]);
+
+  return null;
+}
 
 function SplashScreen({ onComplete }: { onComplete: () => void }) {
   const opacity = useState(new Animated.Value(1))[0];
@@ -148,7 +168,6 @@ export default function RootLayout() {
   useEffect(() => {
     if (Platform.OS === 'web') return;
     setupNotificationChannels();
-    registerForPushNotificationsAsync();
 
     // Listen for notifications received while app is foregrounded
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
@@ -208,6 +227,7 @@ export default function RootLayout() {
       <trpc.Provider client={trpcClient} queryClient={queryClient}>
         <QueryClientProvider client={queryClient}>
           <DriverAuthProvider>
+            <DriverPushDeviceRegistration />
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="login" />

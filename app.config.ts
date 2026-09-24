@@ -74,6 +74,7 @@ const config: ExpoConfig = {
     "expo-router",
     "expo-asset",
     "expo-font",
+    "expo-notifications",
     "expo-web-browser",
     "@react-native-firebase/app",
     "@react-native-firebase/auth",
