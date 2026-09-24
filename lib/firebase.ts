@@ -184,11 +184,17 @@ export const firebaseAuth = {
       // web SDK compatibility; native EAS builds resolve this module through
       // the React Native Firebase config plugins.
       const nativeAuth = require('@react-native-firebase/auth') as typeof import('@react-native-firebase/auth');
-      const snapshot = await nativeAuth.verifyPhoneNumber(nativeAuth.getAuth(), normalized);
-      if (!snapshot?.verificationId) {
+      // Firebase 25 exposes the native iOS/Android phone-verification flow
+      // through PhoneAuthProvider. It remains a native Firebase SMS flow, but
+      // unlike Firebase 26 it works with Expo SDK 54's legacy architecture.
+      const provider = new nativeAuth.PhoneAuthProvider(nativeAuth.getAuth());
+      // The iOS/Android native SDK owns application verification; Firebase 25
+      // retains a web-verifier parameter in its TypeScript overload only.
+      const verificationId = await provider.verifyPhoneNumber(normalized, undefined as never);
+      if (!verificationId) {
         throw new Error('We could not start secure phone verification. Please try again.');
       }
-      return { verificationId: snapshot.verificationId, phoneNumber: normalized };
+      return { verificationId, phoneNumber: normalized };
     }
 
     if (!appVerifier) {

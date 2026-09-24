@@ -24,10 +24,10 @@ const config: ExpoConfig = {
   icon: "./assets/images/icon.png",
   scheme: env.scheme,
   userInterfaceStyle: "automatic",
-  // React Native Firebase 26 requires the New Architecture. Build 43's crash
-  // is inside Hermes while a TurboModule exception is converted at startup,
-  // so use JSC on iOS while retaining the architecture Firebase requires.
-  newArchEnabled: true,
+  // Build 43 crashes on iOS 27 in the React New-Architecture TurboModule path.
+  // Firebase 25 retains native phone verification while supporting Expo SDK 54's
+  // legacy bridge, so this release explicitly avoids that unsafe startup path.
+  newArchEnabled: false,
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
@@ -80,14 +80,7 @@ const config: ExpoConfig = {
     "expo-font",
     "expo-notifications",
     "expo-web-browser",
-    [
-      "@react-native-firebase/app",
-      {
-        ios: {
-          disableSPM: true,
-        },
-      },
-    ],
+    "@react-native-firebase/app",
     "@react-native-firebase/auth",
     [
       "expo-location",
