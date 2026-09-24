@@ -30,6 +30,14 @@ const GREEN = '#22C55E';
 const RED = '#EF4444';
 const BLUE = '#3B82F6';
 
+// Match HY3N's whole-cedi rule: .50 and below rounds down; above .50 rounds up.
+function formatPassengerFare(value: unknown) {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount) || amount <= 0) return 'GH₵0';
+  const whole = Math.floor(amount);
+  return `GH₵${whole + (amount - whole > 0.5 ? 1 : 0)}`;
+}
+
 const DARK_MAP_STYLE = [
   { elementType: 'geometry', stylers: [{ color: '#1b1f24' }] },
   { elementType: 'labels.text.fill', stylers: [{ color: '#d2d7de' }] },
@@ -1100,13 +1108,17 @@ export default function DriverHomeScreen() {
       <Modal visible={showFareScreen} transparent animationType="slide" onRequestClose={handleFareAcknowledged}>
         <View style={styles.sheetOverlay}>
           <View style={[styles.sheet, { backgroundColor: isDark ? '#1a1a1a' : '#fff' }]}>
-            <MaterialIcons name="receipt-long" size={32} color={GOLD} />
+            <MaterialIcons name="check-circle" size={34} color={GREEN} />
             <Text style={[styles.sheetTitle, dynamicStyles.text]}>Trip completed</Text>
             <Text style={[styles.sheetText, dynamicStyles.muted]}>{completedRide?.destination_address || 'Trip destination'}</Text>
-            <View style={[styles.fareTotal, { borderColor: themeColors.border }]}><Text style={[styles.fareTotalLabel, dynamicStyles.muted]}>Your trip earnings (100% of fare)</Text><Text style={styles.fareTotalAmount}>GH₵{Number(completedRide?.final_fare || 0).toFixed(2)}</Text></View>
+            <View style={styles.fareHero}>
+              <Text style={styles.fareHeroLabel}>FINAL TRIP FARE</Text>
+              <Text style={styles.fareHeroAmount}>{formatPassengerFare(completedRide?.final_fare)}</Text>
+              <Text style={styles.fareHeroCaption}>Show this amount to the rider</Text>
+            </View>
             <View style={styles.fareRows}>
               <Text style={[styles.fareRowText, dynamicStyles.muted]}>Distance · {Number(completedRide?.actual_distance_km || 0).toFixed(2)} km</Text>
-              <Text style={[styles.fareRowText, dynamicStyles.muted]}>Waiting fee · GH₵{Number(completedRide?.waiting_fee || 0).toFixed(2)}</Text>
+              <Text style={[styles.fareRowText, dynamicStyles.muted]}>Waiting fee · {formatPassengerFare(completedRide?.waiting_fee)}</Text>
               <Text style={[styles.fareRowText, dynamicStyles.muted]}>Payment · {paymentLabel(completedRide?.payment_method)}</Text>
             </View>
             <TouchableOpacity style={[styles.sheetPrimary, { backgroundColor: GOLD }]} onPress={handleFareAcknowledged}><Text style={styles.sheetPrimaryText}>Continue</Text></TouchableOpacity>
@@ -1289,9 +1301,10 @@ const styles = StyleSheet.create({
   codeInput: { height: 56, borderWidth: 1, borderRadius: 12, fontSize: 24, textAlign: 'center', letterSpacing: 6, fontWeight: '800' },
   reasonRow: { minHeight: 48, borderWidth: 1, borderRadius: 10, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   reasonText: { fontSize: 14, fontWeight: '800' },
-  fareTotal: { borderWidth: 1, borderRadius: 14, padding: 14, marginVertical: 3 },
-  fareTotalLabel: { fontSize: 12, fontWeight: '700' },
-  fareTotalAmount: { color: GOLD, fontSize: 28, fontWeight: '900', marginTop: 3 },
+  fareHero: { alignItems: 'center', backgroundColor: GOLD, borderRadius: 20, minHeight: 166, justifyContent: 'center', paddingHorizontal: 18, paddingVertical: 18, marginVertical: 8 },
+  fareHeroLabel: { color: '#191300', fontSize: 14, fontWeight: '900', letterSpacing: 1.4 },
+  fareHeroAmount: { color: '#000', fontSize: 58, fontWeight: '900', letterSpacing: -2.5, lineHeight: 68, marginTop: 2 },
+  fareHeroCaption: { color: '#352900', fontSize: 13, fontWeight: '700', marginTop: 2 },
   fareRows: { gap: 6, marginBottom: 5 },
   fareRowText: { fontSize: 12 },
   callOption: { minHeight: 72, borderWidth: 1, borderRadius: 12, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 12 },
