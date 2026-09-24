@@ -10,7 +10,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Notifications from 'expo-notifications';
-import { notifyChatMessage } from '@/lib/notifications';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
@@ -406,17 +405,10 @@ export default function DriverHomeScreen() {
           .forEach((message) => {
             firestoreDB.update(COLLECTIONS.RIDE_MESSAGES, message.id, { delivered_to_driver: true }).catch(() => {});
           });
-        const seenIds = seenChatMessageIdsRef.current;
-        const currentIds = new Set(messages.map((message) => String(message.id)));
-        if (seenIds) {
-          messages
-            .filter((message) => !seenIds.has(String(message.id)))
-            .filter((message) => message.sender_id !== user.uid && message.sender_role === 'rider')
-            .forEach((message) => {
-              notifyChatMessage(message.sender_name || 'Rider', String(message.message || '')).catch(() => {});
-            });
-        }
-        seenChatMessageIdsRef.current = currentIds;
+        // The backend Firestore trigger now sends one remote notification to
+        // every registered Driver device. A local scheduled alert here would
+        // duplicate that notification while the app is foregrounded.
+        seenChatMessageIdsRef.current = new Set(messages.map((message) => String(message.id)));
         const unread = messages.filter((message) =>
           message.sender_id !== user.uid &&
           message.sender_role === 'rider' &&
