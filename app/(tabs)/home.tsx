@@ -530,7 +530,7 @@ export default function DriverHomeScreen() {
   };
 
   const triggerSOS = () => {
-    Alert.alert('Send emergency alert?', 'Your current location and active trip details will be shared with HY3N safety support.', [
+    Alert.alert('Send emergency alert?', 'Your current location and active trip details will be recorded for HY3N Safety. You can also open WhatsApp to alert support immediately.', [
       { text: 'Not now', style: 'cancel' },
       {
         text: 'Send SOS', style: 'destructive', onPress: async () => {
@@ -549,7 +549,30 @@ export default function DriverHomeScreen() {
               message: 'Emergency alert initiated from the Driver app.',
               ...(sosLocation ? { location: { latitude: sosLocation.coords.latitude, longitude: sosLocation.coords.longitude } } : {}),
             });
-            Alert.alert('SOS received', `Your emergency alert was recorded in the HY3N Safety queue (reference ${result.incidentId.slice(0, 8)}). If you are in immediate danger, call emergency services now.`);
+            const locationLink = sosLocation
+              ? `https://www.google.com/maps?q=${sosLocation.coords.latitude},${sosLocation.coords.longitude}`
+              : 'Location unavailable';
+            const whatsappText = [
+              'HY3N DRIVER SOS',
+              `Reference: ${result.incidentId.slice(0, 8)}`,
+              `Trip: ${activeTrip?.id || 'No active trip'}`,
+              `Location: ${locationLink}`,
+              'Please treat this as an urgent safety request.',
+            ].join('\n');
+            Alert.alert(
+              'SOS received',
+              `Your emergency alert was recorded in the HY3N Safety queue (reference ${result.incidentId.slice(0, 8)}). Open WhatsApp to reach HY3N Support immediately. If you are in immediate danger, call emergency services now.`,
+              [
+                { text: 'Not now', style: 'cancel' },
+                {
+                  text: 'Open WhatsApp',
+                  // Verified HY3N Support WhatsApp: 055 727 8990.
+                  onPress: () => Linking.openURL(`https://wa.me/233557278990?text=${encodeURIComponent(whatsappText)}`).catch(() => {
+                    Alert.alert('WhatsApp unavailable', 'This device could not open WhatsApp. Please call support or emergency services.');
+                  }),
+                },
+              ],
+            );
           } catch (error: any) {
             Alert.alert('SOS not sent', error?.message || 'HY3N Safety could not confirm your SOS report. Please call emergency services.');
           }
