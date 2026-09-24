@@ -38,6 +38,16 @@ function formatPassengerFare(value: unknown) {
   return `GH₵${whole + (amount - whole > 0.5 ? 1 : 0)}`;
 }
 
+function calculateNavigationEtaMinutes(latitude: number, longitude: number, targetLatitude: number, targetLongitude: number) {
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const dLat = toRadians(targetLatitude - latitude);
+  const dLng = toRadians(targetLongitude - longitude);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRadians(latitude)) * Math.cos(toRadians(targetLatitude)) * Math.sin(dLng / 2) ** 2;
+  const straightLineKm = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  // Conservative road-distance and urban driving-speed factors update with each GPS point.
+  return Math.max(1, Math.ceil((straightLineKm * 1.25 / 24) * 60));
+}
+
 const DARK_MAP_STYLE = [
   { elementType: 'geometry', stylers: [{ color: '#1b1f24' }] },
   { elementType: 'labels.text.fill', stylers: [{ color: '#d2d7de' }] },
@@ -792,13 +802,37 @@ export default function DriverHomeScreen() {
     }
   };
 
+  const activeNavigationRawTarget = activeTrip
+    ? (activeTrip.status === 'in_progress' ? activeTrip.destination : activeTrip.pickup)
+    : null;
+  const activeNavigationLatitude = Number(activeNavigationRawTarget?.lat ?? activeNavigationRawTarget?.latitude ?? (activeTrip?.status === 'in_progress' ? activeTrip?.destination_lat : activeTrip?.pickup_lat));
+  const activeNavigationLongitude = Number(activeNavigationRawTarget?.lng ?? activeNavigationRawTarget?.longitude ?? (activeTrip?.status === 'in_progress' ? activeTrip?.destination_lng : activeTrip?.pickup_lng));
+  const activeNavigationTarget = activeTrip && Number.isFinite(activeNavigationLatitude) && Number.isFinite(activeNavigationLongitude)
+    ? {
+        latitude: activeNavigationLatitude,
+        longitude: activeNavigationLongitude,
+        label: activeTrip.status === 'in_progress' ? (activeTrip.destination_address || 'Drop-off') : (activeTrip.pickup_address || 'Pickup'),
+      }
+    : null;
+  const activeNavigationEta = activeNavigationTarget && location
+    ? calculateNavigationEtaMinutes(location.coords.latitude, location.coords.longitude, activeNavigationTarget.latitude, activeNavigationTarget.longitude)
+    : eta;
+
   return (
     <View style={[styles.container, dynamicStyles.container]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} translucent backgroundColor="transparent" />
 
       {/* Map Layer */}
       {isOnline ? (
-        <DriverLeafletMap latitude={location?.coords.latitude} longitude={location?.coords.longitude} dark={isDark} />
+        <DriverLeafletMap
+          latitude={location?.coords.latitude}
+          longitude={location?.coords.longitude}
+          heading={location?.coords.heading}
+          target={activeNavigationTarget}
+          etaMinutes={activeNavigationEta}
+          tripStatus={activeTrip ? (activeTrip.status === 'in_progress' ? 'dropoff' : 'pickup') : null}
+          dark={isDark}
+        />
       ) : (
         <View style={styles.offlineBg}>
            <Image source={require('@/assets/images/icon.png')} style={styles.largeLogo} resizeMode="contain" />
@@ -916,8 +950,8 @@ export default function DriverHomeScreen() {
                     ? (activeTrip.fare_estimate + activeTrip.waiting_fee).toFixed(2) 
                     : activeTrip.fare_estimate}
                 </Text>
-                {eta && activeTrip.status === 'driver_arriving' && !arrivedAt && (
-                  <Text style={[styles.etaText, dynamicStyles.muted]}>{eta} min</Text>
+                {activeNavigationEta && !arrivedAt && (
+                  <Text style={[styles.etaText, dynamicStyles.muted]}>{activeNavigationEta} min</Text>
                 )}
               </View>
             </View>
