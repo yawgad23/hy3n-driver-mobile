@@ -932,7 +932,13 @@ export default function DriverHomeScreen() {
                 {incomingRide.payment_method === 'cash' && <MaterialIcons name="attach-money" size={14} color={GREEN} />}
                 {incomingRide.payment_method === 'card' && <MaterialIcons name="credit-card" size={14} color={BLUE} />}
                 <Text style={[styles.paymentText, dynamicStyles.muted]} numberOfLines={1}>
-                  {incomingRide.payment_method === 'mobile_money' ? 'MoMo' : incomingRide.payment_method === 'cash' ? 'Cash' : 'Card'}
+                  {incomingRide.payment_method === 'mobile_money'
+                    ? 'MoMo'
+                    : incomingRide.payment_method === 'cash'
+                      ? 'Cash'
+                      : incomingRide.payment_method === 'wallet'
+                        ? 'Wallet'
+                        : 'Card'}
                 </Text>
               </View>
             </View>
