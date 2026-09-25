@@ -12,7 +12,7 @@ async function publishDriverLocation(location: ExpoLocation.LocationObject) {
   const user = auth.currentUser;
   if (!user) return;
   const idToken = await user.getIdToken();
-  await fetch(`${getApiBaseUrl()}/api/driver/location`, {
+  const response = await fetch(`${getApiBaseUrl()}/api/driver/location`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${idToken}`,
@@ -28,6 +28,7 @@ async function publishDriverLocation(location: ExpoLocation.LocationObject) {
       recordedAt: new Date(location.timestamp || Date.now()).toISOString(),
     }),
   });
+  if (!response.ok) throw new Error(`Driver location update failed (${response.status})`);
 }
 
 // The task must be declared at module scope and imported from the root layout,
