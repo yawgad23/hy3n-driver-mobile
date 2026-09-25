@@ -9,7 +9,6 @@ import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { useColors } from '@/hooks/use-colors';
 import { trpc } from '@/lib/trpc';
 import { openDriverSupportWhatsApp } from '@/lib/support-whatsapp';
-import { requestDriverPhoneOtp, verifyDriverPhoneOtp } from '@/lib/driver-phone-verification';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -112,52 +111,6 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
   const networkLabel = networkLabels[selectedNetwork] || 'MoMo';
   const momoNumber = phoneInput;
 
-  // OTP flow states
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpCode, setOtpCode] = useState('');
-  const [otpVerified, setOtpVerified] = useState(false);
-  const [otpError, setOtpError] = useState('');
-  const [sendingOtp, setSendingOtp] = useState(false);
-  const [verifyingOtp, setVerifyingOtp] = useState(false);
-  const [verifiedPhoneNumber, setVerifiedPhoneNumber] = useState('');
-
-  const handleSendOtp = async () => {
-    if (!phoneInput) {
-      setError('Please enter a valid phone number');
-      return;
-    }
-    setError('');
-    setSendingOtp(true);
-    setOtpError('');
-    try {
-      const result = await requestDriverPhoneOtp(phoneInput);
-      setVerifiedPhoneNumber(result.phoneNumber);
-      setOtpSent(true);
-    } catch (err: any) {
-      setError(String(err?.message || 'We could not send the verification code. Please try again.'));
-    } finally {
-      setSendingOtp(false);
-    }
-  };
-
-  const handleVerifyOtp = async () => {
-    if (!otpCode) {
-      setOtpError('Please enter the 6-digit code');
-      return;
-    }
-    setOtpError('');
-    setVerifyingOtp(true);
-    try {
-      const result = await verifyDriverPhoneOtp(otpCode);
-      setVerifiedPhoneNumber(result.phoneNumber || verifiedPhoneNumber || phoneInput);
-      setOtpVerified(true);
-    } catch (err: any) {
-      setOtpError(String(err?.message || 'We could not verify the code. Please try again.'));
-    } finally {
-      setVerifyingOtp(false);
-    }
-  };
-
   const handleSaveDetails = async () => {
     if (!phoneInput) {
       setError('Please enter a valid phone number');
@@ -171,9 +124,6 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
         momo_network: selectedNetwork,
       });
       setIsEditing(false);
-      setOtpSent(false);
-      setOtpVerified(false);
-      setOtpCode('');
     } catch (err: any) {
       setError('Failed to save profile details.');
     }
@@ -208,7 +158,7 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
 
   const handleCharge = async () => {
     if (!phoneInput) {
-      setError('No MoMo number found. Please add or verify a number.');
+      setError('No MoMo number found. Please add your payment number.');
       return;
     }
     setError('');
@@ -767,114 +717,23 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
       {!!error && !isEditing && <Text style={styles.errorText}>{error}</Text>}
 
       {!isEditing && (
-        <>
-          {!otpVerified ? (
-            <>
-              {otpSent ? (
-                <View style={{ width: '100%', alignItems: 'center', gap: 12, marginTop: 4 }}>
-                  <Text style={{ color: colors.foreground, fontSize: 14, fontWeight: '700', textAlign: 'center' }}>
-                    Verify Your Phone Number
-                  </Text>
-                  <Text style={{ color: colors.muted, fontSize: 12, textAlign: 'center', marginHorizontal: 20 }}>
-                    Enter the 6-digit verification code sent to {verifiedPhoneNumber || phoneInput}
-                  </Text>
+        <View style={{ width: '100%', alignItems: 'center', gap: 10 }}>
+          <View style={[styles.ussdNote, { backgroundColor: '#1A1A1A', borderColor: BORDER }]}>
+            <MaterialIcons name="info-outline" size={16} color={MUTED} style={{ marginTop: 1 }} />
+            <Text style={{ color: MUTED, fontSize: 12, flex: 1, lineHeight: 18 }}>
+              Phone SMS verification is on hold. Tap Pay Now, then approve the Hubtel MoMo prompt on the number above.
+            </Text>
+          </View>
 
-                  <TextInput
-                    style={{
-                      width: '60%',
-                      letterSpacing: 8,
-                      textAlign: 'center',
-                      fontSize: 20,
-                      fontWeight: '700',
-                      borderColor: colors.border,
-                      borderWidth: 1,
-                      borderRadius: 12,
-                      paddingVertical: 12,
-                      backgroundColor: isDark ? '#1A1A1A' : '#F3F4F6',
-                      color: colors.foreground,
-                    }}
-                    value={otpCode}
-                    onChangeText={setOtpCode}
-                    placeholder="000000"
-                    placeholderTextColor={colors.muted}
-                    keyboardType="number-pad"
-                    maxLength={6}
-                  />
-
-                  {!!otpError && <Text style={{ color: '#EF4444', fontSize: 12, textAlign: 'center' }}>{otpError}</Text>}
-
-                  <TouchableOpacity
-                    style={[styles.submitBtn, { backgroundColor: GOLD, marginTop: 4 }]}
-                    onPress={handleVerifyOtp}
-                    disabled={verifyingOtp}
-                  >
-                    {verifyingOtp ? (
-                      <ActivityIndicator size="small" color="#000" />
-                    ) : (
-                      <>
-                        <MaterialIcons name="verified-user" size={18} color="#000" style={{ marginRight: 6 }} />
-                        <Text style={styles.submitBtnText}>Verify Code</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-
-                  <View style={{ flexDirection: 'row', gap: 16, marginTop: 4, alignItems: 'center' }}>
-                    <TouchableOpacity onPress={handleSendOtp} disabled={sendingOtp}>
-                      <Text style={{ color: GOLD, fontSize: 13, textDecorationLine: 'underline' }}>
-                        {sendingOtp ? 'Resending...' : 'Resend Code'}
-                      </Text>
-                    </TouchableOpacity>
-                    <Text style={{ color: colors.border }}>|</Text>
-                    <TouchableOpacity onPress={() => { setOtpSent(false); setOtpCode(''); }}>
-                      <Text style={{ color: colors.muted, fontSize: 13, textDecorationLine: 'underline' }}>
-                        Change Number
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : (
-                <View style={{ width: '100%' }}>
-                  <TouchableOpacity
-                    style={[styles.submitBtn, { backgroundColor: GOLD }]}
-                    onPress={handleSendOtp}
-                    disabled={sendingOtp}
-                  >
-                    {sendingOtp ? (
-                      <ActivityIndicator size="small" color="#000" />
-                    ) : (
-                      <>
-                        <MaterialIcons name="sms" size={18} color="#000" style={{ marginRight: 6 }} />
-                        <Text style={styles.submitBtnText}>Send Verification Code</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              )}
-            </>
-          ) : (
-            <View style={{ width: '100%', alignItems: 'center', gap: 10 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#002A00', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1, borderColor: '#005500' }}>
-                <MaterialIcons name="check-circle" size={18} color="#22C55E" />
-                <Text style={{ color: '#22C55E', fontWeight: '700', fontSize: 13 }}>Phone Number Verified</Text>
-              </View>
-
-              <View style={[styles.ussdNote, { backgroundColor: '#1A1A1A', borderColor: BORDER }]}>
-                <MaterialIcons name="info-outline" size={16} color={MUTED} style={{ marginTop: 1 }} />
-                <Text style={{ color: MUTED, fontSize: 12, flex: 1, lineHeight: 18 }}>
-                  After tapping Pay Now, you will receive a USSD prompt on your phone. Approve it to complete the payment.
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                style={[styles.submitBtn, { backgroundColor: GOLD }]}
-                onPress={handleCharge}
-              >
-                <MaterialIcons name="payments" size={20} color="#000" style={{ marginRight: 6 }} />
-                <Text style={styles.submitBtnText}>Pay GH₵{feeLabel} via {networkLabel}</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </>
+          <TouchableOpacity
+            style={[styles.submitBtn, { backgroundColor: GOLD, opacity: phoneInput ? 1 : 0.55 }]}
+            onPress={handleCharge}
+            disabled={!phoneInput}
+          >
+            <MaterialIcons name="payments" size={20} color="#000" style={{ marginRight: 6 }} />
+            <Text style={styles.submitBtnText}>Pay GH₵{feeLabel} via {networkLabel}</Text>
+          </TouchableOpacity>
+        </View>
       )}
 
       <TouchableOpacity onPress={() => openSupportWhatsApp('Hi HY3N Support, I need help with my daily commission payment.')}>
