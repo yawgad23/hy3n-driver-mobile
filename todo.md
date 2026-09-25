@@ -138,7 +138,7 @@
 - [x] Creates RideReport doc for found items
 
 ### Commission Gate
-- [x] Real MoMo number: 0546728330
+- [x] Daily Driver fee is initiated and confirmed through Hubtel only
 - [x] Vehicle-type-based fees: GH₵50 (car), GH₵30 (okada/delivery)
 
 ## New Features (Jun 17)

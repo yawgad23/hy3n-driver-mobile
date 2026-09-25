@@ -162,7 +162,7 @@ export default function DriverHomeScreen() {
   // Waiting Time Logic
   const [arrivedAt, setArrivedAt] = useState<string | null>(null);
   const [waitTime, setWaitTime] = useState(0);
-  const waitTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const waitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isDriverAtPickup = activeTrip?.status === 'driver_arrived';
   const waitingStartedAt = isDriverAtPickup
     ? (activeTrip?.driver_arrived_at || arrivedAt)

@@ -129,32 +129,36 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
     }
   };
 
-  // Poll Firestore every 8s while USSD is pending (waiting for driver to approve on phone)
+  // The client never writes a commission status. This poll asks the trusted
+  // server to check Hubtel, which records paid/failed only after provider
+  // confirmation (or the Hubtel webhook does the same in the background).
   useEffect(() => {
     if (commissionStatus !== 'ussd_sent') return;
-    const driverId = driver.user_id || driver.id;
-    const today = new Date().toISOString().split('T')[0];
-    const poll = setInterval(() => {
-      firestoreDB.list(COLLECTIONS.DAILY_COMMISSION, { driver_id: driverId, date: today }, "")
-        .then((records: any[]) => {
-          const rec = records.find((r: any) => r.status === 'paid' || r.status === 'confirmed');
-          if (rec) {
-            setCommissionRecord(rec);
-            setCommissionStatus('paid');
-            clearInterval(poll);
-          }
-          // Also check for failed
-          const failed = records.find((r: any) => r.status === 'failed');
-          if (failed && !rec) {
-            setCommissionRecord(failed);
-            setCommissionStatus('failed');
-            clearInterval(poll);
-          }
-        })
-        .catch(() => {});
+    const reference = commissionRecord?.hubtel_reference;
+    if (!reference) return;
+    let polling = false;
+    const poll = setInterval(async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        const result = await trpcContext.client.transactionStatus.check.query({ clientReference: reference });
+        const status = String(result?.data?.status || '').toLowerCase();
+        if (status === 'paid') {
+          setCommissionStatus('paid');
+          clearInterval(poll);
+        } else if (['failed', 'expired', 'cancelled', 'declined'].includes(status)) {
+          setError(result?.data?.description || 'The Hubtel payment was not completed.');
+          setCommissionStatus('failed');
+          clearInterval(poll);
+        }
+      } catch {
+        // Keep the pending state; the driver can also use Check status.
+      } finally {
+        polling = false;
+      }
     }, 8000);
     return () => clearInterval(poll);
-  }, [commissionStatus]);
+  }, [commissionStatus, commissionRecord?.hubtel_reference, trpcContext.client]);
 
   const handleCharge = async () => {
     if (!phoneInput) {
@@ -196,14 +200,6 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
   };
 
   const handleGoOnline = async () => {
-    const docId = commissionRecord?.id;
-    if (docId) {
-      try {
-        await firestoreDB.update(COLLECTIONS.DAILY_COMMISSION, docId, {
-          status: 'confirmed',
-        });
-      } catch (err) {}
-    }
     onConfirmed();
   };
 
@@ -239,12 +235,6 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
           const status = res.data.status;
           if (status === 'Paid') {
             clearInterval(countdownInterval);
-            const docId = commissionRecord?.id;
-            if (docId) {
-              firestoreDB.update(COLLECTIONS.DAILY_COMMISSION, docId, {
-                status: 'confirmed',
-              }).catch(() => {});
-            }
             setCommissionStatus('paid');
             return true;
           } else if (status === 'Failed' || status === 'Expired' || status === 'Cancelled' || status === 'Declined') {
