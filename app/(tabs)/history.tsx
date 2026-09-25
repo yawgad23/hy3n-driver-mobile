@@ -6,8 +6,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useDriverAuth } from '@/lib/driver-auth-context';
-import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { useColors } from '@/hooks/use-colors';
+import { trpc } from '@/lib/trpc';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -258,18 +258,16 @@ export default function DriverHistoryScreen() {
   const insets = useSafeAreaInsets();
   const colors = useColors();
   const [trips, setTrips] = useState<Trip[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterKey>('all');
+  const historyQuery = trpc.driverTrips.history.useQuery(
+    { driverId: user?.uid || '' },
+    { enabled: Boolean(user?.uid), refetchOnMount: 'always', refetchOnWindowFocus: true },
+  );
 
   useEffect(() => {
-    if (!user) return;
-    setLoading(true);
-    firestoreDB.list(COLLECTIONS.RIDES, { driver_id: user.uid })
-      .then((data: any[]) => setTrips(data as Trip[]))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [user]);
+    setTrips((historyQuery.data?.rides || []) as Trip[]);
+  }, [historyQuery.data?.rides]);
 
   const filtered = trips.filter(t => {
     const d = new Date(t.trip_date || t.created_date || '');
@@ -359,9 +357,18 @@ export default function DriverHistoryScreen() {
       </View>
 
       {/* Trip List */}
-      {loading ? (
+      {historyQuery.isLoading ? (
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color={GOLD} />
+        </View>
+      ) : historyQuery.isError ? (
+        <View style={styles.emptyWrap}>
+          <MaterialIcons name="cloud-off" size={48} color={colors.muted} />
+          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>Trips could not be loaded</Text>
+          <Text style={[styles.emptyText, { color: colors.muted }]}>Check your connection and tap to try again.</Text>
+          <TouchableOpacity style={[styles.filterBtn, { backgroundColor: colors.card, borderColor: GOLD }]} onPress={() => historyQuery.refetch()}>
+            <Text style={[styles.filterText, { color: GOLD }]}>Retry</Text>
+          </TouchableOpacity>
         </View>
       ) : filtered.length === 0 ? (
         <View style={styles.emptyWrap}>
