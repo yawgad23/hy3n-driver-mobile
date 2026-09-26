@@ -46,7 +46,8 @@ export default function DriverProfileScreen() {
           setSigningOut(true);
           try {
             await signOut();
-            router.replace('/' as any);
+            // The authenticated tab shell redirects after the auth listener
+            // reports the signed-out state. Do not compete with it here.
           } catch {
             Alert.alert('Error', 'Failed to sign out. Please try again.');
           } finally {

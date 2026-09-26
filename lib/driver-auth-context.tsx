@@ -71,8 +71,24 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
   const [user, setUser] = useState<User | null>(null);
   const [driverProfile, setDriverProfile] = useState<DriverProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  // Keep profile reads and subscriptions tied to the current authenticated
+  // session. A late Firestore response from a previous Driver must never put
+  // profile state back after that Driver has signed out.
+  const profileUnsubRef = useRef<(() => void) | null>(null);
+  const authTransitionRef = useRef(0);
 
-  const loadProfile = async (firebaseUser: User) => {
+  const clearProfileSubscription = () => {
+    if (profileUnsubRef.current) {
+      profileUnsubRef.current();
+      profileUnsubRef.current = null;
+    }
+  };
+
+  const loadProfile = async (firebaseUser: User, authTransition: number) => {
+    const isCurrentSession = () => (
+      authTransition === authTransitionRef.current
+      && firebaseAuth.getCurrentUser()?.uid === firebaseUser.uid
+    );
     try {
       // There may be both a UID-keyed document and an older auto-ID document.
       // Read every matching record so a stale pending record cannot hide an
@@ -96,6 +112,7 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
         if (isApproved(a) !== isApproved(b)) return isApproved(a) ? -1 : 1;
         return String(b.updated_date || b.created_date || '').localeCompare(String(a.updated_date || a.created_date || ''));
       });
+      if (!isCurrentSession()) return;
       if (profiles.length > 0) {
         const profile = profiles[0] as DriverProfile;
         // Ensure user_id is set
@@ -105,9 +122,9 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
         }
         setDriverProfile(profile);
         // Subscribe to live updates on this profile doc so rating changes reflect immediately
-        if (profileUnsubRef.current) profileUnsubRef.current();
+        clearProfileSubscription();
         profileUnsubRef.current = firestoreDB.subscribeDoc(COLLECTIONS.DRIVER_PROFILES, profile.id, (updated) => {
-          if (updated) setDriverProfile(updated as DriverProfile);
+          if (updated && isCurrentSession()) setDriverProfile(updated as DriverProfile);
         });
       } else {
         setDriverProfile(null);
@@ -117,22 +134,29 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
     }
   };
 
-  // Ref to hold the live Firestore subscription for the driver profile doc
-  const profileUnsubRef = useRef<(() => void) | null>(null);
-
   useEffect(() => {
-    const unsubscribe = firebaseAuth.onAuthStateChanged(async (firebaseUser) => {
+    const unsubscribe = firebaseAuth.onAuthStateChanged((firebaseUser) => {
+      const authTransition = ++authTransitionRef.current;
       setUser(firebaseUser);
-      // Cancel any previous profile subscription
-      if (profileUnsubRef.current) { profileUnsubRef.current(); profileUnsubRef.current = null; }
+      clearProfileSubscription();
       if (firebaseUser) {
-        await loadProfile(firebaseUser);
+        // Do not leave the previous Driver's profile visible while the new
+        // account is loading.
+        setDriverProfile(null);
+        setLoading(true);
+        void loadProfile(firebaseUser, authTransition).finally(() => {
+          if (authTransition === authTransitionRef.current) setLoading(false);
+        });
       } else {
         setDriverProfile(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
-    return () => { unsubscribe(); if (profileUnsubRef.current) profileUnsubRef.current(); };
+    return () => {
+      authTransitionRef.current += 1;
+      unsubscribe();
+      clearProfileSubscription();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
@@ -157,7 +181,14 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
 
   const signOut = async () => {
     await firebaseAuth.logout();
+    // Firebase normally emits the null auth-state callback before logout()
+    // resolves. Apply the safe state locally as well so the tab shell cannot
+    // retain an authenticated profile during a navigation transition.
+    authTransitionRef.current += 1;
+    clearProfileSubscription();
+    setUser(null);
     setDriverProfile(null);
+    setLoading(false);
   };
 
   /**
@@ -177,7 +208,7 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
   };
 
   const refreshProfile = async () => {
-    if (user) await loadProfile(user);
+    if (user) await loadProfile(user, authTransitionRef.current);
   };
 
   const updateDriverProfile = async (data: Partial<DriverProfile>) => {

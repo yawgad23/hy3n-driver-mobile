@@ -207,6 +207,17 @@ export const firebaseAuth = {
 
   async logout() {
     await signOut(auth);
+    // Phone verification uses React Native Firebase on iOS/Android. Clear its
+    // companion native session too, but never turn a successful app-session
+    // logout into a crash or an error screen if that optional cleanup fails.
+    if (Platform.OS !== 'web') {
+      try {
+        const nativeAuth = require('@react-native-firebase/auth') as typeof import('@react-native-firebase/auth');
+        await nativeAuth.signOut(nativeAuth.getAuth());
+      } catch {
+        // The JavaScript Firebase session is already signed out above.
+      }
+    }
   },
 
   async resetPassword(email: string) {

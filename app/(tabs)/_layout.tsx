@@ -32,7 +32,6 @@ export const unstable_settings = {
 // yet is stuck until they kill the app.
 function SignOutLink() {
   const { signOut } = useDriverAuth();
-  const router = useRouter();
   const [loading, setLoading] = useState(false);
 
   const handleSignOut = () => {
@@ -43,7 +42,8 @@ function SignOutLink() {
           setLoading(true);
           try {
             await signOut();
-            router.replace('/');
+            // DriverTabLayout owns the single auth-state redirect. Calling a
+            // second replace here can race the unmount of a gated screen.
           } catch {
             Alert.alert('Error', 'Failed to sign out. Please try again.');
           } finally {
