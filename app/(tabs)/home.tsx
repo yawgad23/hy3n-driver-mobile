@@ -125,15 +125,18 @@ export default function DriverHomeScreen() {
   const incomingAlertRunRef = useRef(0);
   const seenChatMessageIdsRef = useRef<Set<string> | null>(null);
 
-  const stopIncomingTripAlert = (resetPosition = true) => {
+  const stopIncomingTripAlert = (resetPosition = true, skipNativeCommand = false) => {
     // Invalidate any pending seek/play chain before pausing. Without this,
     // an async seek can finish after acceptance and restart the alert.
     incomingAlertRunRef.current += 1;
+    // `useAudioPlayer` releases its native SharedObject when this screen
+    // unmounts. Do not issue a pause/seek after that release has started: on
+    // iOS this turns the released native-object error into a Hermes crash.
+    if (skipNativeCommand) return;
     incomingTripPlayer.pause();
-    // Do not send a seek command while this screen is unmounting. On iOS the
-    // native audio player may already be released by the time an async seek
-    // reaches it during sign-out.
-    if (resetPosition) incomingTripPlayer.seekTo(0).catch(() => {});
+    // Expo SDK 54's iOS AudioPlayer seek path has a native AVPlayer lifetime
+    // race. The looped alert does not need a seek on iOS; pause/play is enough.
+    if (resetPosition && Platform.OS !== 'ios') incomingTripPlayer.seekTo(0).catch(() => {});
   };
   
   // Navigation Switcher Logic
@@ -235,7 +238,7 @@ export default function DriverHomeScreen() {
     }).catch(() => {});
 
     return () => {
-      stopIncomingTripAlert(false);
+      stopIncomingTripAlert(false, true);
     };
   }, [incomingTripPlayer]);
 
@@ -249,12 +252,16 @@ export default function DriverHomeScreen() {
     const alertRun = ++incomingAlertRunRef.current;
     incomingTripPlayer.loop = true;
     incomingTripPlayer.volume = 0.92;
-    incomingTripPlayer.seekTo(0).then(() => {
-      if (incomingAlertRunRef.current === alertRun) incomingTripPlayer.play();
-    }).catch(() => {});
+    if (Platform.OS === 'ios') {
+      incomingTripPlayer.play();
+    } else {
+      incomingTripPlayer.seekTo(0).then(() => {
+        if (incomingAlertRunRef.current === alertRun) incomingTripPlayer.play();
+      }).catch(() => {});
+    }
 
     return () => {
-      if (incomingAlertRunRef.current === alertRun) stopIncomingTripAlert();
+      if (incomingAlertRunRef.current === alertRun) stopIncomingTripAlert(true, true);
     };
   }, [incomingRide?.id, activeTrip?.id, isOnline, prefs.soundAlerts, incomingTripPlayer]);
 
