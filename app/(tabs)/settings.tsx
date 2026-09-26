@@ -6,7 +6,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useDriverAuth } from '@/lib/driver-auth-context';
-import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { router } from 'expo-router';
 import { useDriverPreferences } from '@/hooks/use-driver-preferences';
 import { useThemeContext } from '@/lib/theme-provider';
@@ -23,7 +22,7 @@ const RED = '#EF4444';
 const GREEN = '#22C55E';
 
 export default function DriverSettingsScreen() {
-  const { driverProfile, signOut } = useDriverAuth();
+  const { driverProfile, deleteAccount } = useDriverAuth();
   const insets = useSafeAreaInsets();
   const [deleting, setDeleting] = useState(false);
   const { prefs, toggle, saving, loaded } = useDriverPreferences();
@@ -42,10 +41,7 @@ export default function DriverSettingsScreen() {
           onPress: async () => {
             setDeleting(true);
             try {
-              if (driverProfile?.id) {
-                await firestoreDB.delete(COLLECTIONS.DRIVER_PROFILES, driverProfile.id);
-              }
-              await signOut();
+              await deleteAccount();
               router.replace('/' as any);
             } catch {
               Alert.alert('Error', 'Failed to delete account. Please try again or contact hello@ridehy3n.com');

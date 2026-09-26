@@ -58,6 +58,7 @@ interface DriverAuthContextType {
   signInWithGoogle: () => Promise<void>;
   signUp: (email: string, password: string, fullName?: string) => Promise<void>;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   updateDriverProfile: (data: Partial<DriverProfile>) => Promise<void>;
 }
@@ -149,6 +150,22 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
     setDriverProfile(null);
   };
 
+  /**
+   * Removes the signed-in Driver's profile before deleting their Firebase
+   * Authentication account. The latter is essential: merely signing out would
+   * leave the account usable and would not satisfy an account-deletion request.
+   */
+  const deleteAccount = async () => {
+    if (!user) throw new Error('No Driver account is signed in.');
+
+    if (driverProfile?.id) {
+      await firestoreDB.delete(COLLECTIONS.DRIVER_PROFILES, driverProfile.id);
+    }
+
+    await firebaseAuth.deleteAccount();
+    setDriverProfile(null);
+  };
+
   const refreshProfile = async () => {
     if (user) await loadProfile(user);
   };
@@ -162,7 +179,7 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
   return (
     <DriverAuthContext.Provider value={{
       user, driverProfile, loading,
-      signIn, signInWithGoogle, signUp, signOut,
+      signIn, signInWithGoogle, signUp, signOut, deleteAccount,
       refreshProfile, updateDriverProfile,
     }}>
       {children}
