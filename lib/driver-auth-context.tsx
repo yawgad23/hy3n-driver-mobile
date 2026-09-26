@@ -191,15 +191,21 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
   };
 
   const signOut = async () => {
-    await firebaseAuth.logout();
-    // Firebase normally emits the null auth-state callback before logout()
-    // resolves. Apply the safe state locally as well so the tab shell cannot
-    // retain an authenticated profile during a navigation transition.
+    // Invalidate listeners before Firebase emits the signed-out callback.
+    // The callback is the only place that sets the unauthenticated state and
+    // performs navigation, avoiding a second state transition while mounted
+    // Driver tabs are releasing native resources.
     authTransitionRef.current += 1;
     clearProfileSubscription();
-    setUser(null);
     setDriverProfile(null);
-    setLoading(false);
+    setLoading(true);
+    try {
+      await firebaseAuth.logout();
+    } catch (error) {
+      // Keep the authenticated shell usable when Firebase rejects the request.
+      if (firebaseAuth.getCurrentUser()) setLoading(false);
+      throw error;
+    }
   };
 
   /**

@@ -42,12 +42,11 @@ function SignOutLink() {
           setLoading(true);
           try {
             await signOut();
-            // DriverTabLayout owns the single auth-state redirect. Calling a
-            // second replace here can race the unmount of a gated screen.
+            // DriverTabLayout owns the single auth-state redirect. This gate
+            // will unmount after the signed-out callback.
           } catch {
-            Alert.alert('Error', 'Failed to sign out. Please try again.');
-          } finally {
             setLoading(false);
+            Alert.alert('Error', 'Failed to sign out. Please try again.');
           }
         },
       },

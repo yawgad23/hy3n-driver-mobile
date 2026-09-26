@@ -230,18 +230,12 @@ export const firebaseAuth = {
   },
 
   async logout() {
+    // The Driver account session is owned by the Firebase JavaScript SDK.
+    // React Native Firebase is used only to deliver native phone-verification
+    // challenges; this app never confirms a native RNFirebase user session.
+    // Calling a second native sign-out after this sign-out changed the React
+    // tree could race the iOS bridge while the Driver tabs were unmounting.
     await signOut(auth);
-    // Phone verification uses React Native Firebase on iOS/Android. Clear its
-    // companion native session too, but never turn a successful app-session
-    // logout into a crash or an error screen if that optional cleanup fails.
-    if (Platform.OS !== 'web') {
-      try {
-        const nativeAuth = require('@react-native-firebase/auth') as typeof import('@react-native-firebase/auth');
-        await nativeAuth.signOut(nativeAuth.getAuth());
-      } catch {
-        // The JavaScript Firebase session is already signed out above.
-      }
-    }
   },
 
   async resetPassword(email: string) {

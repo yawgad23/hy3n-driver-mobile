@@ -46,12 +46,11 @@ export default function DriverProfileScreen() {
           setSigningOut(true);
           try {
             await signOut();
-            // The authenticated tab shell redirects after the auth listener
-            // reports the signed-out state. Do not compete with it here.
+            // The auth listener now owns the one safe transition to the
+            // landing screen. This Profile screen will unmount on success.
           } catch {
-            Alert.alert('Error', 'Failed to sign out. Please try again.');
-          } finally {
             setSigningOut(false);
+            Alert.alert('Error', 'Failed to sign out. Please try again.');
           }
         }
       }

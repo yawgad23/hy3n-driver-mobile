@@ -125,12 +125,15 @@ export default function DriverHomeScreen() {
   const incomingAlertRunRef = useRef(0);
   const seenChatMessageIdsRef = useRef<Set<string> | null>(null);
 
-  const stopIncomingTripAlert = () => {
+  const stopIncomingTripAlert = (resetPosition = true) => {
     // Invalidate any pending seek/play chain before pausing. Without this,
     // an async seek can finish after acceptance and restart the alert.
     incomingAlertRunRef.current += 1;
     incomingTripPlayer.pause();
-    incomingTripPlayer.seekTo(0).catch(() => {});
+    // Do not send a seek command while this screen is unmounting. On iOS the
+    // native audio player may already be released by the time an async seek
+    // reaches it during sign-out.
+    if (resetPosition) incomingTripPlayer.seekTo(0).catch(() => {});
   };
   
   // Navigation Switcher Logic
@@ -232,7 +235,7 @@ export default function DriverHomeScreen() {
     }).catch(() => {});
 
     return () => {
-      stopIncomingTripAlert();
+      stopIncomingTripAlert(false);
     };
   }, [incomingTripPlayer]);
 
@@ -273,17 +276,30 @@ export default function DriverHomeScreen() {
 
   useEffect(() => {
     let subscription: any;
-    (async () => {
+    let disposed = false;
+    const beginLocationWatch = async () => {
       let { status } = await ExpoLocation.requestForegroundPermissionsAsync();
       if (status !== 'granted') return;
       let loc = await ExpoLocation.getCurrentPositionAsync({});
+      if (disposed) return;
       setLocation(loc);
-      subscription = await ExpoLocation.watchPositionAsync(
+      const watch = await ExpoLocation.watchPositionAsync(
         { accuracy: ExpoLocation.Accuracy.Balanced, timeInterval: 5000, distanceInterval: 10 },
-        (newLoc) => setLocation(newLoc)
+        (newLoc) => {
+          if (!disposed) setLocation(newLoc);
+        },
       );
-    })();
-    return () => subscription?.remove();
+      if (disposed) {
+        watch.remove();
+      } else {
+        subscription = watch;
+      }
+    };
+    void beginLocationWatch().catch(() => {});
+    return () => {
+      disposed = true;
+      subscription?.remove();
+    };
   }, []);
 
   useEffect(() => {
