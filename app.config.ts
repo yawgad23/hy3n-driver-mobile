@@ -31,7 +31,7 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    buildNumber: "49",
+    buildNumber: "50",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     ...(iosGoogleMapsApiKey ? { config: { googleMapsApiKey: iosGoogleMapsApiKey } } : {}),
