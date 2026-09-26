@@ -168,7 +168,18 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
   };
 
   const confirmPhoneSignIn = async (verificationId: string, code: string) => {
-    await firebaseAuth.confirmPhoneSignIn(verificationId, code);
+    const confirmedUser = await firebaseAuth.confirmPhoneSignIn(verificationId, code);
+    try {
+      await firebaseAuth.linkPhoneLoginToDriverProfile();
+      // The auth listener normally runs during sign-in. Load explicitly too so
+      // the login screen only navigates after the linked Driver profile exists.
+      await loadProfile(confirmedUser, authTransitionRef.current);
+    } catch (error) {
+      // A successful code must not leave an unmatched phone-auth account open
+      // in the Driver app. The user receives the actionable server message.
+      await firebaseAuth.logout().catch(() => {});
+      throw error;
+    }
   };
 
   const signInWithGoogle = async () => {

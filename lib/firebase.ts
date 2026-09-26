@@ -24,6 +24,7 @@ import {
   type User,
 } from 'firebase/auth';
 import { Platform } from 'react-native';
+import { getApiBaseUrl } from '@/constants/oauth';
 // getReactNativePersistence is only available on native — import conditionally
 let AsyncStorage: any = null;
 let getReactNativePersistence: any = null;
@@ -203,6 +204,29 @@ export const firebaseAuth = {
     const credential = PhoneAuthProvider.credential(verificationId, String(code).trim());
     const result = await signInWithCredential(auth, credential);
     return result.user;
+  },
+
+  /**
+   * Resolves a verified Firebase phone session to its existing Driver profile.
+   * The server reads the verified phone claim itself; the app never selects or
+   * updates another Driver's profile.
+   */
+  async linkPhoneLoginToDriverProfile() {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('Please verify your phone number again.');
+    const idToken = await currentUser.getIdToken(true);
+    const response = await fetch(`${getApiBaseUrl()}/api/driver/phone-login/link`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.success !== true) {
+      throw new Error(payload?.message || 'We could not open your Driver account.');
+    }
+    return payload;
   },
 
   async logout() {
