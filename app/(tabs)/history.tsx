@@ -8,6 +8,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { useColors } from '@/hooks/use-colors';
 import { trpc } from '@/lib/trpc';
+import { normalizeDriverHistory, type DriverHistoryTrip } from '@/lib/driver-history';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -18,35 +19,7 @@ const MUTED = '#9CA3AF';
 const GREEN = '#22C55E';
 const RED = '#EF4444';
 
-interface Trip {
-  id: string;
-  pickup?: string;
-  pickup_address?: string;
-  pickup_location?: string;
-  destination?: string;
-  destination_address?: string;
-  dropoff_location?: string;
-  fare?: number;
-  final_fare?: number;
-  fare_estimate?: number;
-  tip_amount?: number;
-  status: string;
-  created_date?: string;
-  trip_date?: string;
-  rider_name?: string;
-  passenger_name?: string;
-  distance?: number;
-  distance_km?: number;
-  duration?: number;
-  duration_min?: number;
-  duration_minutes?: number;
-  category?: string;
-  driver_feedback?: string;
-  passenger_feedback?: string;
-  payment_method?: string;
-  rider_rating?: number;
-  passenger_rating?: number;
-}
+type Trip = DriverHistoryTrip;
 
 type FilterKey = 'all' | 'today' | 'week' | 'completed' | 'cancelled';
 
@@ -77,6 +50,7 @@ function isThisWeek(d: Date) {
 function formatTripDate(iso?: string) {
   if (!iso) return '';
   const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return '';
   if (isToday(d)) return `Today, ${d.toLocaleTimeString('en-GH', { hour: 'numeric', minute: '2-digit' })}`;
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
@@ -266,7 +240,7 @@ export default function DriverHistoryScreen() {
   );
 
   useEffect(() => {
-    setTrips((historyQuery.data?.rides || []) as Trip[]);
+    setTrips(normalizeDriverHistory(historyQuery.data?.rides));
   }, [historyQuery.data?.rides]);
 
   const filtered = trips.filter(t => {
