@@ -708,13 +708,6 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
 
       {!isEditing && (
         <View style={{ width: '100%', alignItems: 'center', gap: 10 }}>
-          <View style={[styles.ussdNote, { backgroundColor: '#1A1A1A', borderColor: BORDER }]}>
-            <MaterialIcons name="info-outline" size={16} color={MUTED} style={{ marginTop: 1 }} />
-            <Text style={{ color: MUTED, fontSize: 12, flex: 1, lineHeight: 18 }}>
-              Phone SMS verification is on hold. Tap Pay Now, then approve the Hubtel MoMo prompt on the number above.
-            </Text>
-          </View>
-
           <TouchableOpacity
             style={[styles.submitBtn, { backgroundColor: GOLD, opacity: phoneInput ? 1 : 0.55 }]}
             onPress={handleCharge}
