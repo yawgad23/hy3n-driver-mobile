@@ -55,6 +55,8 @@ interface DriverAuthContextType {
   driverProfile: DriverProfile | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  startPhoneSignIn: (phone: string, appVerifier?: any) => Promise<{ verificationId: string; phoneNumber: string }>;
+  confirmPhoneSignIn: (verificationId: string, code: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signUp: (email: string, password: string, fullName?: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -137,6 +139,14 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
     await firebaseAuth.loginWithEmail(email, password);
   };
 
+  const startPhoneSignIn = async (phone: string, appVerifier?: any) => {
+    return firebaseAuth.startPhoneSignIn(phone, appVerifier);
+  };
+
+  const confirmPhoneSignIn = async (verificationId: string, code: string) => {
+    await firebaseAuth.confirmPhoneSignIn(verificationId, code);
+  };
+
   const signInWithGoogle = async () => {
     await firebaseAuth.loginWithGoogle();
   };
@@ -179,7 +189,7 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
   return (
     <DriverAuthContext.Provider value={{
       user, driverProfile, loading,
-      signIn, signInWithGoogle, signUp, signOut, deleteAccount,
+      signIn, startPhoneSignIn, confirmPhoneSignIn, signInWithGoogle, signUp, signOut, deleteAccount,
       refreshProfile, updateDriverProfile,
     }}>
       {children}

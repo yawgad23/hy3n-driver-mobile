@@ -85,6 +85,7 @@ const config: ExpoConfig = {
     "expo-web-browser",
     "@react-native-firebase/app",
     "@react-native-firebase/auth",
+    "@react-native-google-signin/google-signin",
     [
       "expo-location",
       {

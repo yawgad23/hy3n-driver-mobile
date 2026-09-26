@@ -295,7 +295,7 @@ export default function DriverRegisterScreen() {
     if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
     setLoading(true);
     try {
-      await signUp(email.trim(), password);
+      await signUp(email.trim(), password, fullName.trim());
       const user = firebaseAuthObj.currentUser;
       if (user) {
         const { sendEmailVerification: sendVerif } = await import('firebase/auth');
@@ -304,7 +304,18 @@ export default function DriverRegisterScreen() {
       setStep(2);
       startVerificationPolling();
     } catch (err: any) {
-      setError(err.message || 'Failed to create account.');
+      if (err?.code === 'auth/email-already-in-use') {
+        Alert.alert(
+          'Account already exists',
+          'This email already has a HY3N account. Please log in with your password.',
+          [
+            { text: 'Stay here', style: 'cancel' },
+            { text: 'Log in', onPress: () => router.replace('/login' as any) },
+          ],
+        );
+      } else {
+        setError(err?.message || 'Failed to create account.');
+      }
     } finally {
       setLoading(false);
     }

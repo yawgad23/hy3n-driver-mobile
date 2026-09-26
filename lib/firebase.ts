@@ -66,6 +66,32 @@ export const firebaseConfig = {
   measurementId: "G-WH7JZPLP0L"
 };
 
+function googleWebClientId(): string {
+  const services = require('../firebase/google-services.json') as {
+    client?: Array<{ oauth_client?: Array<{ client_type?: number; client_id?: string }> }>;
+  };
+  for (const client of services.client ?? []) {
+    const webClient = client.oauth_client?.find((item) => item.client_type === 3 && item.client_id);
+    if (webClient?.client_id) return webClient.client_id;
+  }
+  throw new Error('Google Sign-In is not configured for this app. Please update the native Google service file.');
+}
+
+function normalizeGhanaPhone(phoneInput: string): string {
+  const digits = String(phoneInput || '').replace(/[^\d+]/g, '');
+  const normalized = digits.startsWith('+233')
+    ? digits
+    : digits.startsWith('233')
+      ? `+${digits}`
+      : digits.startsWith('0')
+        ? `+233${digits.slice(1)}`
+        : `+233${digits}`;
+  if (!/^\+233\d{9}$/.test(normalized)) {
+    throw new Error('Enter a valid Ghana mobile number.');
+  }
+  return normalized;
+}
+
 // Initialize Firebase (avoid re-initialization)
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
@@ -123,6 +149,22 @@ export const firebaseAuth = {
   },
 
   async loginWithGoogle() {
+    if (Platform.OS !== 'web') {
+      const { GoogleSignin } = require('@react-native-google-signin/google-signin') as typeof import('@react-native-google-signin/google-signin');
+      GoogleSignin.configure({ webClientId: googleWebClientId() });
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      const result = await GoogleSignin.signIn();
+      if (result.type !== 'success') {
+        const cancelled = new Error('Google Sign-In was cancelled.');
+        (cancelled as Error & { code?: string }).code = 'auth/popup-closed-by-user';
+        throw cancelled;
+      }
+      const idToken = result.data.idToken;
+      if (!idToken) throw new Error('Google Sign-In did not return an identity token. Please try again.');
+      const credential = GoogleAuthProvider.credential(idToken);
+      const cred = await signInWithCredential(auth, credential);
+      return cred.user;
+    }
     const provider = new GoogleAuthProvider();
     provider.addScope('email');
     provider.addScope('profile');
@@ -134,6 +176,33 @@ export const firebaseAuth = {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     await updateProfile(cred.user, { displayName: fullName });
     return cred.user;
+  },
+
+  /** Starts native SMS verification and returns a durable verification ID for the code entry screen. */
+  async startPhoneSignIn(phoneInput: string, appVerifier?: any) {
+    const phoneNumber = normalizeGhanaPhone(phoneInput);
+    if (Platform.OS !== 'web') {
+      const nativeAuth = require('@react-native-firebase/auth') as typeof import('@react-native-firebase/auth');
+      const confirmation = await nativeAuth.signInWithPhoneNumber(nativeAuth.getAuth(), phoneNumber);
+      if (!confirmation.verificationId) {
+        throw new Error('We could not start secure phone verification. Please try again.');
+      }
+      return { verificationId: confirmation.verificationId, phoneNumber };
+    }
+    if (!appVerifier) throw new Error('Phone verification is not ready. Please try again.');
+    const provider = new PhoneAuthProvider(auth);
+    const verificationId = await provider.verifyPhoneNumber(phoneNumber, appVerifier);
+    return { verificationId, phoneNumber };
+  },
+
+  /** Completes phone sign-in after the Driver enters the code received by SMS. */
+  async confirmPhoneSignIn(verificationId: string, code: string) {
+    if (!verificationId || !/^\d{6}$/.test(String(code || '').trim())) {
+      throw new Error('Enter the 6-digit verification code.');
+    }
+    const credential = PhoneAuthProvider.credential(verificationId, String(code).trim());
+    const result = await signInWithCredential(auth, credential);
+    return result.user;
   },
 
   async logout() {
@@ -167,17 +236,7 @@ export const firebaseAuth = {
    * The web-only path remains available for the browser preview.
    */
   async sendPhoneVerification(phoneInput: string, appVerifier?: any) {
-    const digits = phoneInput.replace(/[^\d+]/g, '');
-    const normalized = digits.startsWith('+233')
-      ? digits
-      : digits.startsWith('233')
-        ? `+${digits}`
-        : digits.startsWith('0')
-          ? `+233${digits.slice(1)}`
-          : `+233${digits}`;
-    if (!/^\+233\d{9}$/.test(normalized)) {
-      throw new Error('Enter a valid Ghana mobile number.');
-    }
+    const normalized = normalizeGhanaPhone(phoneInput);
 
     if (Platform.OS !== 'web') {
       // Require lazily so the existing browser preview retains its Firebase
