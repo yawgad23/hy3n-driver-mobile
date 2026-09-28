@@ -3,7 +3,7 @@ import { httpBatchLink } from "@trpc/client";
 import superjson from "superjson";
 import type { AppRouter } from "hy3n-backend";
 import { getApiBaseUrl } from "@/constants/oauth";
-import * as Auth from "@/lib/_core/auth";
+import { auth } from "@/lib/firebase";
 
 /**
  * tRPC React client for type-safe API calls.
@@ -26,7 +26,9 @@ export function createTRPCClient() {
         // tRPC v11: transformer MUST be inside httpBatchLink, not at root
         transformer: superjson,
         async headers() {
-          const token = await Auth.getSessionToken();
+          // Every account-owned backend action is authorized with the current
+          // Firebase identity. A client-supplied driverId is never trusted.
+          const token = await auth.currentUser?.getIdToken();
           return token ? { Authorization: `Bearer ${token}` } : {};
         },
         // Custom fetch to include credentials for cookie-based auth
