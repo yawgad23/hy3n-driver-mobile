@@ -8,6 +8,7 @@ import {
   Modal, TextInput, StatusBar
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Notifications from 'expo-notifications';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
@@ -69,6 +70,7 @@ const { height } = Dimensions.get('window');
 
 export default function DriverHomeScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { colorScheme } = useThemeContext();
   const isDark = colorScheme === 'dark';
   const themeColors = Colors[isDark ? 'dark' : 'light'];
@@ -970,6 +972,18 @@ export default function DriverHomeScreen() {
         </View>
       </View>
 
+      {!activeTrip && !incomingRide && (
+        <TouchableOpacity
+          style={[styles.trendsShortcut, dynamicStyles.badge, { top: insets.top + 66 }]}
+          onPress={() => router.push('/earnings' as any)}
+          accessibilityRole="button"
+          accessibilityLabel="View earnings trends"
+        >
+          <MaterialIcons name="show-chart" size={19} color={GOLD} />
+          <Text style={[styles.trendsShortcutText, dynamicStyles.text]}>Earnings trends</Text>
+        </TouchableOpacity>
+      )}
+
       {/* Bottom Interface */}
       <View style={[styles.bottomContainer, { paddingBottom: insets.bottom + 20 }]}>
         {/* Incoming Ride Request */}
@@ -1375,6 +1389,8 @@ const styles = StyleSheet.create({
   statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 30, borderWidth: 1 },
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 10 },
   statusText: { fontWeight: '800', fontSize: 14 },
+  trendsShortcut: { position: 'absolute', right: 20, zIndex: 10, flexDirection: 'row', alignItems: 'center', gap: 7, borderWidth: 1, borderRadius: 24, paddingHorizontal: 14, paddingVertical: 10 },
+  trendsShortcutText: { fontSize: 13, fontWeight: '900' },
   notifCircle: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
   headerBadge: { position: 'absolute', top: -3, right: -3, minWidth: 17, height: 17, borderRadius: 9, backgroundColor: RED, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
   headerBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
