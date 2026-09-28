@@ -32,11 +32,11 @@ export default function DriverSettingsScreen() {
   const handleDeleteAccount = () => {
     Alert.alert(
       'Delete Account',
-      'This will permanently delete your driver profile, trip history, and all personal data. This action cannot be undone.',
+      'Your Driver account will be deactivated immediately and you will be signed out. HY3N retains limited identity, trip, payment, and safety records for 6 months for fraud, safety, and legal review before a deletion decision.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Yes, Delete My Account',
+          text: 'Deactivate Account',
           style: 'destructive',
           onPress: async () => {
             setDeleting(true);
@@ -210,7 +210,7 @@ export default function DriverSettingsScreen() {
         <View style={[styles.section, styles.dangerSection, { backgroundColor: colors.card }]}>
           <Text style={[styles.sectionTitle, { color: RED }]}>Danger Zone</Text>
           <Text style={[styles.dangerDesc, { color: colors.muted }]}>
-            Permanently delete your driver profile and all associated data. This action cannot be undone.
+            Delete your account by deactivating it now. Your identity, trip, payment, and safety records are retained for 6 months for fraud, safety, and legal review.
           </Text>
           <TouchableOpacity
             style={[styles.deleteBtn, deleting && { opacity: 0.6 }]}
@@ -223,7 +223,7 @@ export default function DriverSettingsScreen() {
             ) : (
               <MaterialIcons name="delete-forever" size={20} color="#fff" />
             )}
-            <Text style={styles.deleteBtnText}>{deleting ? 'Deleting...' : 'Delete My Account'}</Text>
+            <Text style={styles.deleteBtnText}>{deleting ? 'Deactivating...' : 'Delete My Account'}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

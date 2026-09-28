@@ -20,7 +20,6 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   updateProfile,
-  deleteUser,
   type User,
 } from 'firebase/auth';
 import { Platform } from 'react-native';
@@ -250,10 +249,22 @@ export const firebaseAuth = {
     return onAuthStateChanged(auth, callback);
   },
 
-  async deleteAccount() {
+  async deactivateAccount() {
     const currentUser = auth.currentUser;
     if (!currentUser) throw new Error('No user logged in');
-    await deleteUser(currentUser);
+    const apiBaseUrl = getApiBaseUrl();
+    if (!apiBaseUrl) throw new Error('Account deletion is temporarily unavailable. Please contact support.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch(`${apiBaseUrl}/api/account/deactivate`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'driver' }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.success !== true) {
+      throw new Error(payload?.message || 'Your account could not be deleted. Please try again.');
+    }
+    return payload;
   },
 
   /**

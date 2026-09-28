@@ -209,19 +209,13 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
   };
 
   /**
-   * Removes the signed-in Driver's profile before deleting their Firebase
-   * Authentication account. The latter is essential: merely signing out would
-   * leave the account usable and would not satisfy an account-deletion request.
+   * Deactivates a Driver account and signs it out. The profile, trips, payment,
+   * and safety records are retained server-side for the documented review period.
    */
   const deleteAccount = async () => {
     if (!user) throw new Error('No Driver account is signed in.');
-
-    if (driverProfile?.id) {
-      await firestoreDB.delete(COLLECTIONS.DRIVER_PROFILES, driverProfile.id);
-    }
-
-    await firebaseAuth.deleteAccount();
-    setDriverProfile(null);
+    await firebaseAuth.deactivateAccount();
+    await signOut();
   };
 
   const refreshProfile = async () => {
