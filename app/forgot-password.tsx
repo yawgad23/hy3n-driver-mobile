@@ -22,8 +22,8 @@ export default function DriverForgotPasswordScreen() {
     try {
       await firebaseAuth.resetPassword(email.trim());
       setSent(true);
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to send reset email. Please try again.');
+    } catch {
+      Alert.alert('Unable to send reset link', 'Password reset is temporarily unavailable. Please try again later.');
     } finally {
       setLoading(false);
     }
@@ -36,13 +36,13 @@ export default function DriverForgotPasswordScreen() {
           <MaterialIcons name="arrow-back" size={22} color={TEXT} />
         </TouchableOpacity>
         <Text style={styles.title}>Reset Password</Text>
-        <Text style={styles.subtitle}>Enter your email and we'll send you a reset link</Text>
+        <Text style={styles.subtitle}>Enter the email address associated with your account</Text>
 
         {sent ? (
           <View style={styles.successCard}>
             <MaterialIcons name="check-circle" size={48} color="#22C55E" />
-            <Text style={styles.successTitle}>Email Sent!</Text>
-            <Text style={styles.successText}>Check your inbox for the password reset link.</Text>
+            <Text style={styles.successTitle}>Request received</Text>
+            <Text style={styles.successText}>If an account exists for this email, we have sent a reset link. Check your inbox and spam folder.</Text>
             <TouchableOpacity style={styles.backToLoginBtn} onPress={() => router.push('/login' as any)}>
               <Text style={styles.backToLoginText}>Back to Login</Text>
             </TouchableOpacity>
