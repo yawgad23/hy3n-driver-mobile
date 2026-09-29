@@ -722,7 +722,10 @@ export default function DriverHomeScreen() {
     const totalMinutes = (now - arrivedAtTime) / (1000 * 60);
     const chargeableMinutes = Math.max(0, totalMinutes - FREE_WAITING_MINUTES);
     const categoryConfig = RIDE_CATEGORIES.find(c => c.id === activeTrip?.category) || RIDE_CATEGORIES[0];
-    const feePerMin = categoryConfig.waitingFeePerMin || 0.50;
+    const snapshotRate = Number(activeTrip?.fare_rate_snapshot?.waitingFeePerMinute);
+    const feePerMin = Number.isFinite(snapshotRate) && snapshotRate >= 0
+      ? snapshotRate
+      : (categoryConfig.waitingFeePerMin || 0.50);
     const fee = parseFloat((chargeableMinutes * feePerMin).toFixed(2));
     return { waitingMinutes: parseFloat(chargeableMinutes.toFixed(1)), waitingFee: fee };
   };
@@ -730,12 +733,9 @@ export default function DriverHomeScreen() {
   const beginTrip = async (ride = activeTrip) => {
     if (!ride || !user?.uid) return;
     try {
-      const { waitingMinutes, waitingFee } = calculateWaitingFee();
       const result = await startTrip.mutateAsync({
         driverId: user.uid,
         rideId: ride.id,
-        waitingTimeMinutes: waitingMinutes,
-        waitingFee,
         startLocation: location
           ? { latitude: location.coords.latitude, longitude: location.coords.longitude }
           : undefined,
