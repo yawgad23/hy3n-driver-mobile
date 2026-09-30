@@ -8,7 +8,9 @@ import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { useColors } from '@/hooks/use-colors';
 import { trpc } from '@/lib/trpc';
+import { startAuthenticatedDriverFee } from '@/lib/driver-fee-payment-api';
 import { openDriverSupportWhatsApp } from '@/lib/support-whatsapp';
+import { getApiBaseUrl } from '@/constants/oauth';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -67,7 +69,17 @@ function SignOutLink() {
 // ─── Commission Gate (Automatic Hubtel Charge) ───────────────────────────────
 type CommissionStatus = 'idle' | 'processing' | 'ussd_sent' | 'checking_status' | 'still_pending' | 'paid' | 'failed';
 
-function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () => void }) {
+function providerStatusFromCheck(result: any): string {
+  const data = result?.data || result?.Data || result || {};
+  return String(data.status || data.Status || result?.status || result?.Status || '').trim().toLowerCase();
+}
+
+function providerMessageFromCheck(result: any): string {
+  const data = result?.data || result?.Data || result || {};
+  return String(data.description || data.Description || data.message || data.Message || result?.message || result?.Message || '');
+}
+
+function CommissionGate({ driver, user, onConfirmed }: { driver: any; user: { getIdToken(forceRefresh?: boolean): Promise<string> }; onConfirmed: () => void }) {
   const colors = useColors();
   const isDark = useColorScheme() === 'dark';
   const [commissionStatus, setCommissionStatus] = useState<CommissionStatus>('idle');
@@ -75,7 +87,6 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
   const [error, setError] = useState('');
   const [countdown, setCountdown] = useState(15);
 
-  const chargeMutation = trpc.commission.charge.useMutation();
   const trpcContext = trpc.useUtils();
   // Cast until the mobile lockfile refreshes to the service-aware backend
   // declaration; the live procedure accepts this optional service type.
@@ -141,12 +152,12 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
       polling = true;
       try {
         const result = await trpcContext.client.transactionStatus.check.query({ clientReference: reference });
-        const status = String(result?.data?.status || '').toLowerCase();
+        const status = providerStatusFromCheck(result);
         if (status === 'paid') {
           setCommissionStatus('paid');
           clearInterval(poll);
-        } else if (['failed', 'expired', 'cancelled', 'declined'].includes(status)) {
-          setError(result?.data?.description || 'The Hubtel payment was not completed.');
+        } else if (['failed', 'expired', 'cancelled', 'canceled', 'declined', 'rejected', 'reversed'].includes(status)) {
+          setError(providerMessageFromCheck(result) || 'The Hubtel payment was not completed.');
           setCommissionStatus('failed');
           clearInterval(poll);
         }
@@ -169,14 +180,16 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
     const driverId = driver.user_id || driver.id;
     const today = new Date().toISOString().split('T')[0];
     try {
-      const result = await chargeMutation.mutateAsync({
+      // Refresh the Firebase credential at the point of payment. This avoids a
+      // stale tRPC authorization header in a long-running native session.
+      const result = await startAuthenticatedDriverFee(user, {
         driverId,
         driverName: driver.full_name || 'Driver',
         momoNumber: phoneInput,
         momoNetwork: selectedNetwork,
         serviceType: driver.service_type || 'car',
         date: today,
-      });
+      }, getApiBaseUrl());
 
       if (result.success) {
         setCommissionRecord(result.commissionRecord);
@@ -230,15 +243,15 @@ function CommissionGate({ driver, onConfirmed }: { driver: any; onConfirmed: () 
       try {
         const res = await trpcContext.client.transactionStatus.check.query({ clientReference: ref });
         
-        if (res && res.responseCode === '0000' && res.data) {
-          const status = res.data.status;
-          if (status === 'Paid') {
+        if (res) {
+          const status = providerStatusFromCheck(res);
+          if (['paid', 'success', 'successful', 'completed', 'complete'].includes(status)) {
             clearInterval(countdownInterval);
             setCommissionStatus('paid');
             return true;
-          } else if (status === 'Failed' || status === 'Expired' || status === 'Cancelled' || status === 'Declined') {
+          } else if (['failed', 'expired', 'cancelled', 'canceled', 'declined', 'rejected', 'reversed'].includes(status)) {
             clearInterval(countdownInterval);
-            setError(res.data.description || 'Transaction failed on Hubtel.');
+            setError(providerMessageFromCheck(res) || 'Transaction failed on Hubtel.');
             setCommissionStatus('failed');
             return true;
           }
@@ -1082,7 +1095,7 @@ export default function DriverTabLayout() {
             display: isLockedTab ? 'flex' : 'none'
           }
         ]}>
-          <CommissionGate driver={driverProfile} onConfirmed={() => checkPaid.refetch()} />
+          <CommissionGate driver={driverProfile} user={user} onConfirmed={() => checkPaid.refetch()} />
         </View>
       )}
     </View>
