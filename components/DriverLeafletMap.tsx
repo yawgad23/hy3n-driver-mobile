@@ -1,7 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { View } from 'react-native';
-import { WebView } from 'react-native-webview';
-import { MAP_MARKER_ASSETS } from '@/components/map-marker-assets';
+import MapView, { Marker, Polyline, type LatLng, type Region } from 'react-native-maps';
 
 type MapTarget = { latitude: number; longitude: number; label: string };
 type Props = {
@@ -15,129 +14,16 @@ type Props = {
 };
 
 const DEFAULT_POSITION = { latitude: 5.6037, longitude: -0.187 };
+const DEFAULT_DELTA = 0.035;
 
-const safelySerialize = (value: unknown) => JSON.stringify(value)
-  .replace(/</g, '\\u003c')
-  .replace(/>/g, '\\u003e')
-  .replace(/&/g, '\\u0026');
-
-/**
- * The WebView source is deliberately stable while the Driver moves. Replacing
- * its HTML on every GPS update causes iOS to reload Leaflet and flash map tiles.
- * Live state is sent into the already-loaded map through injectJavaScript.
- */
-function buildMapHtml(surface: string, carArt: string) {
-  return `<!doctype html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <style>
-    html,body,#map{height:100%;margin:0;background:#dfe7e5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-    .leaflet-control-attribution,.leaflet-control-zoom{display:none}
-    .driver-marker{transition:transform .85s linear!important}
-    .driver-car{width:46px;height:46px;background-image:url('${carArt}');background-size:contain;background-position:center;background-repeat:no-repeat;filter:drop-shadow(0 2px 4px #0008);transform-origin:23px 23px;transition:transform .35s ease-out}
-    .target-pin{width:26px;height:26px;border-radius:50% 50% 50% 0;background:#d4af37;border:3px solid #fff;box-shadow:0 2px 8px #0008;transform:rotate(-45deg)}
-    .target-pin:after{content:'';display:block;width:8px;height:8px;background:#151515;border-radius:50%;margin:6px}
-    .eta{position:fixed;z-index:900;top:86px;left:50%;transform:translateX(-50%);background:#006b3f;color:#fff;border-radius:14px;padding:9px 13px;text-align:center;box-shadow:0 4px 14px #0006;min-width:116px}
-    .eta b{display:block;font-size:20px;line-height:22px}.eta span{font-size:11px;font-weight:800;letter-spacing:.3px}
-  </style>
-</head>
-<body>
-  <div id="map"></div><div id="eta" class="eta" style="display:none"></div>
-  <script>
-    (function () {
-      var fallbackPosition={latitude:${DEFAULT_POSITION.latitude},longitude:${DEFAULT_POSITION.longitude},heading:0,target:null,etaMinutes:null,tripStatus:null};
-      var map=L.map('map',{zoomControl:false,attributionControl:false,fadeAnimation:false,zoomAnimation:false}).setView([fallbackPosition.latitude,fallbackPosition.longitude],15);
-      var primaryTileUrl='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-      var fallbackTileUrl='https://tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png';
-      var tiles=L.tileLayer(primaryTileUrl,{maxZoom:19,updateWhenIdle:false,keepBuffer:6}).addTo(map);
-      tiles.on('tileerror',function(event){
-        var image=event&&event.tile;
-        var coords=event&&event.coords;
-        if(!image||!coords||image.dataset.hy3nFallback==='1')return;
-        image.dataset.hy3nFallback='1';
-        image.src=fallbackTileUrl
-          .replace('{z}',String(coords.z))
-          .replace('{x}',String(coords.x))
-          .replace('{y}',String(coords.y));
-      });
-      setTimeout(function(){map.invalidateSize({animate:false,pan:false});},150);
-      window.addEventListener('resize',function(){map.invalidateSize({animate:false,pan:false});});
-      var carIcon=L.divIcon({html:'<div class="driver-car"></div>',iconSize:[46,46],iconAnchor:[23,23],className:'driver-marker'});
-      var carMarker=L.marker([fallbackPosition.latitude,fallbackPosition.longitude],{icon:carIcon,keyboard:false}).addTo(map);
-      var targetMarker=null;
-      var routeLine=null;
-      var targetKey='';
-      var routeRequest=0;
-      var etaElement=document.getElementById('eta');
-
-      function numberOr(value,fallback){var parsed=Number(value);return Number.isFinite(parsed)?parsed:fallback}
-      function position(state){return [numberOr(state&&state.latitude,fallbackPosition.latitude),numberOr(state&&state.longitude,fallbackPosition.longitude)]}
-      function setCarHeading(heading){
-        var icon=carMarker.getElement();
-        var car=icon&&icon.querySelector('.driver-car');
-        if(car) car.style.transform='rotate(' + numberOr(heading,0) + 'deg)';
-      }
-      function clearRoute(){
-        if(routeLine){map.removeLayer(routeLine);routeLine=null}
-        if(targetMarker){map.removeLayer(targetMarker);targetMarker=null}
-      }
-      function fallbackRoute(from,target){
-        routeLine=L.polyline([from,target],{color:'#006b3f',weight:5,opacity:.9,dashArray:'12,7'}).addTo(map);
-      }
-      function renderRoute(from,target,key){
-        var request=++routeRequest;
-        var fallback=function(){if(request===routeRequest&&key===targetKey){if(routeLine){map.removeLayer(routeLine)}fallbackRoute(from,target)}};
-        fetch('https://router.project-osrm.org/route/v1/driving/'+from[1]+','+from[0]+';'+target[1]+','+target[0]+'?overview=full&geometries=geojson')
-          .then(function(response){return response.json()})
-          .then(function(data){
-            if(request!==routeRequest||key!==targetKey)return;
-            var coordinates=data&&data.routes&&data.routes[0]&&data.routes[0].geometry&&data.routes[0].geometry.coordinates;
-            if(!coordinates){fallback();return}
-            if(routeLine){map.removeLayer(routeLine)}
-            routeLine=L.polyline(coordinates.map(function(point){return[point[1],point[0]]}),{color:'#006b3f',weight:5,opacity:.92}).addTo(map);
-          })
-          .catch(fallback);
-      }
-      function updateTarget(state,from){
-        var target=state&&state.target;
-        var key=target?String(target.latitude)+'|'+String(target.longitude)+'|'+String(target.label||''):'';
-        if(key===targetKey)return;
-        targetKey=key;
-        clearRoute();
-        if(!target)return;
-        var point=[numberOr(target.latitude,from[0]),numberOr(target.longitude,from[1])];
-        targetMarker=L.marker(point,{icon:L.divIcon({html:'<div class="target-pin"></div>',iconSize:[32,32],iconAnchor:[16,28],className:''}),keyboard:false}).addTo(map).bindTooltip(String(target.label||'Destination'),{permanent:false});
-        renderRoute(from,point,key);
-        map.fitBounds([from,point],{padding:[58,42],maxZoom:15,animate:true,duration:.45});
-      }
-      function updateEta(state){
-        if(!state||!state.target){etaElement.style.display='none';return}
-        etaElement.style.display='block';
-        etaElement.innerHTML='<b>'+(state.etaMinutes||'—')+' min</b><span>'+(state.tripStatus==='dropoff'?'TO DROPOFF':'TO PICKUP')+'</span>';
-      }
-      window.__HY3N_UPDATE__=function(state){
-        var current=position(state);
-        carMarker.setLatLng(current);
-        setCarHeading(state&&state.heading);
-        // Smooth pan keeps the Driver centered without reloading the map tiles.
-        map.panTo(current,{animate:true,duration:.75,noMoveStart:true});
-        updateTarget(state,current);
-        updateEta(state);
-        setTimeout(function(){setCarHeading(state&&state.heading)},0);
-      };
-      window.__HY3N_UPDATE__(fallbackPosition);
-    })();
-  </script>
-</body>
-</html>`;
+function regionFor(latitude: number, longitude: number): Region {
+  return { latitude, longitude, latitudeDelta: DEFAULT_DELTA, longitudeDelta: DEFAULT_DELTA };
 }
 
 /**
- * Driver navigation view: keeps one Leaflet WebView mounted and smoothly moves
- * the realistic car marker as the phone reports each live GPS update.
+ * Native Apple/Google map renderer for Driver. No Leaflet WebView or external
+ * tile/CDN script is required, preventing a failed browser resource from
+ * turning the online Driver map into an empty background panel.
  */
 export default function DriverLeafletMap({
   latitude = DEFAULT_POSITION.latitude,
@@ -148,46 +34,62 @@ export default function DriverLeafletMap({
   tripStatus = null,
   dark = false,
 }: Props) {
-  const webViewRef = useRef<WebView>(null);
-  const [mapReady, setMapReady] = useState(false);
-  const surface = dark ? '#1f2937' : '#eef1f3';
-  const targetLatitude = target?.latitude ?? null;
-  const targetLongitude = target?.longitude ?? null;
-  const targetLabel = target?.label ?? null;
-
-  const mapState = useMemo(() => ({
-    latitude,
-    longitude,
-    heading: Number(heading || 0),
-    target: targetLatitude !== null && targetLongitude !== null && targetLabel !== null
-      ? { latitude: targetLatitude, longitude: targetLongitude, label: targetLabel }
-      : null,
-    etaMinutes,
-    tripStatus,
-  }), [etaMinutes, heading, latitude, longitude, targetLabel, targetLatitude, targetLongitude, tripStatus]);
-  const serializedState = useMemo(() => safelySerialize(mapState), [mapState]);
-  const source = useMemo(() => ({ html: buildMapHtml(surface, MAP_MARKER_ASSETS.car) }), [surface]);
+  const mapRef = useRef<MapView>(null);
+  const position = useMemo(
+    () => ({
+      latitude: Number.isFinite(latitude) ? latitude : DEFAULT_POSITION.latitude,
+      longitude: Number.isFinite(longitude) ? longitude : DEFAULT_POSITION.longitude,
+    }),
+    [latitude, longitude],
+  );
+  const targetIsValid = Boolean(target && Number.isFinite(target.latitude) && Number.isFinite(target.longitude));
+  const route: LatLng[] = targetIsValid && target
+    ? [position, { latitude: target.latitude, longitude: target.longitude }]
+    : [];
 
   useEffect(() => {
-    if (!mapReady) return;
-    // The trailing expression is required by iOS WebView's injected-JS API.
-    webViewRef.current?.injectJavaScript(`window.__HY3N_UPDATE__&&window.__HY3N_UPDATE__(${serializedState});true;`);
-  }, [mapReady, serializedState]);
+    mapRef.current?.animateToRegion(regionFor(position.latitude, position.longitude), 450);
+  }, [position.latitude, position.longitude]);
+
+  const driverDescription = targetIsValid
+    ? `${etaMinutes && etaMinutes > 0 ? `${Math.max(1, Math.round(etaMinutes))} min · ` : ''}${tripStatus === 'dropoff' ? 'Navigating to drop-off' : 'Navigating to pickup'}`
+    : 'Online and ready for nearby trips';
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#dfe7e5' }}>
-      <WebView
-        ref={webViewRef}
-        source={source}
-        style={{ flex: 1, backgroundColor: '#dfe7e5' }}
-        onLoadStart={() => setMapReady(false)}
-        onLoadEnd={() => setMapReady(true)}
-        originWhitelist={["*"]}
-        javaScriptEnabled
-        domStorageEnabled
-        scrollEnabled={false}
-        bounces={false}
-      />
+    <View style={{ flex: 1, backgroundColor: dark ? '#18232F' : '#E7EEF2' }}>
+      <MapView
+        ref={mapRef}
+        style={{ flex: 1 }}
+        initialRegion={regionFor(position.latitude, position.longitude)}
+        mapType="standard"
+        showsCompass={false}
+        showsTraffic={false}
+        showsBuildings={false}
+        showsIndoors={false}
+        rotateEnabled={false}
+        pitchEnabled={false}
+        toolbarEnabled={false}
+        userInterfaceStyle={dark ? 'dark' : 'light'}
+      >
+        <Marker
+          coordinate={position}
+          title="You are online"
+          description={driverDescription}
+          pinColor="#006B3F"
+          rotation={Number.isFinite(heading) ? Number(heading) : 0}
+          flat
+        />
+        {targetIsValid && target && (
+          <Marker
+            coordinate={{ latitude: target.latitude, longitude: target.longitude }}
+            title={target.label || (tripStatus === 'dropoff' ? 'Drop-off' : 'Pickup')}
+            pinColor="#D4AF37"
+          />
+        )}
+        {route.length === 2 && (
+          <Polyline coordinates={route} strokeColor="#006B3F" strokeWidth={5} lineDashPattern={[10, 8]} />
+        )}
+      </MapView>
     </View>
   );
 }
