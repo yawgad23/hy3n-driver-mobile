@@ -31,7 +31,7 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    buildNumber: "59",
+    buildNumber: "60",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     ...(iosGoogleMapsApiKey ? { config: { googleMapsApiKey: iosGoogleMapsApiKey } } : {}),
@@ -86,7 +86,6 @@ const config: ExpoConfig = {
     "expo-font",
     "expo-notifications",
     "expo-web-browser",
-    "./plugins/withNativeMapsFrameworkCompatibility",
     "@react-native-firebase/app",
     "@react-native-firebase/auth",
     "@react-native-google-signin/google-signin",
