@@ -41,7 +41,9 @@ export default function DriverLeafletMap({
   const mapLifecycleRef = useRef<DriverMapLifecycle | null>(null);
   const foregroundRef = useRef(AppState.currentState === 'active');
   const latestStateRef = useRef('');
-  const surface = dark ? '#1f2937' : '#eef1f3';
+  // Match the average dark basemap tone so iOS does not flash a navy/blank
+  // WebView surface before dark-gray map tiles are first painted.
+  const surface = dark ? '#343a40' : '#eef1f3';
   const targetLatitude = target?.latitude ?? null;
   const targetLongitude = target?.longitude ?? null;
   const targetLabel = target?.label ?? null;
@@ -73,7 +75,10 @@ export default function DriverLeafletMap({
     });
   }
   const lifecycle = mapLifecycleRef.current;
-  const html = useMemo(() => ({ html: buildDriverMapHtml(surface, MAP_MARKER_ASSETS.car, generation) }), [surface, generation]);
+  const html = useMemo(
+    () => ({ html: buildDriverMapHtml(surface, MAP_MARKER_ASSETS.car, generation, dark) }),
+    [surface, generation, dark],
+  );
 
   useEffect(() => {
     lifecycle.revive();

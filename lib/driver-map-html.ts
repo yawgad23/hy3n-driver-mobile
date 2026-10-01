@@ -8,7 +8,7 @@ const DEFAULT_POSITION = { latitude: 5.6037, longitude: -0.187 };
  * The native side does not call the map ready until this page says Leaflet,
  * its map, and its update function have actually initialized.
  */
-export function buildDriverMapHtml(surface: string, carArt: string, generation: number) {
+export function buildDriverMapHtml(surface: string, carArt: string, generation: number, dark = false) {
   return `<!doctype html>
 <html>
 <head>
@@ -17,6 +17,7 @@ export function buildDriverMapHtml(surface: string, carArt: string, generation: 
   <style>
     html,body,#map{height:100%;margin:0;background:${surface};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
     .leaflet-control-zoom{display:none}
+    .leaflet-tile{filter:${dark ? 'brightness(.30) saturate(.45) contrast(1.08)' : 'none'}}
     .driver-marker{transition:transform .85s linear!important}
     .driver-car{width:46px;height:46px;background-image:url('${carArt}');background-size:contain;background-position:center;background-repeat:no-repeat;filter:drop-shadow(0 2px 4px #0008);transform-origin:23px 23px;transition:transform .35s ease-out}
     .target-pin{width:26px;height:26px;border-radius:50% 50% 50% 0;background:#d4af37;border:3px solid #fff;box-shadow:0 2px 8px #0008;transform:rotate(-45deg)}

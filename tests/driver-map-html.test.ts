@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import vm from 'node:vm';
 import { buildDriverMapHtml } from '../lib/driver-map-html';
 
-const exampleHtml = buildDriverMapHtml('#1f2937', 'data:image/png;base64,eA==', 3);
+const exampleHtml = buildDriverMapHtml('#343a40', 'data:image/png;base64,eA==', 3, true);
 
 test('the complete Leaflet renderer is bundled locally and both page scripts parse', () => {
   assert.equal(exampleHtml.includes('https://unpkg.com'), false);
@@ -36,7 +36,8 @@ test('the page reports tile failure separately from a dead WebView, with a retry
 });
 
 test('the map theme, current marker and active route remain in the HTML', () => {
-  assert.match(exampleHtml, /background:#1f2937/);
+  assert.match(exampleHtml, /background:#343a40/);
+  assert.match(exampleHtml, /filter:brightness\(\.30\) saturate\(\.45\) contrast\(1\.08\)/);
   assert.match(exampleHtml, /data:image\/png;base64,eA==/);
   assert.match(exampleHtml, /carMarker\.setLatLng\(current\)/);
   assert.match(exampleHtml, /map\.fitBounds/);
