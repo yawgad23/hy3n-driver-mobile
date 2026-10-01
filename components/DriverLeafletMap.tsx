@@ -34,7 +34,7 @@ function buildMapHtml(surface: string, carArt: string) {
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
-    html,body,#map{height:100%;margin:0;background:${surface};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+    html,body,#map{height:100%;margin:0;background:#dfe7e5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
     .leaflet-control-attribution,.leaflet-control-zoom{display:none}
     .driver-marker{transition:transform .85s linear!important}
     .driver-car{width:46px;height:46px;background-image:url('${carArt}');background-size:contain;background-position:center;background-repeat:no-repeat;filter:drop-shadow(0 2px 4px #0008);transform-origin:23px 23px;transition:transform .35s ease-out}
@@ -49,8 +49,22 @@ function buildMapHtml(surface: string, carArt: string) {
   <script>
     (function () {
       var fallbackPosition={latitude:${DEFAULT_POSITION.latitude},longitude:${DEFAULT_POSITION.longitude},heading:0,target:null,etaMinutes:null,tripStatus:null};
-      var map=L.map('map',{zoomControl:false,attributionControl:false}).setView([fallbackPosition.latitude,fallbackPosition.longitude],15);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,updateWhenIdle:true,keepBuffer:4}).addTo(map);
+      var map=L.map('map',{zoomControl:false,attributionControl:false,fadeAnimation:false,zoomAnimation:false}).setView([fallbackPosition.latitude,fallbackPosition.longitude],15);
+      var primaryTileUrl='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+      var fallbackTileUrl='https://tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png';
+      var tiles=L.tileLayer(primaryTileUrl,{maxZoom:19,updateWhenIdle:false,keepBuffer:6}).addTo(map);
+      tiles.on('tileerror',function(event){
+        var image=event&&event.tile;
+        var coords=event&&event.coords;
+        if(!image||!coords||image.dataset.hy3nFallback==='1')return;
+        image.dataset.hy3nFallback='1';
+        image.src=fallbackTileUrl
+          .replace('{z}',String(coords.z))
+          .replace('{x}',String(coords.x))
+          .replace('{y}',String(coords.y));
+      });
+      setTimeout(function(){map.invalidateSize({animate:false,pan:false});},150);
+      window.addEventListener('resize',function(){map.invalidateSize({animate:false,pan:false});});
       var carIcon=L.divIcon({html:'<div class="driver-car"></div>',iconSize:[46,46],iconAnchor:[23,23],className:'driver-marker'});
       var carMarker=L.marker([fallbackPosition.latitude,fallbackPosition.longitude],{icon:carIcon,keyboard:false}).addTo(map);
       var targetMarker=null;
@@ -161,11 +175,11 @@ export default function DriverLeafletMap({
   }, [mapReady, serializedState]);
 
   return (
-    <View style={{ flex: 1, backgroundColor: surface }}>
+    <View style={{ flex: 1, backgroundColor: '#dfe7e5' }}>
       <WebView
         ref={webViewRef}
         source={source}
-        style={{ flex: 1, backgroundColor: surface }}
+        style={{ flex: 1, backgroundColor: '#dfe7e5' }}
         onLoadStart={() => setMapReady(false)}
         onLoadEnd={() => setMapReady(true)}
         originWhitelist={["*"]}
