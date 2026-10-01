@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 import MapView, { Marker, Polyline, type LatLng, type Region } from 'react-native-maps';
 
@@ -15,19 +15,20 @@ type Props = {
 
 const DEFAULT_POSITION = { latitude: 5.6037, longitude: -0.187 };
 const DEFAULT_DELTA = 0.035;
+const DRIVER_CAR_MARKER = require('@/assets/images/driver-map-car-marker.png');
 
 function regionFor(latitude: number, longitude: number): Region {
   return { latitude, longitude, latitudeDelta: DEFAULT_DELTA, longitudeDelta: DEFAULT_DELTA };
 }
 
 /**
- * Native Apple/Google map renderer for Driver. No Leaflet WebView or external
- * tile/CDN script is required, preventing a failed browser resource from
- * turning the online Driver map into an empty background panel.
+ * Native Apple/Google map renderer for Driver. The vehicle marker is a bundled
+ * local asset so it renders without the WebView, a remote icon, or a map-tile
+ * request. Camera updates wait for the native map to be ready.
  */
 export default function DriverLeafletMap({
-  latitude = DEFAULT_POSITION.latitude,
-  longitude = DEFAULT_POSITION.longitude,
+  latitude,
+  longitude,
   heading = 0,
   target = null,
   etaMinutes = null,
@@ -35,12 +36,14 @@ export default function DriverLeafletMap({
   dark = false,
 }: Props) {
   const mapRef = useRef<MapView>(null);
+  const [mapReady, setMapReady] = useState(false);
+  const hasLivePosition = Number.isFinite(latitude) && Number.isFinite(longitude);
   const position = useMemo(
     () => ({
-      latitude: Number.isFinite(latitude) ? latitude : DEFAULT_POSITION.latitude,
-      longitude: Number.isFinite(longitude) ? longitude : DEFAULT_POSITION.longitude,
+      latitude: hasLivePosition ? Number(latitude) : DEFAULT_POSITION.latitude,
+      longitude: hasLivePosition ? Number(longitude) : DEFAULT_POSITION.longitude,
     }),
-    [latitude, longitude],
+    [hasLivePosition, latitude, longitude],
   );
   const targetIsValid = Boolean(target && Number.isFinite(target.latitude) && Number.isFinite(target.longitude));
   const route: LatLng[] = targetIsValid && target
@@ -48,8 +51,9 @@ export default function DriverLeafletMap({
     : [];
 
   useEffect(() => {
+    if (!mapReady || !hasLivePosition) return;
     mapRef.current?.animateToRegion(regionFor(position.latitude, position.longitude), 450);
-  }, [position.latitude, position.longitude]);
+  }, [hasLivePosition, mapReady, position.latitude, position.longitude]);
 
   const driverDescription = targetIsValid
     ? `${etaMinutes && etaMinutes > 0 ? `${Math.max(1, Math.round(etaMinutes))} min · ` : ''}${tripStatus === 'dropoff' ? 'Navigating to drop-off' : 'Navigating to pickup'}`
@@ -70,14 +74,17 @@ export default function DriverLeafletMap({
         pitchEnabled={false}
         toolbarEnabled={false}
         userInterfaceStyle={dark ? 'dark' : 'light'}
+        onMapReady={() => setMapReady(true)}
       >
         <Marker
           coordinate={position}
           title="You are online"
           description={driverDescription}
-          pinColor="#006B3F"
+          image={DRIVER_CAR_MARKER}
+          anchor={{ x: 0.5, y: 0.5 }}
           rotation={Number.isFinite(heading) ? Number(heading) : 0}
           flat
+          tracksViewChanges={false}
         />
         {targetIsValid && target && (
           <Marker
