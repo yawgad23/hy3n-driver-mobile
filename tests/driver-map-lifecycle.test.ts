@@ -14,13 +14,15 @@ function harness() {
   const probes: number[] = [];
   const statuses: DriverMapStatus[] = [];
   let replayed = 0;
+  let foregroundRefreshes = 0;
   const map = new DriverMapLifecycle({
     onRemount: (generation) => remounts.push(generation),
     onProbe: (generation) => probes.push(generation),
     onReady: () => { replayed++; },
+    onForegroundRefresh: () => { foregroundRefreshes++; },
     onStatus: (status) => statuses.push(status),
   });
-  return { map, remounts, probes, statuses, get replayed() { return replayed; } };
+  return { map, remounts, probes, statuses, get replayed() { return replayed; }, get foregroundRefreshes() { return foregroundRefreshes; } };
 }
 
 function ready(h: Harness) {
@@ -106,7 +108,7 @@ test('a successful health pong keeps the map mounted; focus replays current GPS'
   } finally { clock.uninstall(); }
 });
 
-test('an iOS foreground event remounts a blank compositor even when JavaScript still responds', () => {
+test('an iOS foreground event refreshes the existing compositor without a visible WebView remount', () => {
   const clock = FakeTimers.install({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
     const h = harness();
@@ -114,10 +116,9 @@ test('an iOS foreground event remounts a blank compositor even when JavaScript s
     h.map.setVisible(false);
     h.map.setVisible(true);
     h.map.onPong(0);
-    h.map.recoverFromForeground();
-    assert.deepEqual(h.remounts, [1]);
-    assert.equal(h.map.isReady, false);
-    h.map.onReadyMessage(1);
+    h.map.refreshFromForeground();
+    assert.deepEqual(h.remounts, []);
+    assert.equal(h.foregroundRefreshes, 1);
     assert.equal(h.map.isReady, true);
     h.map.dispose();
   } finally { clock.uninstall(); }

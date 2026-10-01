@@ -160,6 +160,14 @@ export function buildDriverMapHtml(surface: string, carArt: string, generation: 
           refreshSurface();
           notify('pong');
         };
+        window.__HY3N_FOREGROUND__=function(){
+          // Preserve the existing rendered document on an ordinary iOS resume.
+          // Two surface refreshes cover the WKWebView/React Native layout handoff
+          // without blanking the map through a full WebView remount.
+          refreshSurface();
+          requestAnimationFrame(refreshSurface);
+          setTimeout(refreshSurface,180);
+        };
         window.__HY3N_LAYOUT__=function(width,height){
           if(Number(width)>1&&Number(height)>1) refreshSurface();
         };

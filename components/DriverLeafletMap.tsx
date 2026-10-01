@@ -65,6 +65,9 @@ export default function DriverLeafletMap({
       onReady: () => webViewRef.current?.injectJavaScript(
         `window.__HY3N_UPDATE__&&window.__HY3N_UPDATE__(${latestStateRef.current});true;`,
       ),
+      onForegroundRefresh: () => webViewRef.current?.injectJavaScript(
+        'window.__HY3N_FOREGROUND__&&window.__HY3N_FOREGROUND__();true;',
+      ),
       onProbe: () => webViewRef.current?.injectJavaScript('window.__HY3N_HEALTH__&&window.__HY3N_HEALTH__();true;'),
       onStatus: setStatus,
     });
@@ -88,12 +91,11 @@ export default function DriverLeafletMap({
       }
       if (!focused) return;
       lifecycle.setVisible(true);
-      // iOS can blank an inline WKWebView after even a short background
-      // transition without firing either process-termination callback. Its JS
-      // context can still answer a probe, so remount the bounded inline page
-      // once on foreground instead of trusting a pong from a blank compositor.
+      // Refresh Leaflet in place first. Rebuilding the inline WebView on every
+      // foreground event visibly flashes the map. A remount is reserved for an
+      // actual process/render failure or a missed health pong.
       if (wasForeground === false && lifecycle.isReady) {
-        lifecycle.recoverFromForeground();
+        lifecycle.refreshFromForeground();
       }
     });
     return () => subscription.remove();

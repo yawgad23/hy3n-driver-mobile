@@ -3,6 +3,7 @@ export type DriverMapStatus = 'loading' | 'ready' | 'tiles-unavailable' | 'unava
 export type DriverMapCallbacks = {
   onRemount: (generation: number) => void;
   onReady: () => void;
+  onForegroundRefresh: () => void;
   onProbe: (generation: number) => void;
   onStatus: (status: DriverMapStatus) => void;
 };
@@ -112,14 +113,14 @@ export class DriverMapLifecycle {
   }
 
   /**
-   * WKWebView can return a JavaScript pong after iOS resumes it while its
-   * compositor is still blank. A fresh inline document is the reliable
-   * recovery, including after short app switches where WebKit emits no
-   * content-process-termination event.
+   * Refresh the existing Leaflet surface first when iOS returns to the app.
+   * Recreating the entire inline document on every foreground event causes a
+   * visible flash. A remount remains reserved for a real WebView failure or a
+   * health probe timeout, both of which enter through onFailure().
    */
-  recoverFromForeground() {
+  refreshFromForeground() {
     if (this.disposed || !this.visible || !this.ready) return;
-    this.onFailure(this.generation);
+    this.callbacks.onForegroundRefresh();
   }
 
   private recover(generation: number) {

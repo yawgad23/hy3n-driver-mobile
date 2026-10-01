@@ -42,6 +42,7 @@ test('the map theme, current marker and active route remain in the HTML', () => 
   assert.match(exampleHtml, /map\.fitBounds/);
   assert.match(exampleHtml, /map\.invalidateSize/);
   assert.match(exampleHtml, /window\.__HY3N_HEALTH__=function/);
+  assert.match(exampleHtml, /window\.__HY3N_FOREGROUND__=function/);
   assert.match(exampleHtml, /window\.__HY3N_LAYOUT__=function/);
   assert.match(exampleHtml, /document\.addEventListener\('visibilitychange'/);
 });
