@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { Image, View } from 'react-native';
 import MapView, { Marker, Polyline, type LatLng, type Region } from 'react-native-maps';
 
 type MapTarget = { latitude: number; longitude: number; label: string };
@@ -22,9 +22,10 @@ function regionFor(latitude: number, longitude: number): Region {
 }
 
 /**
- * Native Apple/Google map renderer for Driver. The vehicle marker is a bundled
- * local asset so it renders without the WebView, a remote icon, or a map-tile
- * request. Camera updates wait for the native map to be ready.
+ * Native Apple/Google map renderer for Driver. The vehicle marker is rendered
+ * as an explicit child Image rather than Marker.image: on iOS the latter can
+ * silently fall back to the default green pin when a bundled asset is loaded.
+ * Camera updates wait for the native map to be ready.
  */
 export default function DriverLeafletMap({
   latitude,
@@ -80,12 +81,19 @@ export default function DriverLeafletMap({
           coordinate={position}
           title="You are online"
           description={driverDescription}
-          image={DRIVER_CAR_MARKER}
           anchor={{ x: 0.5, y: 0.5 }}
           rotation={Number.isFinite(heading) ? Number(heading) : 0}
           flat
-          tracksViewChanges={false}
-        />
+          tracksViewChanges
+        >
+          <Image
+            source={DRIVER_CAR_MARKER}
+            style={{ width: 64, height: 64 }}
+            resizeMode="contain"
+            accessible
+            accessibilityLabel="Your HY3N vehicle location"
+          />
+        </Marker>
         {targetIsValid && target && (
           <Marker
             coordinate={{ latitude: target.latitude, longitude: target.longitude }}
