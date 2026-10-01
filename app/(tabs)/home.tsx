@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as ExpoLocation from 'expo-location';
 import { useDriverPreferences } from '@/hooks/use-driver-preferences';
-import { RIDE_CATEGORIES, FREE_WAITING_MINUTES, POPULAR_DESTINATIONS, calculateFare, getFareBreakdown } from '@/constants/rides';
+import { RIDE_CATEGORIES, FREE_WAITING_MINUTES, POPULAR_DESTINATIONS } from '@/constants/rides';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView,
   Dimensions, Alert, ActivityIndicator, Animated, Image, Platform, PanResponder,
@@ -736,22 +736,6 @@ export default function DriverHomeScreen() {
     }
   };
 
-  // Calculate waiting fee
-  const calculateWaitingFee = () => {
-    if (!waitingStartedAt) return { waitingMinutes: 0, waitingFee: 0 };
-    const arrivedAtTime = new Date(waitingStartedAt).getTime();
-    const now = Date.now();
-    const totalMinutes = (now - arrivedAtTime) / (1000 * 60);
-    const chargeableMinutes = Math.max(0, totalMinutes - FREE_WAITING_MINUTES);
-    const categoryConfig = RIDE_CATEGORIES.find(c => c.id === activeTrip?.category) || RIDE_CATEGORIES[0];
-    const snapshotRate = Number(activeTrip?.fare_rate_snapshot?.waitingFeePerMinute);
-    const feePerMin = Number.isFinite(snapshotRate) && snapshotRate >= 0
-      ? snapshotRate
-      : (categoryConfig.waitingFeePerMin || 0.50);
-    const fee = parseFloat((chargeableMinutes * feePerMin).toFixed(2));
-    return { waitingMinutes: parseFloat(chargeableMinutes.toFixed(1)), waitingFee: fee };
-  };
-
   const beginTrip = async (ride = activeTrip) => {
     if (!ride || !user?.uid) return;
     try {
@@ -804,7 +788,9 @@ export default function DriverHomeScreen() {
     }
   };
 
-  // End trip and calculate a transparent category-based fare from tracked distance.
+  // The backend calculates the final fare from the server trip meter and booked
+  // rate snapshot. Drivers submit only travel telemetry; the amount is shown
+  // after completion, not while an offer or trip is active.
   const handleEndTrip = async () => {
     if (!activeTrip) return;
     if (activeTrip.status !== 'in_progress' || !activeTrip.trip_started_at) {
@@ -812,10 +798,7 @@ export default function DriverHomeScreen() {
       return;
     }
     try {
-      const waitingFee = Number(activeTrip.waiting_fee || 0);
       const durationMinutes = tripStartedAt ? Math.max(1, (Date.now() - new Date(tripStartedAt).getTime()) / 60000) : Number(activeTrip.duration_minutes || 0);
-      const calculatedFare = calculateFare(activeTrip.category || 'standard', tripDistanceKm, durationMinutes, Number(activeTrip.surge_multiplier || 1));
-      const fareBreakdown = getFareBreakdown(activeTrip.category || 'standard', tripDistanceKm, durationMinutes, Number(activeTrip.surge_multiplier || 1));
 
       if (!user?.uid) throw new Error('Sign in required');
       if (location) {
@@ -832,11 +815,8 @@ export default function DriverHomeScreen() {
       const result = await completeTrip.mutateAsync({
         driverId: user.uid,
         rideId: activeTrip.id,
-        finalFare: calculatedFare,
-        tipAmount: Number(activeTrip.tip_amount || 0),
         actualDistanceKm: Number(tripDistanceKm.toFixed(2)),
         actualDurationMinutes: Number(durationMinutes.toFixed(1)),
-        fareBreakdown,
       });
 
       const completed = { ...result.ride };
@@ -1036,14 +1016,6 @@ export default function DriverHomeScreen() {
               <Text style={[styles.rideDetails, dynamicStyles.muted]} numberOfLines={1}>
                 To: {incomingRide.destination_address || 'Destination'}
               </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
-                <Text style={[styles.rideFare, { color: GOLD }]}>GH₵{incomingRide.fare_estimate}</Text>
-                {incomingRide.surge_multiplier && incomingRide.surge_multiplier > 1 && (
-                  <Text style={[styles.surgeText, { color: RED, marginLeft: 8 }]}>
-                    {incomingRide.surge_multiplier}x Surge
-                  </Text>
-                )}
-              </View>
               {/* Payment Method */}
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 6 }}>
                 {incomingRide.payment_method === 'mobile_money' && <MaterialIcons name="smartphone" size={14} color={GOLD} />}
@@ -1106,11 +1078,7 @@ export default function DriverHomeScreen() {
               </Text>
               {activeTrip.status === 'in_progress' && <Text style={[styles.tripTracking, dynamicStyles.muted]}>Tracked: {tripDistanceKm.toFixed(2)} km</Text>}
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 12 }}>
-                <Text style={[styles.navFare, { color: GOLD }]}>
-                  GH₵{activeTrip.waiting_fee 
-                    ? (activeTrip.fare_estimate + activeTrip.waiting_fee).toFixed(2) 
-                    : activeTrip.fare_estimate}
-                </Text>
+                <Text style={[styles.metaText, dynamicStyles.muted]}>Final fare appears when the trip ends</Text>
                 {activeNavigationEta && !isDriverAtPickup && (
                   <Text style={[styles.etaText, dynamicStyles.muted]}>{activeNavigationEta} min</Text>
                 )}
@@ -1142,7 +1110,7 @@ export default function DriverHomeScreen() {
                 <Text style={[styles.timerText, dynamicStyles.text, { marginTop: 2 }]}>
                   {waitTime < FREE_WAITING_MINUTES * 60
                     ? `${Math.floor((FREE_WAITING_MINUTES * 60 - waitTime) / 60)}:${String((FREE_WAITING_MINUTES * 60 - waitTime) % 60).padStart(2, '0')} free time remaining`
-                    : `GH₵${calculateWaitingFee().waitingFee.toFixed(2)} earned so far`}
+                    : 'Paid waiting time is being recorded'}
                 </Text>
               </View>
             </View>
