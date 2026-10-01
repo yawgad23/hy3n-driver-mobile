@@ -13,8 +13,6 @@ const env = {
   iosBundleId: "com.hy3n.driver",
   androidPackage: "com.hy3n.driver",
 };
-const iosGoogleMapsApiKey = process.env.GOOGLE_MAPS_IOS_API_KEY;
-
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
@@ -34,7 +32,6 @@ const config: ExpoConfig = {
     buildNumber: "60",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
-    ...(iosGoogleMapsApiKey ? { config: { googleMapsApiKey: iosGoogleMapsApiKey } } : {}),
     "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": ["location"],
