@@ -1016,6 +1016,7 @@ export default function DriverHomeScreen() {
               <Text style={[styles.rideName, dynamicStyles.text]}>{incomingRide.rider_name}</Text>
               <View style={styles.metaRow}>
                 {incomingRide.rider_rating && <Text style={[styles.metaText, dynamicStyles.muted]}>★ {Number(incomingRide.rider_rating).toFixed(1)}</Text>}
+                {Number(incomingRide.rider_rating_count) > 0 && <Text style={[styles.metaText, dynamicStyles.muted]}>· {Math.floor(Number(incomingRide.rider_rating_count))} ratings</Text>}
                 <Text style={[styles.categoryBadge, { color: GOLD }]}>{rideCategoryName(incomingRide.category)}</Text>
                 {!!(incomingRide.distance_km || incomingRide.estimated_distance_km) && <Text style={[styles.metaText, dynamicStyles.muted]}>{Number(incomingRide.distance_km || incomingRide.estimated_distance_km).toFixed(1)} km</Text>}
               </View>
@@ -1090,6 +1091,7 @@ export default function DriverHomeScreen() {
               <Text style={[styles.navTitle, dynamicStyles.text]}>{activeTrip.rider_name}</Text>
               <View style={styles.metaRow}>
                 {activeTrip.rider_rating && <Text style={[styles.metaText, dynamicStyles.muted]}>★ {Number(activeTrip.rider_rating).toFixed(1)}</Text>}
+                {Number(activeTrip.rider_rating_count) > 0 && <Text style={[styles.metaText, dynamicStyles.muted]}>· {Math.floor(Number(activeTrip.rider_rating_count))} ratings</Text>}
                 <Text style={[styles.categoryBadge, { color: GOLD }]}>{rideCategoryName(activeTrip.category)}</Text>
                 <Text style={[styles.metaText, dynamicStyles.muted]}>{paymentLabel(activeTrip.payment_method)}</Text>
               </View>
@@ -1158,6 +1160,7 @@ export default function DriverHomeScreen() {
             <View style={{ flex: 1 }}>
               <Text style={[styles.queueTitle, dynamicStyles.text]}>Next ride available</Text>
               <Text style={[styles.queueText, dynamicStyles.muted]} numberOfLines={1}>{nextRide.rider_name || 'Rider'} · {nextRide.pickup_address || 'Pickup'} → {nextRide.destination_address || 'Destination'}</Text>
+              {Number(nextRide.rider_rating_count) > 0 && <Text style={[styles.metaText, dynamicStyles.muted]}>★ {Number(nextRide.rider_rating).toFixed(1)} · {Math.floor(Number(nextRide.rider_rating_count))} ratings</Text>}
               {hasIncludedAirConditioning(nextRide.category) && <Text style={styles.queueAcText}><MaterialIcons name="ac-unit" size={12} color="#075985" /> {rideCategoryName(nextRide.category)} includes AC</Text>}
             </View>
             {nextRide.status === 'driver_queued' ? <View style={styles.queuedTag}><Text style={styles.queuedTagText}>Queued</Text></View> : <TouchableOpacity style={styles.queueButton} onPress={handleAcceptQueuedRide}><Text style={styles.queueButtonText}>Queue</Text></TouchableOpacity>}
