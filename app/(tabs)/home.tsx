@@ -68,6 +68,27 @@ const DARK_MAP_STYLE = [
 
 const { height } = Dimensions.get('window');
 
+// These service cues describe the category the Rider actually booked. They
+// do not change matching, fare, or eligibility; those remain server-owned.
+const AC_INCLUDED_CATEGORIES = new Set(['comfort', 'kantanka', 'executive']);
+
+function rideCategoryName(category: unknown) {
+  const id = String(category || '').trim().toLowerCase();
+  return RIDE_CATEGORIES.find((item) => item.id === id)?.name || 'Standard';
+}
+
+function hasIncludedAirConditioning(category: unknown) {
+  return AC_INCLUDED_CATEGORIES.has(String(category || '').trim().toLowerCase());
+}
+
+function airConditioningReminder(category: unknown, phase: 'pickup' | 'trip') {
+  if (!hasIncludedAirConditioning(category)) return null;
+  const action = phase === 'pickup'
+    ? 'Turn on the air conditioning before pickup.'
+    : 'Keep the air conditioning on for the rider.';
+  return `${rideCategoryName(category)} includes AC. ${action}`;
+}
+
 export default function DriverHomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -379,10 +400,11 @@ export default function DriverHomeScreen() {
         notifiedOfferIds.current.add(offerId);
         Notifications.scheduleNotificationAsync({
           content: {
-            title: 'New Ride Request',
+            title: `New ${rideCategoryName(offeredRide.category)} Ride`,
             // Keep fares inside the protected in-app offer only; device push
             // previews must not disclose an amount on the lock screen.
-            body: `Ride request from ${offeredRide.rider_name || 'a rider'}. Open HY3N Driver to review the trip.`,
+            body: airConditioningReminder(offeredRide.category, 'pickup')
+              || `Ride request from ${offeredRide.rider_name || 'a rider'}. Open HY3N Driver to review the trip.`,
             sound: 'default',
             priority: Notifications.AndroidNotificationPriority.MAX,
           },
@@ -994,9 +1016,18 @@ export default function DriverHomeScreen() {
               <Text style={[styles.rideName, dynamicStyles.text]}>{incomingRide.rider_name}</Text>
               <View style={styles.metaRow}>
                 {incomingRide.rider_rating && <Text style={[styles.metaText, dynamicStyles.muted]}>★ {Number(incomingRide.rider_rating).toFixed(1)}</Text>}
-                <Text style={[styles.categoryBadge, { color: GOLD }]}>{RIDE_CATEGORIES.find((category) => category.id === incomingRide.category)?.name || 'Standard'}</Text>
+                <Text style={[styles.categoryBadge, { color: GOLD }]}>{rideCategoryName(incomingRide.category)}</Text>
                 {!!(incomingRide.distance_km || incomingRide.estimated_distance_km) && <Text style={[styles.metaText, dynamicStyles.muted]}>{Number(incomingRide.distance_km || incomingRide.estimated_distance_km).toFixed(1)} km</Text>}
               </View>
+              {hasIncludedAirConditioning(incomingRide.category) && (
+                <View style={styles.acServiceBanner} accessibilityLabel={airConditioningReminder(incomingRide.category, 'pickup') || undefined}>
+                  <MaterialIcons name="ac-unit" size={17} color="#075985" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.acServiceTitle}>{rideCategoryName(incomingRide.category)} includes AC</Text>
+                    <Text style={styles.acServiceText}>Turn on the air conditioning before pickup.</Text>
+                  </View>
+                </View>
+              )}
               <Text style={[styles.rideDetails, dynamicStyles.muted]} numberOfLines={1}>
                 From: {incomingRide.pickup_address || 'Pickup'}
               </Text>
@@ -1059,9 +1090,15 @@ export default function DriverHomeScreen() {
               <Text style={[styles.navTitle, dynamicStyles.text]}>{activeTrip.rider_name}</Text>
               <View style={styles.metaRow}>
                 {activeTrip.rider_rating && <Text style={[styles.metaText, dynamicStyles.muted]}>★ {Number(activeTrip.rider_rating).toFixed(1)}</Text>}
-                <Text style={[styles.categoryBadge, { color: GOLD }]}>{RIDE_CATEGORIES.find((category) => category.id === activeTrip.category)?.name || 'Standard'}</Text>
+                <Text style={[styles.categoryBadge, { color: GOLD }]}>{rideCategoryName(activeTrip.category)}</Text>
                 <Text style={[styles.metaText, dynamicStyles.muted]}>{paymentLabel(activeTrip.payment_method)}</Text>
               </View>
+              {hasIncludedAirConditioning(activeTrip.category) && (
+                <View style={styles.acServiceBanner} accessibilityLabel={airConditioningReminder(activeTrip.category, 'trip') || undefined}>
+                  <MaterialIcons name="ac-unit" size={17} color="#075985" />
+                  <Text style={[styles.acServiceText, { flex: 1 }]}>{airConditioningReminder(activeTrip.category, 'trip')}</Text>
+                </View>
+              )}
               <Text style={[styles.navSub, dynamicStyles.muted]} numberOfLines={1}>
                 {activeTrip.status === 'in_progress' ? activeTrip.destination_address : activeTrip.pickup_address}
               </Text>
@@ -1121,6 +1158,7 @@ export default function DriverHomeScreen() {
             <View style={{ flex: 1 }}>
               <Text style={[styles.queueTitle, dynamicStyles.text]}>Next ride available</Text>
               <Text style={[styles.queueText, dynamicStyles.muted]} numberOfLines={1}>{nextRide.rider_name || 'Rider'} · {nextRide.pickup_address || 'Pickup'} → {nextRide.destination_address || 'Destination'}</Text>
+              {hasIncludedAirConditioning(nextRide.category) && <Text style={styles.queueAcText}><MaterialIcons name="ac-unit" size={12} color="#075985" /> {rideCategoryName(nextRide.category)} includes AC</Text>}
             </View>
             {nextRide.status === 'driver_queued' ? <View style={styles.queuedTag}><Text style={styles.queuedTagText}>Queued</Text></View> : <TouchableOpacity style={styles.queueButton} onPress={handleAcceptQueuedRide}><Text style={styles.queueButtonText}>Queue</Text></TouchableOpacity>}
           </View>
@@ -1403,6 +1441,9 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 7, marginTop: 3 },
   metaText: { fontSize: 11, fontWeight: '700' },
   categoryBadge: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.4 },
+  acServiceBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, paddingHorizontal: 9, paddingVertical: 7, borderRadius: 9, backgroundColor: '#E0F2FE', borderWidth: 1, borderColor: '#7DD3FC' },
+  acServiceTitle: { color: '#075985', fontSize: 11, fontWeight: '900' },
+  acServiceText: { color: '#0C4A6E', fontSize: 10, fontWeight: '700', lineHeight: 14, marginTop: 1 },
   riskBanner: { marginTop: 7, paddingVertical: 5, paddingHorizontal: 7, borderRadius: 7, backgroundColor: '#FEF3C7', flexDirection: 'row', gap: 5, alignItems: 'center' },
   riskText: { color: '#7C2D12', fontSize: 10, fontWeight: '800' },
   rideName: { fontSize: 16, fontWeight: '900', marginTop: 4 },
@@ -1428,6 +1469,7 @@ const styles = StyleSheet.create({
   queueCard: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 16, borderWidth: 1, gap: 10 },
   queueTitle: { fontSize: 13, fontWeight: '900' },
   queueText: { fontSize: 11, marginTop: 3 },
+  queueAcText: { color: '#075985', fontSize: 10, fontWeight: '900', marginTop: 4 },
   queueButton: { backgroundColor: GOLD, paddingHorizontal: 13, paddingVertical: 8, borderRadius: 9 },
   queueButtonText: { color: '#000', fontSize: 12, fontWeight: '900' },
   queuedTag: { backgroundColor: '#DCFCE7', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 9 },
