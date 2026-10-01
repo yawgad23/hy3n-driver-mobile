@@ -7,6 +7,7 @@
     "dev": "cross-env EXPO_USE_METRO_WORKSPACE_ROOT=1 npx expo start --web --port ${EXPO_PORT:-8081}",
     "check": "tsc --noEmit",
     "test:map": "tsx --test tests/driver-map-lifecycle.test.ts tests/driver-map-html.test.ts",
+    "test:finance-ui": "tsx --test tests/driver-cash-collection-ui.test.ts",
     "lint": "expo lint",
     "format": "prettier --write .",
     "android": "expo run:android",

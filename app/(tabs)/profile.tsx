@@ -189,7 +189,7 @@ export default function DriverProfileScreen() {
             </TouchableOpacity>
             <TouchableOpacity style={[styles.menuRow, styles.menuBorder, { borderTopColor: colors.border }]} onPress={() => router.push('/driver/momo-settings' as any)} activeOpacity={0.7}>
               <MaterialIcons name="account-balance-wallet" size={20} color={GOLD} />
-              <View style={{ flex: 1 }}><Text style={[styles.menuText, { color: colors.foreground }]}>MoMo Payout Settings</Text><Text style={[styles.menuHint, { color: colors.muted }]}>Manage your earnings payout account</Text></View>
+              <View style={{ flex: 1 }}><Text style={[styles.menuText, { color: colors.foreground }]}>MoMo & fee information</Text><Text style={[styles.menuHint, { color: colors.muted }]}>Direct Rider payments and the daily platform fee</Text></View>
               <MaterialIcons name="chevron-right" size={20} color={colors.muted} />
             </TouchableOpacity>
             <TouchableOpacity style={[styles.menuRow, styles.menuBorder, { borderTopColor: colors.border }]} onPress={() => router.push('/driver/referrals' as any)} activeOpacity={0.7}>
