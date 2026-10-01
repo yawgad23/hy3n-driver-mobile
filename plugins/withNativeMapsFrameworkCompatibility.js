@@ -5,22 +5,20 @@ const MARKER = '# HY3N native-map static-framework compatibility';
 /**
  * react-native-maps imports React-Core headers. This Driver target also uses
  * static Firebase frameworks, and Xcode otherwise promotes those imports to
- * non-modular-header errors. Keep this narrow: only the maps pod receives the
- * compatibility setting.
+ * non-modular-header errors. The setting must run after Expo's React Native
+ * post-install hook because that hook rebuilds the pod build settings.
  */
 module.exports = function withNativeMapsFrameworkCompatibility(config) {
   return withPodfile(config, (config) => {
     const source = config.modResults.contents;
     if (source.includes(MARKER)) return config;
 
-    const postInstall = 'post_install do |installer|';
-    if (!source.includes(postInstall)) {
-      throw new Error('Unable to find the CocoaPods post_install hook for react-native-maps compatibility.');
+    const hookEnd = /\n  end\nend\s*$/;
+    if (!hookEnd.test(source)) {
+      throw new Error('Unable to locate the CocoaPods post_install hook ending for react-native-maps compatibility.');
     }
 
-    config.modResults.contents = source.replace(
-      postInstall,
-      `${postInstall}
+    const compatibility = `
     ${MARKER}
     installer.pods_project.targets.each do |target|
       if ['react-native-maps', 'react_native_maps'].include?(target.name)
@@ -28,8 +26,9 @@ module.exports = function withNativeMapsFrameworkCompatibility(config) {
           build_configuration.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
         end
       end
-    end`,
-    );
+    end`;
+
+    config.modResults.contents = source.replace(hookEnd, `${compatibility}\n  end\nend\n`);
     return config;
   });
 };
