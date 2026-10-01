@@ -111,6 +111,17 @@ export class DriverMapLifecycle {
     }, 3_000);
   }
 
+  /**
+   * WKWebView can return a JavaScript pong after iOS resumes it while its
+   * compositor is still blank. A fresh inline document is the reliable
+   * recovery, including after short app switches where WebKit emits no
+   * content-process-termination event.
+   */
+  recoverFromForeground() {
+    if (this.disposed || !this.visible || !this.ready) return;
+    this.onFailure(this.generation);
+  }
+
   private recover(generation: number) {
     if (this.disposed || generation !== this.generation || !this.visible) return;
     this.clearTimers();

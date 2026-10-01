@@ -106,6 +106,23 @@ test('a successful health pong keeps the map mounted; focus replays current GPS'
   } finally { clock.uninstall(); }
 });
 
+test('an iOS foreground event remounts a blank compositor even when JavaScript still responds', () => {
+  const clock = FakeTimers.install({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    const h = harness();
+    ready(h);
+    h.map.setVisible(false);
+    h.map.setVisible(true);
+    h.map.onPong(0);
+    h.map.recoverFromForeground();
+    assert.deepEqual(h.remounts, [1]);
+    assert.equal(h.map.isReady, false);
+    h.map.onReadyMessage(1);
+    assert.equal(h.map.isReady, true);
+    h.map.dispose();
+  } finally { clock.uninstall(); }
+});
+
 test('map initialization errors and timeouts are bounded, then expose manual retry', () => {
   const clock = FakeTimers.install({ toFake: ['setTimeout', 'clearTimeout'] });
   try {

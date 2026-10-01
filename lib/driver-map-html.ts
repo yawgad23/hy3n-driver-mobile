@@ -62,15 +62,42 @@ export function buildDriverMapHtml(surface: string, carArt: string, generation: 
             .replace('{x}',String(coords.x))
             .replace('{y}',String(coords.y));
         });
-        setTimeout(function(){map.invalidateSize({animate:false,pan:false});},150);
-        window.addEventListener('resize',function(){map.invalidateSize({animate:false,pan:false});});
+        function refreshSurface(){
+          map.invalidateSize({animate:false,pan:false,debounceMoveend:true});
+          tiles.redraw();
+        }
+        setTimeout(refreshSurface,150);
+        window.addEventListener('resize',refreshSurface);
+        document.addEventListener('visibilitychange',function(){
+          if(!document.hidden) setTimeout(refreshSurface,0);
+        });
         var carIcon=L.divIcon({html:'<div class="driver-car"></div>',iconSize:[46,46],iconAnchor:[23,23],className:'driver-marker'});
         var carMarker=L.marker([fallbackPosition.latitude,fallbackPosition.longitude],{icon:carIcon,keyboard:false}).addTo(map);
         var targetMarker=null;
         var routeLine=null;
         var targetKey='';
         var routeRequest=0;
+        var readySent=false;
         var etaElement=document.getElementById('eta');
+
+        function announceReady(){
+          if(readySent)return;
+          refreshSurface();
+          var container=map.getContainer();
+          var size=map.getSize();
+          // WebKit can run the page while resuming an unpainted or zero-size
+          // surface. Leaflet must have a drawable area before React Native
+          // treats the map as restored.
+          if(!container||container.clientWidth<2||container.clientHeight<2||size.x<2||size.y<2){
+            setTimeout(announceReady,80);
+            return;
+          }
+          requestAnimationFrame(function(){
+            refreshSurface();
+            readySent=true;
+            notify('ready');
+          });
+        }
 
         function numberOr(value,fallback){var parsed=Number(value);return Number.isFinite(parsed)?parsed:fallback}
         function position(state){return [numberOr(state&&state.latitude,fallbackPosition.latitude),numberOr(state&&state.longitude,fallbackPosition.longitude)]}
@@ -130,12 +157,14 @@ export function buildDriverMapHtml(surface: string, carArt: string, generation: 
           setTimeout(function(){setCarHeading(state&&state.heading)},0);
         };
         window.__HY3N_HEALTH__=function(){
-          map.invalidateSize({animate:false,pan:false});
-          tiles.redraw();
+          refreshSurface();
           notify('pong');
         };
+        window.__HY3N_LAYOUT__=function(width,height){
+          if(Number(width)>1&&Number(height)>1) refreshSurface();
+        };
         window.__HY3N_UPDATE__(fallbackPosition);
-        notify('ready');
+        announceReady();
       } catch(error) {
         notify('init-error');
       }

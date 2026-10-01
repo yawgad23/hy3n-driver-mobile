@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, AppState, Text, TouchableOpacity, View, type LayoutChangeEvent } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { WebView } from 'react-native-webview';
 import { MAP_MARKER_ASSETS } from '@/components/map-marker-assets';
@@ -18,8 +18,6 @@ type Props = {
 };
 
 const DEFAULT_POSITION = { latitude: 5.6037, longitude: -0.187 };
-const LONG_IDLE_MS = 30_000;
-
 const safelySerialize = (value: unknown) => JSON.stringify(value)
   .replace(/</g, '\\u003c')
   .replace(/>/g, '\\u003e')
@@ -42,7 +40,6 @@ export default function DriverLeafletMap({
   const [showLoading, setShowLoading] = useState(false);
   const mapLifecycleRef = useRef<DriverMapLifecycle | null>(null);
   const foregroundRef = useRef(AppState.currentState === 'active');
-  const hiddenAtRef = useRef<number | null>(null);
   const latestStateRef = useRef('');
   const surface = dark ? '#1f2937' : '#eef1f3';
   const targetLatitude = target?.latitude ?? null;
@@ -86,18 +83,17 @@ export default function DriverLeafletMap({
       const wasForeground = foregroundRef.current;
       foregroundRef.current = nextState === 'active';
       if (!foregroundRef.current) {
-        if (wasForeground) hiddenAtRef.current = Date.now();
         lifecycle.setVisible(false);
         return;
       }
-      const hiddenDuration = hiddenAtRef.current === null ? 0 : Date.now() - hiddenAtRef.current;
-      hiddenAtRef.current = null;
       if (!focused) return;
       lifecycle.setVisible(true);
-      // WebKit may report a responsive JS context while its compositor is
-      // blank after a long idle. Refresh once when returning from such an idle.
-      if (hiddenDuration >= LONG_IDLE_MS && lifecycle.isReady) {
-        lifecycle.onFailure(lifecycle.currentGeneration);
+      // iOS can blank an inline WKWebView after even a short background
+      // transition without firing either process-termination callback. Its JS
+      // context can still answer a probe, so remount the bounded inline page
+      // once on foreground instead of trusting a pong from a blank compositor.
+      if (wasForeground === false && lifecycle.isReady) {
+        lifecycle.recoverFromForeground();
       }
     });
     return () => subscription.remove();
@@ -119,8 +115,16 @@ export default function DriverLeafletMap({
     webViewRef.current?.injectJavaScript(`window.__HY3N_UPDATE__&&window.__HY3N_UPDATE__(${serializedState});true;`);
   }, [serializedState, lifecycle]);
 
+  const handleLayout = (event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    if (width < 1 || height < 1) return;
+    webViewRef.current?.injectJavaScript(
+      `window.__HY3N_LAYOUT__&&window.__HY3N_LAYOUT__(${Math.round(width)},${Math.round(height)});true;`,
+    );
+  };
+
   return (
-    <View style={{ flex: 1, backgroundColor: surface }}>
+    <View onLayout={handleLayout} style={{ flex: 1, backgroundColor: surface }}>
       <WebView
         key={generation}
         ref={webViewRef}

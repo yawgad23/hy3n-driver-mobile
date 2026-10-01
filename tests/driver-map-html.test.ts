@@ -20,6 +20,8 @@ test('the complete Leaflet renderer is bundled locally and both page scripts par
 test('the page waits for Leaflet initialization before reporting ready', () => {
   assert.match(exampleHtml, /if\(typeof L==='undefined'\)throw/);
   assert.match(exampleHtml, /window\.__HY3N_UPDATE__=function/);
+  assert.match(exampleHtml, /function announceReady\(\)/);
+  assert.match(exampleHtml, /container\.clientWidth<2/);
   assert.match(exampleHtml, /notify\('ready'\)/);
   assert.match(exampleHtml, /notify\('init-error'\)/);
   assert.match(exampleHtml, /generation=3/);
@@ -40,4 +42,6 @@ test('the map theme, current marker and active route remain in the HTML', () => 
   assert.match(exampleHtml, /map\.fitBounds/);
   assert.match(exampleHtml, /map\.invalidateSize/);
   assert.match(exampleHtml, /window\.__HY3N_HEALTH__=function/);
+  assert.match(exampleHtml, /window\.__HY3N_LAYOUT__=function/);
+  assert.match(exampleHtml, /document\.addEventListener\('visibilitychange'/);
 });
