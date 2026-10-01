@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { ActivityIndicator, AppState, Text, TouchableOpacity, View } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import { WebView } from 'react-native-webview';
 import { MAP_MARKER_ASSETS } from '@/components/map-marker-assets';
+import { buildDriverMapHtml } from '@/lib/driver-map-html';
+import { DriverMapLifecycle, type DriverMapStatus } from '@/lib/driver-map-lifecycle';
 
 type MapTarget = { latitude: number; longitude: number; label: string };
 type Props = {
@@ -15,130 +18,14 @@ type Props = {
 };
 
 const DEFAULT_POSITION = { latitude: 5.6037, longitude: -0.187 };
+const LONG_IDLE_MS = 30_000;
 
 const safelySerialize = (value: unknown) => JSON.stringify(value)
   .replace(/</g, '\\u003c')
   .replace(/>/g, '\\u003e')
   .replace(/&/g, '\\u0026');
 
-/**
- * The WebView source is deliberately stable while the Driver moves. Replacing
- * its HTML on every GPS update causes iOS to reload Leaflet and flash map tiles.
- * Live state is sent into the already-loaded map through injectJavaScript.
- */
-function buildMapHtml(surface: string, carArt: string) {
-  return `<!doctype html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <style>
-    html,body,#map{height:100%;margin:0;background:#dfe7e5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-    .leaflet-control-attribution,.leaflet-control-zoom{display:none}
-    .driver-marker{transition:transform .85s linear!important}
-    .driver-car{width:46px;height:46px;background-image:url('${carArt}');background-size:contain;background-position:center;background-repeat:no-repeat;filter:drop-shadow(0 2px 4px #0008);transform-origin:23px 23px;transition:transform .35s ease-out}
-    .target-pin{width:26px;height:26px;border-radius:50% 50% 50% 0;background:#d4af37;border:3px solid #fff;box-shadow:0 2px 8px #0008;transform:rotate(-45deg)}
-    .target-pin:after{content:'';display:block;width:8px;height:8px;background:#151515;border-radius:50%;margin:6px}
-    .eta{position:fixed;z-index:900;top:86px;left:50%;transform:translateX(-50%);background:#006b3f;color:#fff;border-radius:14px;padding:9px 13px;text-align:center;box-shadow:0 4px 14px #0006;min-width:116px}
-    .eta b{display:block;font-size:20px;line-height:22px}.eta span{font-size:11px;font-weight:800;letter-spacing:.3px}
-  </style>
-</head>
-<body>
-  <div id="map"></div><div id="eta" class="eta" style="display:none"></div>
-  <script>
-    (function () {
-      var fallbackPosition={latitude:${DEFAULT_POSITION.latitude},longitude:${DEFAULT_POSITION.longitude},heading:0,target:null,etaMinutes:null,tripStatus:null};
-      var map=L.map('map',{zoomControl:false,attributionControl:false,fadeAnimation:false,zoomAnimation:false}).setView([fallbackPosition.latitude,fallbackPosition.longitude],15);
-      var primaryTileUrl='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-      var fallbackTileUrl='https://tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png';
-      var tiles=L.tileLayer(primaryTileUrl,{maxZoom:19,updateWhenIdle:false,keepBuffer:6}).addTo(map);
-      tiles.on('tileerror',function(event){
-        var image=event&&event.tile;
-        var coords=event&&event.coords;
-        if(!image||!coords||image.dataset.hy3nFallback==='1')return;
-        image.dataset.hy3nFallback='1';
-        image.src=fallbackTileUrl
-          .replace('{z}',String(coords.z))
-          .replace('{x}',String(coords.x))
-          .replace('{y}',String(coords.y));
-      });
-      setTimeout(function(){map.invalidateSize({animate:false,pan:false});},150);
-      window.addEventListener('resize',function(){map.invalidateSize({animate:false,pan:false});});
-      var carIcon=L.divIcon({html:'<div class="driver-car"></div>',iconSize:[46,46],iconAnchor:[23,23],className:'driver-marker'});
-      var carMarker=L.marker([fallbackPosition.latitude,fallbackPosition.longitude],{icon:carIcon,keyboard:false}).addTo(map);
-      var targetMarker=null;
-      var routeLine=null;
-      var targetKey='';
-      var routeRequest=0;
-      var etaElement=document.getElementById('eta');
-
-      function numberOr(value,fallback){var parsed=Number(value);return Number.isFinite(parsed)?parsed:fallback}
-      function position(state){return [numberOr(state&&state.latitude,fallbackPosition.latitude),numberOr(state&&state.longitude,fallbackPosition.longitude)]}
-      function setCarHeading(heading){
-        var icon=carMarker.getElement();
-        var car=icon&&icon.querySelector('.driver-car');
-        if(car) car.style.transform='rotate(' + numberOr(heading,0) + 'deg)';
-      }
-      function clearRoute(){
-        if(routeLine){map.removeLayer(routeLine);routeLine=null}
-        if(targetMarker){map.removeLayer(targetMarker);targetMarker=null}
-      }
-      function fallbackRoute(from,target){
-        routeLine=L.polyline([from,target],{color:'#006b3f',weight:5,opacity:.9,dashArray:'12,7'}).addTo(map);
-      }
-      function renderRoute(from,target,key){
-        var request=++routeRequest;
-        var fallback=function(){if(request===routeRequest&&key===targetKey){if(routeLine){map.removeLayer(routeLine)}fallbackRoute(from,target)}};
-        fetch('https://router.project-osrm.org/route/v1/driving/'+from[1]+','+from[0]+';'+target[1]+','+target[0]+'?overview=full&geometries=geojson')
-          .then(function(response){return response.json()})
-          .then(function(data){
-            if(request!==routeRequest||key!==targetKey)return;
-            var coordinates=data&&data.routes&&data.routes[0]&&data.routes[0].geometry&&data.routes[0].geometry.coordinates;
-            if(!coordinates){fallback();return}
-            if(routeLine){map.removeLayer(routeLine)}
-            routeLine=L.polyline(coordinates.map(function(point){return[point[1],point[0]]}),{color:'#006b3f',weight:5,opacity:.92}).addTo(map);
-          })
-          .catch(fallback);
-      }
-      function updateTarget(state,from){
-        var target=state&&state.target;
-        var key=target?String(target.latitude)+'|'+String(target.longitude)+'|'+String(target.label||''):'';
-        if(key===targetKey)return;
-        targetKey=key;
-        clearRoute();
-        if(!target)return;
-        var point=[numberOr(target.latitude,from[0]),numberOr(target.longitude,from[1])];
-        targetMarker=L.marker(point,{icon:L.divIcon({html:'<div class="target-pin"></div>',iconSize:[32,32],iconAnchor:[16,28],className:''}),keyboard:false}).addTo(map).bindTooltip(String(target.label||'Destination'),{permanent:false});
-        renderRoute(from,point,key);
-        map.fitBounds([from,point],{padding:[58,42],maxZoom:15,animate:true,duration:.45});
-      }
-      function updateEta(state){
-        if(!state||!state.target){etaElement.style.display='none';return}
-        etaElement.style.display='block';
-        etaElement.innerHTML='<b>'+(state.etaMinutes||'—')+' min</b><span>'+(state.tripStatus==='dropoff'?'TO DROPOFF':'TO PICKUP')+'</span>';
-      }
-      window.__HY3N_UPDATE__=function(state){
-        var current=position(state);
-        carMarker.setLatLng(current);
-        setCarHeading(state&&state.heading);
-        // Smooth pan keeps the Driver centered without reloading the map tiles.
-        map.panTo(current,{animate:true,duration:.75,noMoveStart:true});
-        updateTarget(state,current);
-        updateEta(state);
-        setTimeout(function(){setCarHeading(state&&state.heading)},0);
-      };
-      window.__HY3N_UPDATE__(fallbackPosition);
-    })();
-  </script>
-</body>
-</html>`;
-}
-
-/**
- * Driver navigation view: keeps one Leaflet WebView mounted and smoothly moves
- * the realistic car marker as the phone reports each live GPS update.
- */
+/** A healthy GPS feed should never remount the HTML page; only a lost map does. */
 export default function DriverLeafletMap({
   latitude = DEFAULT_POSITION.latitude,
   longitude = DEFAULT_POSITION.longitude,
@@ -148,8 +35,15 @@ export default function DriverLeafletMap({
   tripStatus = null,
   dark = false,
 }: Props) {
+  const focused = useIsFocused();
   const webViewRef = useRef<WebView>(null);
-  const [mapReady, setMapReady] = useState(false);
+  const [generation, setGeneration] = useState(0);
+  const [status, setStatus] = useState<DriverMapStatus>('loading');
+  const [showLoading, setShowLoading] = useState(false);
+  const mapLifecycleRef = useRef<DriverMapLifecycle | null>(null);
+  const foregroundRef = useRef(AppState.currentState === 'active');
+  const hiddenAtRef = useRef<number | null>(null);
+  const latestStateRef = useRef('');
   const surface = dark ? '#1f2937' : '#eef1f3';
   const targetLatitude = target?.latitude ?? null;
   const targetLongitude = target?.longitude ?? null;
@@ -166,28 +60,119 @@ export default function DriverLeafletMap({
     tripStatus,
   }), [etaMinutes, heading, latitude, longitude, targetLabel, targetLatitude, targetLongitude, tripStatus]);
   const serializedState = useMemo(() => safelySerialize(mapState), [mapState]);
-  const source = useMemo(() => ({ html: buildMapHtml(surface, MAP_MARKER_ASSETS.car) }), [surface]);
+  latestStateRef.current = serializedState;
+
+  if (!mapLifecycleRef.current) {
+    mapLifecycleRef.current = new DriverMapLifecycle({
+      onRemount: setGeneration,
+      onReady: () => webViewRef.current?.injectJavaScript(
+        `window.__HY3N_UPDATE__&&window.__HY3N_UPDATE__(${latestStateRef.current});true;`,
+      ),
+      onProbe: () => webViewRef.current?.injectJavaScript('window.__HY3N_HEALTH__&&window.__HY3N_HEALTH__();true;'),
+      onStatus: setStatus,
+    });
+  }
+  const lifecycle = mapLifecycleRef.current;
+  const html = useMemo(() => ({ html: buildDriverMapHtml(surface, MAP_MARKER_ASSETS.car, generation) }), [surface, generation]);
 
   useEffect(() => {
-    if (!mapReady) return;
-    // The trailing expression is required by iOS WebView's injected-JS API.
+    lifecycle.revive();
+    lifecycle.setVisible(focused && foregroundRef.current);
+    return () => lifecycle.setVisible(false);
+  }, [focused, lifecycle]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      const wasForeground = foregroundRef.current;
+      foregroundRef.current = nextState === 'active';
+      if (!foregroundRef.current) {
+        if (wasForeground) hiddenAtRef.current = Date.now();
+        lifecycle.setVisible(false);
+        return;
+      }
+      const hiddenDuration = hiddenAtRef.current === null ? 0 : Date.now() - hiddenAtRef.current;
+      hiddenAtRef.current = null;
+      if (!focused) return;
+      lifecycle.setVisible(true);
+      // WebKit may report a responsive JS context while its compositor is
+      // blank after a long idle. Refresh once when returning from such an idle.
+      if (hiddenDuration >= LONG_IDLE_MS && lifecycle.isReady) {
+        lifecycle.onFailure(lifecycle.currentGeneration);
+      }
+    });
+    return () => subscription.remove();
+  }, [focused, lifecycle]);
+
+  useEffect(() => () => lifecycle.dispose(), [lifecycle]);
+
+  useEffect(() => {
+    if (status !== 'loading') {
+      setShowLoading(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowLoading(true), 1200);
+    return () => clearTimeout(timer);
+  }, [status, generation]);
+
+  useEffect(() => {
+    if (!lifecycle.isReady) return;
     webViewRef.current?.injectJavaScript(`window.__HY3N_UPDATE__&&window.__HY3N_UPDATE__(${serializedState});true;`);
-  }, [mapReady, serializedState]);
+  }, [serializedState, lifecycle]);
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#dfe7e5' }}>
+    <View style={{ flex: 1, backgroundColor: surface }}>
       <WebView
+        key={generation}
         ref={webViewRef}
-        source={source}
-        style={{ flex: 1, backgroundColor: '#dfe7e5' }}
-        onLoadStart={() => setMapReady(false)}
-        onLoadEnd={() => setMapReady(true)}
-        originWhitelist={["*"]}
+        source={html}
+        style={{ flex: 1, backgroundColor: surface }}
+        onLoadStart={() => lifecycle.onLoadStart(generation)}
+        onError={() => lifecycle.onFailure(generation)}
+        onContentProcessDidTerminate={() => lifecycle.onFailure(generation)}
+        onRenderProcessGone={() => lifecycle.onFailure(generation)}
+        onMessage={(event) => {
+          try {
+            const message = JSON.parse(event.nativeEvent.data);
+            if (message.generation !== generation) return;
+            if (message.type === 'ready') lifecycle.onReadyMessage(generation);
+            else if (message.type === 'pong') lifecycle.onPong(generation);
+            else if (message.type === 'init-error') lifecycle.onFailure(generation);
+            else if (message.type === 'tiles-unavailable') lifecycle.onTileError(generation);
+            else if (message.type === 'tiles-recovered') lifecycle.onTilesRecovered(generation);
+          } catch {
+            // Ignore messages from unrelated WebView scripts.
+          }
+        }}
+        originWhitelist={['*']}
         javaScriptEnabled
         domStorageEnabled
         scrollEnabled={false}
         bounces={false}
       />
+      {status === 'loading' && showLoading && (
+        <View pointerEvents="none" style={{ position: 'absolute', top: '40%', left: 16, right: 16, alignItems: 'center' }}>
+          <View style={{ backgroundColor: dark ? '#1f2937' : '#fff', padding: 14, borderRadius: 14, alignItems: 'center' }}>
+            <ActivityIndicator color="#006b3f" />
+            <Text style={{ color: dark ? '#fff' : '#111', marginTop: 7 }}>Restoring map…</Text>
+          </View>
+        </View>
+      )}
+      {(status === 'unavailable' || status === 'tiles-unavailable') && (
+        <View pointerEvents="box-none" style={{ position: 'absolute', top: '39%', left: 16, right: 16, alignItems: 'center' }}>
+          <View style={{ backgroundColor: dark ? '#1f2937' : '#fff', padding: 16, borderRadius: 14, alignItems: 'center', maxWidth: 290 }}>
+            <Text style={{ color: dark ? '#fff' : '#111', fontWeight: '700', textAlign: 'center' }}>
+              {status === 'tiles-unavailable' ? 'Map tiles unavailable' : 'Map could not load'}
+            </Text>
+            <Text style={{ color: dark ? '#d1d5db' : '#4b5563', marginTop: 5, textAlign: 'center' }}>
+              {status === 'tiles-unavailable' ? 'Check your connection and try again.' : 'Your online status is unchanged. Tap to retry the map.'}
+            </Text>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry map" onPress={() => lifecycle.retryManually()}
+              style={{ marginTop: 10, backgroundColor: '#006b3f', paddingHorizontal: 20, paddingVertical: 9, borderRadius: 10 }}>
+              <Text style={{ color: '#fff', fontWeight: '700' }}>Retry map</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
