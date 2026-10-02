@@ -33,6 +33,7 @@ import {
   INCOMING_TRIP_ALERT_PLAYBACK,
   shouldPlayIncomingTripAlert,
 } from '@/lib/incoming-trip-alert';
+import { deliveryContactForDriver, isDeliveryRide } from '@/lib/delivery-contact';
 
 const INCOMING_TRIP_ALERT = require('../../assets/audio/incoming-trip-alert.wav');
 const GOLD = '#D4AF37';
@@ -103,7 +104,7 @@ export default function DriverHomeScreen() {
   const { colorScheme } = useThemeContext();
   const isDark = colorScheme === 'dark';
   const themeColors = Colors[isDark ? 'dark' : 'light'];
-  
+
   const { user, driverProfile } = useDriverAuth();
   const { prefs, toggle: togglePref, setPrefs } = useDriverPreferences();
   const incomingTripPlayer = useAudioPlayer(INCOMING_TRIP_ALERT, {
@@ -124,7 +125,7 @@ export default function DriverHomeScreen() {
   const cancelTrip = trpc.driverTrips.cancel.useMutation();
   const activateQueuedTrip = trpc.driverTrips.activateQueued.useMutation();
   const recordDrivingEvent = trpc.driverSafety.recordDrivingEvent.useMutation();
-  
+
   const [isOnline, setIsOnline] = useState(false);
   const [location, setLocation] = useState<ExpoLocation.LocationObject | null>(null);
   const [activeTrip, setActiveTrip] = useState<any>(null);
@@ -169,7 +170,7 @@ export default function DriverHomeScreen() {
     // race. The looped alert does not need a seek on iOS; pause/play is enough.
     if (resetPosition && Platform.OS !== 'ios') incomingTripPlayer.seekTo(0).catch(() => {});
   };
-  
+
   // Navigation Switcher Logic
   const openNavigation = (lat: number, lng: number, label: string) => {
     const scheme = Platform.select({ ios: 'maps:0,0?q=', android: 'geo:0,0?q=' });
@@ -234,7 +235,10 @@ export default function DriverHomeScreen() {
     otherName: activeTrip?.rider_name,
   });
 
+  const deliveryContact = deliveryContactForDriver(activeTrip);
+  const isActiveDelivery = isDeliveryRide(activeTrip);
   const riderPhone = activeTrip?.rider_phone || activeTrip?.passenger_phone || activeTrip?.phone || '';
+  const contactPhone = deliveryContact?.phone || riderPhone;
   const paymentLabel = (method?: string) => {
     if (method === 'mobile_money') return 'MoMo';
     if (method === 'wallet') return 'Wallet';
@@ -916,9 +920,9 @@ export default function DriverHomeScreen() {
     container: { backgroundColor: themeColors.background },
     text: { color: themeColors.text },
     muted: { color: themeColors.muted },
-    card: { 
+    card: {
       backgroundColor: isDark ? 'rgba(17, 17, 17, 0.9)' : 'rgba(255, 255, 255, 0.95)',
-      borderColor: themeColors.border 
+      borderColor: themeColors.border
     },
     badge: {
       backgroundColor: isDark ? '#111111' : '#FFFFFF',
@@ -974,15 +978,15 @@ export default function DriverHomeScreen() {
 
         <View style={{ flexDirection: 'row', gap: 10 }}>
           {false && isOnline && (
-            <TouchableOpacity 
-              style={[styles.notifCircle, dynamicStyles.badge, { borderColor: showHeatmap ? GOLD : themeColors.border }]} 
+            <TouchableOpacity
+              style={[styles.notifCircle, dynamicStyles.badge, { borderColor: showHeatmap ? GOLD : themeColors.border }]}
               onPress={() => setShowHeatmap(!showHeatmap)}
             >
               <MaterialIcons name="local-fire-department" size={24} color={showHeatmap ? GOLD : themeColors.text} />
             </TouchableOpacity>
           )}
-          <TouchableOpacity 
-            style={[styles.notifCircle, dynamicStyles.badge]} 
+          <TouchableOpacity
+            style={[styles.notifCircle, dynamicStyles.badge]}
             onPress={triggerSOS}
           >
             <MaterialIcons name="emergency" size={26} color={RED} />
@@ -1036,6 +1040,9 @@ export default function DriverHomeScreen() {
               <Text style={[styles.rideDetails, dynamicStyles.muted]} numberOfLines={1}>
                 To: {incomingRide.destination_address || 'Destination'}
               </Text>
+              {isDeliveryRide(incomingRide) && (
+                <Text style={[styles.deliveryOfferText, dynamicStyles.muted]}>Sender and recipient details appear after you accept.</Text>
+              )}
               {/* Payment Method */}
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 6 }}>
                 {incomingRide.payment_method === 'mobile_money' && <MaterialIcons name="smartphone" size={14} color={GOLD} />}
@@ -1053,13 +1060,13 @@ export default function DriverHomeScreen() {
               </View>
             </View>
             <View style={styles.rideActions}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.rideBtn, { backgroundColor: RED }]}
                 onPress={handleDeclineRide}
               >
                 <MaterialIcons name="close" size={20} color="#FFF" />
               </TouchableOpacity>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.rideBtn, { backgroundColor: GREEN }]}
                 onPress={handleAcceptRide}
               >
@@ -1096,6 +1103,16 @@ export default function DriverHomeScreen() {
               <Text style={[styles.navSub, dynamicStyles.muted]} numberOfLines={1}>
                 {activeTrip.status === 'in_progress' ? activeTrip.destination_address : activeTrip.pickup_address}
               </Text>
+              {isActiveDelivery && deliveryContact && (
+                <View style={[styles.deliveryContactCard, { borderColor: themeColors.border }]}>
+                  <MaterialIcons name={activeTrip.status === 'in_progress' ? 'person-pin-circle' : 'inventory-2'} size={18} color={GOLD} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.deliveryContactTitle, dynamicStyles.text]}>{deliveryContact.label} · {deliveryContact.name}</Text>
+                    {deliveryContact.packageDescription && <Text style={[styles.deliveryContactText, dynamicStyles.muted]} numberOfLines={1}>Package: {deliveryContact.packageDescription}</Text>}
+                    {deliveryContact.instructions && <Text style={[styles.deliveryContactText, dynamicStyles.muted]} numberOfLines={2}>{deliveryContact.instructions}</Text>}
+                  </View>
+                </View>
+              )}
               {activeTrip.status === 'in_progress' && <Text style={[styles.tripTracking, dynamicStyles.muted]}>Tracked: {tripDistanceKm.toFixed(2)} km</Text>}
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 12 }}>
                 <Text style={[styles.metaText, dynamicStyles.muted]}>Final fare appears when the trip ends</Text>
@@ -1104,7 +1121,7 @@ export default function DriverHomeScreen() {
                 )}
               </View>
             </View>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.navBtn, { backgroundColor: BLUE }]}
               onPress={() => {
                 const target = activeTrip.status === 'in_progress' ? activeTrip.destination : activeTrip.pickup;
@@ -1157,7 +1174,7 @@ export default function DriverHomeScreen() {
 
         {/* Quick Destination Filter */}
         {isOnline && !activeTrip && (
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.destFilterBar, dynamicStyles.card]}
             onPress={() => setDestModalVisible(true)}
           >
@@ -1257,7 +1274,7 @@ export default function DriverHomeScreen() {
             value={destInput}
             onChangeText={setDestInput}
           />
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.applyBtn, { backgroundColor: GOLD }]}
             onPress={() => { setPrefs({ ...prefs, destinationFilter: destInput }); setDestModalVisible(false); }}
           >
@@ -1317,13 +1334,13 @@ export default function DriverHomeScreen() {
         </View>
       </Modal>
 
-      {/* Calling choice: secure in-app audio with mobile-network fallback */}
+      {/* Delivery contacts are only returned after server-side assignment. */}
       <Modal visible={showCallOptions} transparent animationType="fade" onRequestClose={() => setShowCallOptions(false)}>
         <View style={styles.sheetOverlay}>
           <View style={[styles.sheet, { backgroundColor: isDark ? '#1a1a1a' : '#fff' }]}>
-            <View style={styles.modalHeader}><Text style={[styles.sheetTitle, dynamicStyles.text]}>Contact rider</Text><TouchableOpacity onPress={() => setShowCallOptions(false)}><MaterialIcons name="close" size={22} color={themeColors.text} /></TouchableOpacity></View>
-            <TouchableOpacity style={[styles.callOption, { borderColor: themeColors.border }]} onPress={async () => { setShowCallOptions(false); if (activeTrip?.rider_id) await call.startCall(activeTrip.rider_id); else Alert.alert('Call unavailable', 'The rider does not have an in-app call identifier.'); }}><MaterialIcons name="wifi-calling-3" size={24} color={BLUE} /><View style={{ flex: 1 }}><Text style={[styles.reasonText, dynamicStyles.text]}>In-app voice call</Text><Text style={[styles.optionSub, dynamicStyles.muted]}>Uses your data connection</Text></View></TouchableOpacity>
-            <TouchableOpacity style={[styles.callOption, { borderColor: themeColors.border, opacity: riderPhone ? 1 : 0.45 }]} disabled={!riderPhone} onPress={() => { setShowCallOptions(false); Linking.openURL(`tel:${riderPhone}`).catch(() => Alert.alert('Unable to call', 'This phone cannot open the dialer.')); }}><MaterialIcons name="phone" size={24} color={GREEN} /><View style={{ flex: 1 }}><Text style={[styles.reasonText, dynamicStyles.text]}>Mobile network call</Text><Text style={[styles.optionSub, dynamicStyles.muted]}>{riderPhone || 'Phone number unavailable'}</Text></View></TouchableOpacity>
+            <View style={styles.modalHeader}><Text style={[styles.sheetTitle, dynamicStyles.text]}>Contact {deliveryContact?.label.toLowerCase() || 'rider'}</Text><TouchableOpacity onPress={() => setShowCallOptions(false)}><MaterialIcons name="close" size={22} color={themeColors.text} /></TouchableOpacity></View>
+            {!isActiveDelivery && <TouchableOpacity style={[styles.callOption, { borderColor: themeColors.border }]} onPress={async () => { setShowCallOptions(false); if (activeTrip?.rider_id) await call.startCall(activeTrip.rider_id); else Alert.alert('Call unavailable', 'The rider does not have an in-app call identifier.'); }}><MaterialIcons name="wifi-calling-3" size={24} color={BLUE} /><View style={{ flex: 1 }}><Text style={[styles.reasonText, dynamicStyles.text]}>In-app voice call</Text><Text style={[styles.optionSub, dynamicStyles.muted]}>Uses your data connection</Text></View></TouchableOpacity>}
+            <TouchableOpacity style={[styles.callOption, { borderColor: themeColors.border, opacity: contactPhone ? 1 : 0.45 }]} disabled={!contactPhone} onPress={() => { setShowCallOptions(false); Linking.openURL(`tel:${contactPhone}`).catch(() => Alert.alert('Unable to call', 'This phone cannot open the dialer.')); }}><MaterialIcons name="phone" size={24} color={GREEN} /><View style={{ flex: 1 }}><Text style={[styles.reasonText, dynamicStyles.text]}>Mobile network call</Text><Text style={[styles.optionSub, dynamicStyles.muted]}>{contactPhone || 'Phone number unavailable'}</Text></View></TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1344,15 +1361,15 @@ export default function DriverHomeScreen() {
           <View style={[styles.ratingModal, { backgroundColor: isDark ? '#1a1a1a' : '#fff' }]}>
             <Text style={[styles.ratingTitle, dynamicStyles.text]}>Rate Your Experience</Text>
             <Text style={[styles.ratingSubtitle, dynamicStyles.muted]}>{completedRide?.rider_name}</Text>
-            
+
             {/* Star Rating */}
             <View style={styles.starsContainer}>
               {[1, 2, 3, 4, 5].map(star => (
                 <TouchableOpacity key={star} onPress={() => setRatingValue(star)}>
-                  <MaterialIcons 
-                    name={star <= ratingValue ? 'star' : 'star-outline'} 
-                    size={40} 
-                    color={star <= ratingValue ? GOLD : themeColors.muted} 
+                  <MaterialIcons
+                    name={star <= ratingValue ? 'star' : 'star-outline'}
+                    size={40}
+                    color={star <= ratingValue ? GOLD : themeColors.muted}
                   />
                 </TouchableOpacity>
               ))}
@@ -1373,13 +1390,13 @@ export default function DriverHomeScreen() {
             <TextInput style={[styles.compactInput, { color: themeColors.text, borderColor: themeColors.border }]} placeholder="Report a safety concern (optional)" placeholderTextColor="#999" value={safetyReport} onChangeText={setSafetyReport} />
 
             <View style={{ flexDirection: 'row', gap: 12 }}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.ratingBtn, { backgroundColor: themeColors.border, flex: 1 }]}
                 onPress={() => { setShowRating(false); setRatingValue(0); }}
               >
                 <Text style={[styles.ratingBtnText, { color: themeColors.text }]}>Skip</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.ratingBtn, { backgroundColor: GOLD, flex: 1 }]}
                 onPress={handleSubmitRating}
               >
@@ -1392,7 +1409,7 @@ export default function DriverHomeScreen() {
 
       {/* Chat Modal */}
       <IncomingCallModal call={call} otherName={activeTrip?.rider_name} otherRole="rider" />
-      <InCallScreen call={call} otherName={activeTrip?.rider_name} otherRole="rider" otherPhone={riderPhone} />
+      <InCallScreen call={call} otherName={activeTrip?.rider_name} otherRole="rider" otherPhone={contactPhone} />
 
       <RideChatModal
         isOpen={showChat}
@@ -1424,7 +1441,7 @@ const styles = StyleSheet.create({
   headerBadge: { position: 'absolute', top: -3, right: -3, minWidth: 17, height: 17, borderRadius: 9, backgroundColor: RED, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
   headerBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
   bottomContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 16, gap: 10 },
-  
+
   rideRequestCard: { flexDirection: 'row', padding: 16, borderRadius: 20, borderWidth: 1, gap: 12, alignItems: 'center' },
   rideTitle: { fontSize: 11, fontWeight: '700', opacity: 0.7, textTransform: 'uppercase', letterSpacing: 0.5 },
   offerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -1439,6 +1456,7 @@ const styles = StyleSheet.create({
   riskText: { color: '#7C2D12', fontSize: 10, fontWeight: '800' },
   rideName: { fontSize: 16, fontWeight: '900', marginTop: 4 },
   rideDetails: { fontSize: 12, marginTop: 2 },
+  deliveryOfferText: { fontSize: 10, lineHeight: 14, marginTop: 6, fontWeight: '700' },
   rideFare: { fontSize: 18, fontWeight: '900', marginTop: 4 },
   surgeText: { fontSize: 11, fontWeight: '900' },
   paymentText: { fontSize: 11, fontWeight: '600' },
@@ -1449,6 +1467,9 @@ const styles = StyleSheet.create({
   navStatus: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   navTitle: { fontSize: 16, fontWeight: '900', marginTop: 4 },
   navSub: { fontSize: 13, marginTop: 2 },
+  deliveryContactCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 9, padding: 9, borderWidth: 1, borderRadius: 10 },
+  deliveryContactTitle: { fontSize: 12, fontWeight: '900' },
+  deliveryContactText: { fontSize: 11, lineHeight: 15, marginTop: 2 },
   navFare: { fontSize: 16, fontWeight: '900' },
   etaText: { fontSize: 12, fontWeight: '600' },
   tripTracking: { fontSize: 11, fontWeight: '700', marginTop: 3 },
@@ -1468,7 +1489,7 @@ const styles = StyleSheet.create({
 
   destFilterBar: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 16, borderWidth: 1, gap: 12 },
   destText: { flex: 1, fontSize: 14, fontWeight: '700' },
-  
+
   actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 12 },
   actionBtnText: { color: '#FFF', fontWeight: '800', fontSize: 13 },
   unreadBadge: { position: 'absolute', top: -8, right: -8, width: 20, height: 20, borderRadius: 10, backgroundColor: RED, alignItems: 'center', justifyContent: 'center' },
@@ -1480,7 +1501,7 @@ const styles = StyleSheet.create({
   onlineStatus: { fontSize: 16, fontWeight: '900' },
   toggleBtn: { paddingHorizontal: 20, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   toggleBtnText: { color: '#FFF', fontSize: 14, fontWeight: '800' },
-  
+
   modalContainer: { flex: 1, padding: 24 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   modalTitle: { fontSize: 20, fontWeight: '900' },
