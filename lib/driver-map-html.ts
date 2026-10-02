@@ -17,19 +17,20 @@ export function buildDriverMapHtml(surface: string, carArt: string, generation: 
   <style>
     html,body,#map{height:100%;margin:0;background:${surface};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
     .leaflet-control-zoom{display:none}
-    .leaflet-tile{filter:${dark ? 'brightness(.30) saturate(.45) contrast(1.08)' : 'none'}}
+    .leaflet-tile{filter:${dark ? 'brightness(.58) saturate(.68) contrast(1.02)' : 'none'}}
     .driver-marker{transition:transform .85s linear!important}
     .driver-car{width:46px;height:46px;background-image:url('${carArt}');background-size:contain;background-position:center;background-repeat:no-repeat;filter:drop-shadow(0 2px 4px #0008);transform-origin:23px 23px;transition:transform .35s ease-out}
     .target-pin{width:26px;height:26px;border-radius:50% 50% 50% 0;background:#d4af37;border:3px solid #fff;box-shadow:0 2px 8px #0008;transform:rotate(-45deg)}
     .target-pin:after{content:'';display:block;width:8px;height:8px;background:#151515;border-radius:50%;margin:6px}
     .eta{position:fixed;z-index:900;top:86px;left:50%;transform:translateX(-50%);background:#006b3f;color:#fff;border-radius:14px;padding:9px 13px;text-align:center;box-shadow:0 4px 14px #0006;min-width:116px}
     .eta b{display:block;font-size:20px;line-height:22px}.eta span{font-size:11px;font-weight:800;letter-spacing:.3px}
-    .leaflet-control-attribution{font-size:10px!important;background:#ffffffd9!important;color:#222!important}
+    #map-credit{position:fixed;z-index:950;right:4px;bottom:4px;padding:2px 4px;border-radius:3px;background:#111a;color:#eee;font-size:8px;line-height:1;opacity:.78}
+    #map-credit a{color:inherit;text-decoration:none}
   </style>
   <script>${LEAFLET_SCRIPT}</script>
 </head>
 <body>
-  <div id="map"></div><div id="eta" class="eta" style="display:none"></div>
+  <div id="map"></div><div id="eta" class="eta" style="display:none"></div><div id="map-credit"><a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a></div>
   <script>
     (function () {
       var generation=${generation};
@@ -41,11 +42,10 @@ export function buildDriverMapHtml(surface: string, carArt: string, generation: 
       try {
         if(typeof L==='undefined')throw new Error('Map renderer unavailable');
         var fallbackPosition={latitude:${DEFAULT_POSITION.latitude},longitude:${DEFAULT_POSITION.longitude},heading:0,target:null,etaMinutes:null,tripStatus:null};
-        var map=L.map('map',{zoomControl:false,fadeAnimation:false,zoomAnimation:false}).setView([fallbackPosition.latitude,fallbackPosition.longitude],15);
+        var map=L.map('map',{zoomControl:false,attributionControl:false,fadeAnimation:false,zoomAnimation:false}).setView([fallbackPosition.latitude,fallbackPosition.longitude],15);
         var primaryTileUrl='https://tile.openstreetmap.org/{z}/{x}/{y}.png';
         var fallbackTileUrl='https://tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png';
-        var tiles=L.tileLayer(primaryTileUrl,{maxZoom:19,updateWhenIdle:false,keepBuffer:6,
-          attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
+        var tiles=L.tileLayer(primaryTileUrl,{maxZoom:19,updateWhenIdle:false,keepBuffer:6}).addTo(map);
         var tileFailures=0;
         tiles.on('tileload',function(){
           if(tileFailures>=3)notify('tiles-recovered');

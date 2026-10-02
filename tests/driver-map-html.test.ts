@@ -32,12 +32,16 @@ test('the page reports tile failure separately from a dead WebView, with a retry
   assert.match(exampleHtml, /fallbackTileUrl='https:\/\/tile\.openstreetmap\.fr/);
   assert.match(exampleHtml, /notify\('tiles-unavailable'\)/);
   assert.match(exampleHtml, /notify\('tiles-recovered'\)/);
-  assert.match(exampleHtml, /OpenStreetMap contributors/);
+  assert.match(exampleHtml, /id="map-credit"/);
+  assert.match(exampleHtml, /https:\/\/www\.openstreetmap\.org\/copyright/);
+  assert.match(exampleHtml, /© OpenStreetMap/);
+  assert.match(exampleHtml, /attributionControl:false/);
+  assert.doesNotMatch(exampleHtml, /attribution:'&copy; OpenStreetMap contributors'/);
 });
 
 test('the map theme, current marker and active route remain in the HTML', () => {
   assert.match(exampleHtml, /background:#343a40/);
-  assert.match(exampleHtml, /filter:brightness\(\.30\) saturate\(\.45\) contrast\(1\.08\)/);
+  assert.match(exampleHtml, /filter:brightness\(\.58\) saturate\(\.68\) contrast\(1\.02\)/);
   assert.match(exampleHtml, /data:image\/png;base64,eA==/);
   assert.match(exampleHtml, /carMarker\.setLatLng\(current\)/);
   assert.match(exampleHtml, /map\.fitBounds/);
