@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   INCOMING_TRIP_ALERT_PLAYBACK,
+  INCOMING_TRIP_NOTIFICATION,
   shouldPlayIncomingTripAlert,
 } from '../lib/incoming-trip-alert';
 
 test('an eligible incoming request plays the existing alert one time', () => {
   assert.equal(INCOMING_TRIP_ALERT_PLAYBACK.loop, false);
+  assert.equal(INCOMING_TRIP_NOTIFICATION.sound, false);
   assert.equal(shouldPlayIncomingTripAlert({
     isOnline: true,
     incomingRideId: 'ride-1',

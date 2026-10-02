@@ -31,6 +31,7 @@ import {
 } from '@/lib/driver-location-policy';
 import {
   INCOMING_TRIP_ALERT_PLAYBACK,
+  INCOMING_TRIP_NOTIFICATION,
   shouldPlayIncomingTripAlert,
 } from '@/lib/incoming-trip-alert';
 import { deliveryContactForDriver, isDeliveryRide } from '@/lib/delivery-contact';
@@ -429,7 +430,7 @@ export default function DriverHomeScreen() {
             // previews must not disclose an amount on the lock screen.
             body: airConditioningReminder(offeredRide.category, 'pickup')
               || `Ride request from ${offeredRide.rider_name || 'a rider'}. Open HY3N Driver to review the trip.`,
-            sound: 'default',
+            sound: INCOMING_TRIP_NOTIFICATION.sound,
             priority: Notifications.AndroidNotificationPriority.MAX,
           },
           trigger: null,

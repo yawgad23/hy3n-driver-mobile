@@ -3,6 +3,13 @@ export const INCOMING_TRIP_ALERT_PLAYBACK = Object.freeze({
   volume: 0.92,
 });
 
+// The app plays the branded HY3N alert itself. The accompanying local
+// notification remains visual-only so iOS never layers its default chime over
+// that same offer.
+export const INCOMING_TRIP_NOTIFICATION = Object.freeze({
+  sound: false,
+});
+
 type IncomingTripAlertInput = {
   isOnline: boolean;
   incomingRideId?: string | null;
