@@ -29,6 +29,10 @@ import {
   DRIVER_FOREGROUND_LOCATION_POLICY,
   shouldTrackDriverLocation,
 } from '@/lib/driver-location-policy';
+import {
+  INCOMING_TRIP_ALERT_PLAYBACK,
+  shouldPlayIncomingTripAlert,
+} from '@/lib/incoming-trip-alert';
 
 const INCOMING_TRIP_ALERT = require('../../assets/audio/incoming-trip-alert.wav');
 const GOLD = '#D4AF37';
@@ -253,8 +257,8 @@ export default function DriverHomeScreen() {
     }
   }, [isOnline]);
 
-  // Incoming-ride alert: play the distinctive local tone repeatedly until the
-  // driver accepts, declines, the offer expires, or sound alerts are disabled.
+  // Incoming-ride alert: retain HY3N's existing local tone, but play it once
+  // per outstanding offer rather than repeating it until the offer ends.
   useEffect(() => {
     setAudioModeAsync({
       playsInSilentMode: true,
@@ -270,15 +274,20 @@ export default function DriverHomeScreen() {
   }, [incomingTripPlayer]);
 
   useEffect(() => {
-    const shouldAlert = isOnline && Boolean(incomingRide?.id) && !activeTrip && prefs.soundAlerts;
+    const shouldAlert = shouldPlayIncomingTripAlert({
+      isOnline,
+      incomingRideId: incomingRide?.id,
+      activeTripId: activeTrip?.id,
+      soundAlerts: prefs.soundAlerts,
+    });
     if (!shouldAlert) {
       stopIncomingTripAlert();
       return;
     }
 
     const alertRun = ++incomingAlertRunRef.current;
-    incomingTripPlayer.loop = true;
-    incomingTripPlayer.volume = 0.92;
+    incomingTripPlayer.loop = INCOMING_TRIP_ALERT_PLAYBACK.loop;
+    incomingTripPlayer.volume = INCOMING_TRIP_ALERT_PLAYBACK.volume;
     if (Platform.OS === 'ios') {
       incomingTripPlayer.play();
     } else {
