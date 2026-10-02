@@ -30,6 +30,7 @@ import {
   DRIVER_FOREGROUND_LOCATION_POLICY,
   shouldTrackDriverLocation,
 } from '@/lib/driver-location-policy';
+import { driverAvailabilityLabel, hasUsableDriverLocation } from '@/lib/driver-location-readiness';
 import {
   INCOMING_TRIP_ALERT_PLAYBACK,
   INCOMING_TRIP_NOTIFICATION,
@@ -129,6 +130,8 @@ export default function DriverHomeScreen() {
 
   const [isOnline, setIsOnline] = useState(false);
   const [location, setLocation] = useState<ExpoLocation.LocationObject | null>(null);
+  const hasCurrentLocation = hasUsableDriverLocation(location);
+  const driverStatusLabel = driverAvailabilityLabel(isOnline, hasCurrentLocation);
   const [activeTrip, setActiveTrip] = useState<any>(null);
   const [incomingRide, setIncomingRide] = useState<any>(null);
   const [completedRide, setCompletedRide] = useState<any>(null);
@@ -221,7 +224,7 @@ export default function DriverHomeScreen() {
   // synchronized, while keeping the endpoint fully server-validated.
   const availableOffers = (trpc.driverTrips as any).availableOffers.useQuery(
     { driverId: user?.uid || '' },
-    { enabled: Boolean(user?.uid && isOnline), refetchInterval: 4000 },
+    { enabled: Boolean(user?.uid && isOnline && hasCurrentLocation), refetchInterval: 4000 },
   );
   // A query may refetch several times while the same offer is outstanding.
   // Keep a session-level record so one ride request produces one device alert.
@@ -385,7 +388,7 @@ export default function DriverHomeScreen() {
   // Receive only server-filtered, unassigned offers. The backend verifies that
   // the Driver is online and atomically assigns the ride only after Accept.
   useEffect(() => {
-    if (!user?.uid || !isOnline) {
+    if (!user?.uid || !isOnline || !hasCurrentLocation) {
       stopIncomingTripAlert();
       setIncomingRide(null);
       return;
@@ -438,7 +441,7 @@ export default function DriverHomeScreen() {
       }
       return offeredRide;
     });
-  }, [user?.uid, isOnline, activeTrip, incomingRide, availableOffers.data?.offers, prefs.longTripsOnly, prefs.preferHighRated]);
+  }, [user?.uid, isOnline, hasCurrentLocation, activeTrip, incomingRide, availableOffers.data?.offers, prefs.longTripsOnly, prefs.preferHighRated]);
 
   // Recover a trip if the app is reopened while the driver is already assigned.
   useEffect(() => {
@@ -592,6 +595,31 @@ export default function DriverHomeScreen() {
     setTogglingOnline(true);
     try {
       const newStatus = !isOnline;
+      if (newStatus) {
+        const permission = await ExpoLocation.requestForegroundPermissionsAsync();
+        if (permission.status !== 'granted') {
+          Alert.alert('Location needed', 'Allow location before going online so Riders receive your real position.');
+          return;
+        }
+        const freshLocation = await ExpoLocation.getCurrentPositionAsync({ accuracy: ExpoLocation.Accuracy.BestForNavigation });
+        if (!hasUsableDriverLocation(freshLocation)) {
+          Alert.alert('Location unavailable', 'HY3N Driver could not get a valid current position. Please try again outside or check Location Services.');
+          return;
+        }
+        // Publish before setting availability. Dispatch intentionally excludes
+        // online profiles without a fresh GPS point, so this prevents an
+        // apparently online Driver from receiving no requests.
+        await driverLocationPublisher.publish({
+          latitude: freshLocation.coords.latitude,
+          longitude: freshLocation.coords.longitude,
+          heading: freshLocation.coords.heading === null ? undefined : freshLocation.coords.heading,
+          speedKmh: freshLocation.coords.speed === null || freshLocation.coords.speed === undefined
+            ? undefined
+            : Math.max(0, Number((freshLocation.coords.speed * 3.6).toFixed(1))),
+          recordedAt: new Date(freshLocation.timestamp || Date.now()).toISOString(),
+        });
+        setLocation(freshLocation);
+      }
       await setAvailability.mutateAsync({
         driverId: user.uid,
         status: newStatus ? 'online' : 'offline',
@@ -602,8 +630,8 @@ export default function DriverHomeScreen() {
         setNextRide(null);
       }
       setIsOnline(newStatus);
-    } catch (err) {
-      Alert.alert('Error', 'Failed to update status');
+    } catch (err: any) {
+      Alert.alert('Location or availability error', err?.message || 'HY3N Driver could not verify your current location. Please try again.');
     } finally {
       setTogglingOnline(false);
     }
@@ -990,7 +1018,7 @@ export default function DriverHomeScreen() {
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <View style={[styles.statusBadge, dynamicStyles.badge]}>
           <View style={[styles.statusDot, { backgroundColor: isOnline ? GREEN : themeColors.muted }]} />
-          <Text style={[styles.statusText, dynamicStyles.text]}>{isOnline ? 'Online' : 'Offline'}</Text>
+          <Text style={[styles.statusText, dynamicStyles.text]}>{driverStatusLabel}</Text>
         </View>
 
         <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -1265,7 +1293,7 @@ export default function DriverHomeScreen() {
         <View style={[styles.onlineCard, dynamicStyles.card]}>
           <View style={styles.onlineLeft}>
             <Animated.View style={[styles.onlineDot, { backgroundColor: isOnline ? GREEN : themeColors.muted, transform: [{ scale: isOnline ? pulseAnim : 1 }] }]} />
-            <Text style={[styles.onlineStatus, dynamicStyles.text]}>{isOnline ? 'You are Online' : 'You are Offline'}</Text>
+            <Text style={[styles.onlineStatus, dynamicStyles.text]}>{isOnline ? (hasCurrentLocation ? 'You are Online' : 'Getting your location…') : 'You are Offline'}</Text>
           </View>
           <TouchableOpacity
             style={[styles.toggleBtn, { backgroundColor: isOnline ? RED : GREEN }]}

@@ -25,14 +25,21 @@ const safelySerialize = (value: unknown) => JSON.stringify(value)
 
 /** A healthy GPS feed should never remount the HTML page; only a lost map does. */
 export default function DriverLeafletMap({
-  latitude = DEFAULT_POSITION.latitude,
-  longitude = DEFAULT_POSITION.longitude,
+  latitude,
+  longitude,
   heading = 0,
   target = null,
   etaMinutes = null,
   tripStatus = null,
   dark = false,
 }: Props) {
+  const hasDeviceLocation = Number.isFinite(latitude)
+    && Number.isFinite(longitude)
+    && Math.abs(Number(latitude)) <= 90
+    && Math.abs(Number(longitude)) <= 180
+    && !(Number(latitude) === 0 && Number(longitude) === 0);
+  const visibleLatitude = hasDeviceLocation ? Number(latitude) : DEFAULT_POSITION.latitude;
+  const visibleLongitude = hasDeviceLocation ? Number(longitude) : DEFAULT_POSITION.longitude;
   const focused = useIsFocused();
   const webViewRef = useRef<WebView>(null);
   const [generation, setGeneration] = useState(0);
@@ -49,15 +56,15 @@ export default function DriverLeafletMap({
   const targetLabel = target?.label ?? null;
 
   const mapState = useMemo(() => ({
-    latitude,
-    longitude,
+    latitude: visibleLatitude,
+    longitude: visibleLongitude,
     heading: Number(heading || 0),
     target: targetLatitude !== null && targetLongitude !== null && targetLabel !== null
       ? { latitude: targetLatitude, longitude: targetLongitude, label: targetLabel }
       : null,
     etaMinutes,
     tripStatus,
-  }), [etaMinutes, heading, latitude, longitude, targetLabel, targetLatitude, targetLongitude, tripStatus]);
+  }), [etaMinutes, heading, targetLabel, targetLatitude, targetLongitude, tripStatus, visibleLatitude, visibleLongitude]);
   const serializedState = useMemo(() => safelySerialize(mapState), [mapState]);
   latestStateRef.current = serializedState;
 
@@ -82,9 +89,9 @@ export default function DriverLeafletMap({
 
   useEffect(() => {
     lifecycle.revive();
-    lifecycle.setVisible(focused && foregroundRef.current);
+    lifecycle.setVisible(hasDeviceLocation && focused && foregroundRef.current);
     return () => lifecycle.setVisible(false);
-  }, [focused, lifecycle]);
+  }, [focused, hasDeviceLocation, lifecycle]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
@@ -94,7 +101,7 @@ export default function DriverLeafletMap({
         lifecycle.setVisible(false);
         return;
       }
-      if (!focused) return;
+      if (!focused || !hasDeviceLocation) return;
       lifecycle.setVisible(true);
       // Refresh Leaflet in place first. Rebuilding the inline WebView on every
       // foreground event visibly flashes the map. A remount is reserved for an
@@ -104,7 +111,7 @@ export default function DriverLeafletMap({
       }
     });
     return () => subscription.remove();
-  }, [focused, lifecycle]);
+  }, [focused, hasDeviceLocation, lifecycle]);
 
   useEffect(() => () => lifecycle.dispose(), [lifecycle]);
 
@@ -132,35 +139,39 @@ export default function DriverLeafletMap({
 
   return (
     <View onLayout={handleLayout} style={{ flex: 1, backgroundColor: surface }}>
-      <WebView
-        key={generation}
-        ref={webViewRef}
-        source={html}
-        style={{ flex: 1, backgroundColor: surface }}
-        onLoadStart={() => lifecycle.onLoadStart(generation)}
-        onError={() => lifecycle.onFailure(generation)}
-        onContentProcessDidTerminate={() => lifecycle.onFailure(generation)}
-        onRenderProcessGone={() => lifecycle.onFailure(generation)}
-        onMessage={(event) => {
-          try {
-            const message = JSON.parse(event.nativeEvent.data);
-            if (message.generation !== generation) return;
-            if (message.type === 'ready') lifecycle.onReadyMessage(generation);
-            else if (message.type === 'pong') lifecycle.onPong(generation);
-            else if (message.type === 'init-error') lifecycle.onFailure(generation);
-            else if (message.type === 'tiles-unavailable') lifecycle.onTileError(generation);
-            else if (message.type === 'tiles-recovered') lifecycle.onTilesRecovered(generation);
-          } catch {
-            // Ignore messages from unrelated WebView scripts.
-          }
-        }}
-        originWhitelist={['*']}
-        javaScriptEnabled
-        domStorageEnabled
-        scrollEnabled={false}
-        bounces={false}
-      />
-      {status === 'loading' && showLoading && (
+      {hasDeviceLocation ? <WebView
+          key={generation}
+          ref={webViewRef}
+          source={html}
+          style={{ flex: 1, backgroundColor: surface }}
+          onLoadStart={() => lifecycle.onLoadStart(generation)}
+          onError={() => lifecycle.onFailure(generation)}
+          onContentProcessDidTerminate={() => lifecycle.onFailure(generation)}
+          onRenderProcessGone={() => lifecycle.onFailure(generation)}
+          onMessage={(event) => {
+            try {
+              const message = JSON.parse(event.nativeEvent.data);
+              if (message.generation !== generation) return;
+              if (message.type === 'ready') lifecycle.onReadyMessage(generation);
+              else if (message.type === 'pong') lifecycle.onPong(generation);
+              else if (message.type === 'init-error') lifecycle.onFailure(generation);
+              else if (message.type === 'tiles-unavailable') lifecycle.onTileError(generation);
+              else if (message.type === 'tiles-recovered') lifecycle.onTilesRecovered(generation);
+            } catch {
+              // Ignore messages from unrelated WebView scripts.
+            }
+          }}
+          originWhitelist={['*']}
+          javaScriptEnabled
+          domStorageEnabled
+          scrollEnabled={false}
+          bounces={false}
+        /> : <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28 }}>
+          <ActivityIndicator color="#006b3f" />
+          <Text style={{ color: dark ? '#fff' : '#111', fontWeight: '700', marginTop: 12 }}>Getting your live location…</Text>
+          <Text style={{ color: dark ? '#d1d5db' : '#4b5563', textAlign: 'center', marginTop: 6 }}>Your map and ride requests will use your device location, not a fallback place.</Text>
+        </View>}
+      {hasDeviceLocation && status === 'loading' && showLoading && (
         <View pointerEvents="none" style={{ position: 'absolute', top: '40%', left: 16, right: 16, alignItems: 'center' }}>
           <View style={{ backgroundColor: dark ? '#1f2937' : '#fff', padding: 14, borderRadius: 14, alignItems: 'center' }}>
             <ActivityIndicator color="#006b3f" />
@@ -168,7 +179,7 @@ export default function DriverLeafletMap({
           </View>
         </View>
       )}
-      {(status === 'unavailable' || status === 'tiles-unavailable') && (
+      {hasDeviceLocation && (status === 'unavailable' || status === 'tiles-unavailable') && (
         <View pointerEvents="box-none" style={{ position: 'absolute', top: '39%', left: 16, right: 16, alignItems: 'center' }}>
           <View style={{ backgroundColor: dark ? '#1f2937' : '#fff', padding: 16, borderRadius: 14, alignItems: 'center', maxWidth: 290 }}>
             <Text style={{ color: dark ? '#fff' : '#111', fontWeight: '700', textAlign: 'center' }}>
