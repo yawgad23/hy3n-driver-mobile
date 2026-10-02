@@ -15,6 +15,7 @@ import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { trpc } from '@/lib/trpc';
+import { driverLocationPublisher } from '@/lib/driver-location-publisher';
 import { submitDriverSos } from '@/lib/safety';
 import { Linking } from 'react-native';
 import { RideChatModal } from '@/components/ride-chat-modal';
@@ -113,7 +114,6 @@ export default function DriverHomeScreen() {
     keepAudioSessionActive: true,
   });
   const setAvailability = trpc.driverOperations.setAvailability.useMutation();
-  const updateDriverLocation = trpc.driverOperations.updateLocation.useMutation();
   const respondToOffer = trpc.driverTrips.respondToOffer.useMutation();
   const arriveAtPickup = trpc.driverTrips.arrive.useMutation();
   const verifyPickup = trpc.driverTrips.verifyPickup.useMutation();
@@ -210,7 +210,7 @@ export default function DriverHomeScreen() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [destModalVisible, setDestModalVisible] = useState(false);
   const [destInput, setDestInput] = useState('');
-  const [ratingValue, setRatingValue] = useState(0);
+  const [ratingValue, setRatingValue] = useState(5);
   const [ratingFeedback, setRatingFeedback] = useState('');
 
   // Offers are read from the backend rather than from a pre-assigned Firestore
@@ -529,15 +529,20 @@ export default function DriverHomeScreen() {
     return radiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
 
-  // Maintain secure server-side driver presence while online, including when the app is foregrounded during an active trip.
+  // Publish foreground GPS through the same authenticated ingress as the iOS
+  // background task. Keeping one ordered writer prevents older network calls
+  // from replacing a fresher presence point and makes the Rider's car glide in
+  // the same direction as the Driver's own map marker.
   useEffect(() => {
     if (!location || !user?.uid || !shouldTrackDriverLocation(isOnline, Boolean(activeTrip?.id))) return;
-    updateDriverLocation.mutate({
-      driverId: user.uid,
+    void driverLocationPublisher.publish({
       latitude: location.coords.latitude,
       longitude: location.coords.longitude,
       heading: location.coords.heading === null ? undefined : location.coords.heading,
       speedKmh: location.coords.speed === null || location.coords.speed === undefined ? undefined : Math.max(0, Number((location.coords.speed * 3.6).toFixed(1))),
+      recordedAt: new Date(location.timestamp || Date.now()).toISOString(),
+    }).catch((error) => {
+      console.warn('[HY3N] Foreground Driver location publish failed:', error?.message || 'unknown error');
     });
   }, [location, user?.uid, isOnline, activeTrip?.id]);
 
@@ -864,20 +869,31 @@ export default function DriverHomeScreen() {
       if (!user?.uid || !completedRide.rider_id || ratingValue < 1) throw new Error('Please choose a star rating.');
       await rateRider.mutateAsync({ driverId: user.uid, rideId: completedRide.id, riderId: completedRide.rider_id, rating: ratingValue, feedback: ratingFeedback, foundItem, safetyReport });
 
+      Alert.alert('Thank you!', `Your ${ratingValue}-star rating for ${completedRide.rider_name || 'this Rider'} has been submitted.`);
       setShowRating(false);
       setCompletedRide(null);
-      setRatingValue(0);
+      setRatingValue(5);
       setRatingFeedback('');
       setFoundItem('');
       setSafetyReport('');
     } catch (err: any) {
       const message = String(err?.message || '').trim();
+      if (/already rated this rider/i.test(message)) {
+        setShowRating(false);
+        setCompletedRide(null);
+        setRatingValue(5);
+        Alert.alert('Thank you!', 'Your rating was already received.');
+        return;
+      }
       Alert.alert('Unable to submit rating', message || 'Please check your connection and try again.');
     }
   };
 
   const handleFareAcknowledged = async () => {
     setShowFareScreen(false);
+    // A fresh completed trip starts with a visible score so Submit is never
+    // blocked by an empty rating sheet. Drivers can still tap any star first.
+    setRatingValue(5);
     setShowRating(true);
     if (!queuedRideToActivate || !user?.uid) return;
     try {
@@ -1393,7 +1409,7 @@ export default function DriverHomeScreen() {
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <TouchableOpacity
                 style={[styles.ratingBtn, { backgroundColor: themeColors.border, flex: 1 }]}
-                onPress={() => { setShowRating(false); setRatingValue(0); }}
+                onPress={() => { setShowRating(false); setRatingValue(5); }}
               >
                 <Text style={[styles.ratingBtnText, { color: themeColors.text }]}>Skip</Text>
               </TouchableOpacity>

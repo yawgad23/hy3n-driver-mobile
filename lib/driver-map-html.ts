@@ -105,6 +105,15 @@ export function buildDriverMapHtml(surface: string, carArt: string, generation: 
         function numberOr(value,fallback){var parsed=Number(value);return Number.isFinite(parsed)?parsed:fallback}
         function position(state){return [numberOr(state&&state.latitude,fallbackPosition.latitude),numberOr(state&&state.longitude,fallbackPosition.longitude)]}
         function samePoint(first,second){return Math.abs(first[0]-second[0])<0.0000001&&Math.abs(first[1]-second[1])<0.0000001}
+        function keepCarVisible(){
+          if(!targetMarker)return;
+          var size=map.getSize();
+          var carPoint=map.latLngToContainerPoint(carMarker.getLatLng());
+          var left=size.x*.16,right=size.x*.84,top=size.y*.12,bottom=size.y*.61;
+          if(carPoint.x<left||carPoint.x>right||carPoint.y<top||carPoint.y>bottom){
+            map.panInside(carMarker.getLatLng(),{paddingTopLeft:[Math.round(size.x*.16),Math.round(size.y*.12)],paddingBottomRight:[Math.round(size.x*.16),Math.round(size.y*.39)],animate:true,duration:.55,noMoveStart:true});
+          }
+        }
         function animateCarTo(next){
           if(samePoint(carTarget,next))return;
           if(carAnimationFrame!==null)cancelAnimationFrame(carAnimationFrame);
@@ -116,16 +125,15 @@ export function buildDriverMapHtml(surface: string, carArt: string, generation: 
           var elapsed=carLastUpdateAt?now-carLastUpdateAt:0;
           var duration=elapsed?Math.max(1200,Math.min(8000,elapsed*.92)):0;
           carLastUpdateAt=now;
-          if(!duration){carMarker.setLatLng(target);return}
+          if(!duration){carMarker.setLatLng(target);keepCarVisible();return}
           var startedAt=now;
           var frame=function(timestamp){
             var progress=Math.min(1,(timestamp-startedAt)/duration);
             var eased=progress<1?progress*(2-progress):1;
             carMarker.setLatLng([start.lat+(target.lat-start.lat)*eased,start.lng+(target.lng-start.lng)*eased]);
-            if(progress<1)carAnimationFrame=requestAnimationFrame(frame);else carAnimationFrame=null;
+            if(progress<1)carAnimationFrame=requestAnimationFrame(frame);else{carAnimationFrame=null;keepCarVisible()}
           };
           carAnimationFrame=requestAnimationFrame(frame);
-          map.panTo(target,{animate:true,duration:duration/1000,noMoveStart:true});
         }
         function setCarHeading(heading){
           var icon=carMarker.getElement();
@@ -166,7 +174,10 @@ export function buildDriverMapHtml(surface: string, carArt: string, generation: 
           label.textContent=String(target.label||'Destination');
           targetMarker=L.marker(point,{icon:L.divIcon({html:'<div class="target-pin"></div>',iconSize:[32,32],iconAnchor:[16,28],className:''}),keyboard:false}).addTo(map).bindTooltip(label,{permanent:false});
           renderRoute(from,point,key);
-          map.fitBounds([from,point],{padding:[58,42],maxZoom:15,animate:true,duration:.45});
+          // Frame the live car and next stop at a road-level zoom. The bottom
+          // navigation card remains clear while the vehicle is large enough to
+          // judge its direction without pinching the map.
+          map.fitBounds([from,point],{paddingTopLeft:[42,78],paddingBottomRight:[42,330],maxZoom:17,animate:true,duration:.45});
         }
         function updateEta(state){
           if(!state||!state.target){etaElement.style.display='none';return}

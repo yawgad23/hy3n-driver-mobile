@@ -2,34 +2,22 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ExpoLocation from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { Platform } from 'react-native';
-import { auth } from '@/lib/firebase';
-import { getApiBaseUrl } from '@/constants/oauth';
 import { DRIVER_BACKGROUND_LOCATION_POLICY } from '@/lib/driver-location-policy';
+import { driverLocationPublisher } from '@/lib/driver-location-publisher';
 
 export const DRIVER_BACKGROUND_LOCATION_TASK = 'hy3n-driver-background-location-v1';
 const BACKGROUND_TRACKING_ENABLED_KEY = 'hy3n:driver-background-location-enabled';
 
 async function publishDriverLocation(location: ExpoLocation.LocationObject) {
-  const user = auth.currentUser;
-  if (!user) return;
-  const idToken = await user.getIdToken();
-  const response = await fetch(`${getApiBaseUrl()}/api/driver/location`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${idToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      latitude: location.coords.latitude,
-      longitude: location.coords.longitude,
-      heading: location.coords.heading ?? null,
-      speedKmh: location.coords.speed === null || location.coords.speed === undefined
-        ? null
-        : Math.max(0, Number((location.coords.speed * 3.6).toFixed(1))),
-      recordedAt: new Date(location.timestamp || Date.now()).toISOString(),
-    }),
+  await driverLocationPublisher.publish({
+    latitude: location.coords.latitude,
+    longitude: location.coords.longitude,
+    heading: location.coords.heading ?? null,
+    speedKmh: location.coords.speed === null || location.coords.speed === undefined
+      ? null
+      : Math.max(0, Number((location.coords.speed * 3.6).toFixed(1))),
+    recordedAt: new Date(location.timestamp || Date.now()).toISOString(),
   });
-  if (!response.ok) throw new Error(`Driver location update failed (${response.status})`);
 }
 
 // The task must be declared at module scope and imported from the root layout,

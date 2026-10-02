@@ -45,6 +45,7 @@ test('the map theme, current marker and active route remain in the HTML', () => 
   assert.match(exampleHtml, /data:image\/png;base64,eA==/);
   assert.match(exampleHtml, /animateCarTo\(current\)/);
   assert.match(exampleHtml, /map\.fitBounds/);
+  assert.match(exampleHtml, /paddingBottomRight:\[42,330\],maxZoom:17/);
   assert.match(exampleHtml, /map\.invalidateSize/);
   assert.match(exampleHtml, /window\.__HY3N_HEALTH__=function/);
   assert.match(exampleHtml, /window\.__HY3N_FOREGROUND__=function/);
@@ -59,7 +60,10 @@ test('the Driver marker glides only to a new GPS target and ignores heading-only
   assert.match(exampleHtml, /cancelAnimationFrame\(carAnimationFrame\)/);
   assert.match(exampleHtml, /duration=elapsed\?Math\.max\(1200,Math\.min\(8000,elapsed\*\.92\)\):0/);
   assert.match(exampleHtml, /requestAnimationFrame\(frame\)/);
-  assert.match(exampleHtml, /map\.panTo\(target,\{animate:true,duration:duration\/1000,noMoveStart:true\}\)/);
+  assert.match(exampleHtml, /function keepCarVisible\(\)/);
+  assert.match(exampleHtml, /map\.panInside\(carMarker\.getLatLng\(\)/);
+  assert.match(exampleHtml, /keepCarVisible\(\)/);
+  assert.doesNotMatch(exampleHtml, /map\.panTo\(target/);
   assert.doesNotMatch(exampleHtml, /carMarker\.setLatLng\(current\)/);
 });
 
