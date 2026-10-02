@@ -65,7 +65,6 @@ export function buildDriverMapHtml(surface: string, carArt: string, generation: 
         });
         function refreshSurface(){
           map.invalidateSize({animate:false,pan:false,debounceMoveend:true});
-          tiles.redraw();
         }
         setTimeout(refreshSurface,150);
         window.addEventListener('resize',refreshSurface);
@@ -164,7 +163,7 @@ export function buildDriverMapHtml(surface: string, carArt: string, generation: 
         window.__HY3N_FOREGROUND__=function(){
           // Preserve the existing rendered document on an ordinary iOS resume.
           // Two surface refreshes cover the WKWebView/React Native layout handoff
-          // without blanking the map through a full WebView remount.
+          // without reloading already-visible tiles or remounting the WebView.
           refreshSurface();
           requestAnimationFrame(refreshSurface);
           setTimeout(refreshSurface,180);

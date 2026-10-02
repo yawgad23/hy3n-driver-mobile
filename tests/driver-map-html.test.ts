@@ -50,4 +50,14 @@ test('the map theme, current marker and active route remain in the HTML', () => 
   assert.match(exampleHtml, /window\.__HY3N_FOREGROUND__=function/);
   assert.match(exampleHtml, /window\.__HY3N_LAYOUT__=function/);
   assert.match(exampleHtml, /document\.addEventListener\('visibilitychange'/);
+  assert.doesNotMatch(exampleHtml, /tiles\.redraw\(\)/);
+});
+
+test('foreground surface recovery invalidates layout without evicting loaded tiles', () => {
+  const refreshBody = exampleHtml.match(/function refreshSurface\(\)\{([\s\S]*?)\n        \}/)?.[1];
+  assert.ok(refreshBody, 'refreshSurface must remain defined in the generated map page');
+  assert.match(refreshBody, /map\.invalidateSize\(\{animate:false,pan:false,debounceMoveend:true\}\)/);
+  assert.doesNotMatch(refreshBody, /tiles\.(?:redraw|clearAllTiles|_removeAllTiles)\(/);
+  assert.match(exampleHtml, /window\.__HY3N_FOREGROUND__=function\(\)\{[\s\S]*?refreshSurface\(\);[\s\S]*?requestAnimationFrame\(refreshSurface\)/);
+  assert.match(exampleHtml, /window\.__HY3N_HEALTH__=function\(\)\{[\s\S]*?refreshSurface\(\);/);
 });
