@@ -2,6 +2,24 @@
 import "./scripts/load-env.js";
 import type { ExpoConfig } from "expo/config";
 
+// Native Maps SDK keys are public by design once compiled into an app, so they
+// must be separately restricted in Google Cloud. They are injected only by
+// EAS at build time and must never reuse the server-only Routes API key.
+const nativeGoogleMaps = {
+  iosApiKey: process.env.GOOGLE_MAPS_IOS_API_KEY?.trim() || "",
+  androidApiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY?.trim() || "",
+};
+const nativeGoogleMapsPlugin: [string, Record<string, string>] | null =
+  nativeGoogleMaps.iosApiKey && nativeGoogleMaps.androidApiKey
+    ? [
+        "react-native-maps",
+        {
+          iosGoogleMapsApiKey: nativeGoogleMaps.iosApiKey,
+          androidGoogleMapsApiKey: nativeGoogleMaps.androidApiKey,
+        },
+      ]
+    : null;
+
 // Bundle ID format: space.manus.<project_name_dots>.<timestamp>
 // e.g., "my-app" created at 2024-01-15 10:30:45 -> "space.manus.my.app.t20240115103045"
 // Bundle ID can only contain letters, numbers, and dots
@@ -133,6 +151,7 @@ const config: ExpoConfig = {
         },
       },
     ],
+    ...(nativeGoogleMapsPlugin ? [nativeGoogleMapsPlugin] : []),
   ],
   experiments: {
     typedRoutes: true,
