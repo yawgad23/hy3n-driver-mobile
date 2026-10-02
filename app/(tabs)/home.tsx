@@ -21,7 +21,7 @@ import { Linking } from 'react-native';
 import { RideChatModal } from '@/components/ride-chat-modal';
 import { InCallScreen, IncomingCallModal } from '@/components/in-call-screen';
 import { useVoiceCall } from '@/hooks/use-voice-call';
-import DriverLeafletMap from '@/components/DriverLeafletMap';
+import NativeDriverGoogleMap from '@/components/NativeDriverGoogleMap';
 import { Colors } from '@/constants/theme';
 import { buildVehicleFields } from '@/lib/vehicle';
 import { useThemeContext } from '@/lib/theme-provider';
@@ -998,7 +998,7 @@ export default function DriverHomeScreen() {
 
       {/* Map Layer */}
       {isOnline ? (
-        <DriverLeafletMap
+        <NativeDriverGoogleMap
           latitude={location?.coords.latitude}
           longitude={location?.coords.longitude}
           heading={location?.coords.heading}
