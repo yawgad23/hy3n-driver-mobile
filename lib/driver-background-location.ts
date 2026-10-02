@@ -4,6 +4,7 @@ import * as TaskManager from 'expo-task-manager';
 import { Platform } from 'react-native';
 import { auth } from '@/lib/firebase';
 import { getApiBaseUrl } from '@/constants/oauth';
+import { DRIVER_BACKGROUND_LOCATION_POLICY } from '@/lib/driver-location-policy';
 
 export const DRIVER_BACKGROUND_LOCATION_TASK = 'hy3n-driver-background-location-v1';
 const BACKGROUND_TRACKING_ENABLED_KEY = 'hy3n:driver-background-location-enabled';
@@ -74,8 +75,8 @@ export async function startDriverBackgroundLocationUpdates(): Promise<Background
   if (!alreadyStarted) {
     await ExpoLocation.startLocationUpdatesAsync(DRIVER_BACKGROUND_LOCATION_TASK, {
       accuracy: ExpoLocation.Accuracy.BestForNavigation,
-      timeInterval: 10_000,
-      distanceInterval: 10,
+      timeInterval: DRIVER_BACKGROUND_LOCATION_POLICY.timeIntervalMs,
+      distanceInterval: DRIVER_BACKGROUND_LOCATION_POLICY.distanceIntervalMeters,
       pausesUpdatesAutomatically: false,
       showsBackgroundLocationIndicator: true,
       foregroundService: {

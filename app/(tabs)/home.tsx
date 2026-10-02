@@ -25,6 +25,10 @@ import { Colors } from '@/constants/theme';
 import { buildVehicleFields } from '@/lib/vehicle';
 import { useThemeContext } from '@/lib/theme-provider';
 import { startDriverBackgroundLocationUpdates, stopDriverBackgroundLocationUpdates } from '@/lib/driver-background-location';
+import {
+  DRIVER_FOREGROUND_LOCATION_POLICY,
+  shouldTrackDriverLocation,
+} from '@/lib/driver-location-policy';
 
 const INCOMING_TRIP_ALERT = require('../../assets/audio/incoming-trip-alert.wav');
 const GOLD = '#D4AF37';
@@ -307,14 +311,20 @@ export default function DriverHomeScreen() {
   useEffect(() => {
     let subscription: any;
     let disposed = false;
+    const shouldTrack = shouldTrackDriverLocation(isOnline, Boolean(activeTrip?.id));
+    if (!shouldTrack) return;
     const beginLocationWatch = async () => {
       let { status } = await ExpoLocation.requestForegroundPermissionsAsync();
       if (status !== 'granted') return;
-      let loc = await ExpoLocation.getCurrentPositionAsync({});
+      let loc = await ExpoLocation.getCurrentPositionAsync({ accuracy: ExpoLocation.Accuracy.BestForNavigation });
       if (disposed) return;
       setLocation(loc);
       const watch = await ExpoLocation.watchPositionAsync(
-        { accuracy: ExpoLocation.Accuracy.Balanced, timeInterval: 5000, distanceInterval: 10 },
+        {
+          accuracy: ExpoLocation.Accuracy.BestForNavigation,
+          timeInterval: DRIVER_FOREGROUND_LOCATION_POLICY.timeIntervalMs,
+          distanceInterval: DRIVER_FOREGROUND_LOCATION_POLICY.distanceIntervalMeters,
+        },
         (newLoc) => {
           if (!disposed) setLocation(newLoc);
         },
@@ -330,7 +340,7 @@ export default function DriverHomeScreen() {
       disposed = true;
       subscription?.remove();
     };
-  }, []);
+  }, [isOnline, activeTrip?.id]);
 
   useEffect(() => {
     if (driverProfile) setIsOnline(driverProfile.is_online || false);
@@ -340,7 +350,8 @@ export default function DriverHomeScreen() {
   // the app. iOS displays its standard location indicator and the Driver can
   // stop tracking at any time by going offline.
   useEffect(() => {
-    if (!isOnline || !user?.uid) {
+    const shouldTrack = shouldTrackDriverLocation(isOnline, Boolean(activeTrip?.id));
+    if (!shouldTrack || !user?.uid) {
       stopDriverBackgroundLocationUpdates().catch(() => {});
       return;
     }
@@ -355,7 +366,7 @@ export default function DriverHomeScreen() {
       }
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [isOnline, user?.uid]);
+  }, [isOnline, activeTrip?.id, user?.uid]);
 
   // Receive only server-filtered, unassigned offers. The backend verifies that
   // the Driver is online and atomically assigns the ride only after Accept.
@@ -506,7 +517,7 @@ export default function DriverHomeScreen() {
 
   // Maintain secure server-side driver presence while online, including when the app is foregrounded during an active trip.
   useEffect(() => {
-    if (!location || !user?.uid || !isOnline) return;
+    if (!location || !user?.uid || !shouldTrackDriverLocation(isOnline, Boolean(activeTrip?.id))) return;
     updateDriverLocation.mutate({
       driverId: user.uid,
       latitude: location.coords.latitude,
@@ -514,7 +525,7 @@ export default function DriverHomeScreen() {
       heading: location.coords.heading === null ? undefined : location.coords.heading,
       speedKmh: location.coords.speed === null || location.coords.speed === undefined ? undefined : Math.max(0, Number((location.coords.speed * 3.6).toFixed(1))),
     });
-  }, [location, user?.uid, isOnline]);
+  }, [location, user?.uid, isOnline, activeTrip?.id]);
 
   // Fare mileage is server-metered only after Start Trip. Each point is kept
   // independent from the driver-presence update so the Rider can still see
@@ -885,7 +896,7 @@ export default function DriverHomeScreen() {
           <ActivityIndicator size="large" color={GOLD} style={{ marginVertical: 20 }} />
           <Text style={[styles.approvalTitle, { color: themeColors.text }]}>Awaiting Approval</Text>
           <Text style={[styles.approvalSub, { color: themeColors.muted }]}>
-            Your documents are being reviewed. We'll notify you once approved.
+            Your documents are being reviewed. We&apos;ll notify you once approved.
           </Text>
         </View>
       </View>
