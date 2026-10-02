@@ -37,6 +37,11 @@ import {
   shouldPlayIncomingTripAlert,
 } from '@/lib/incoming-trip-alert';
 import { deliveryContactForDriver, isDeliveryRide } from '@/lib/delivery-contact';
+import {
+  DRIVER_OFFER_POLL_INTERVAL_MS,
+  DRIVER_OFFER_REVIEW_SECONDS,
+  nextDriverOfferCountdown,
+} from '@/lib/driver-offer-lifecycle';
 
 const INCOMING_TRIP_ALERT = require('../../assets/audio/incoming-trip-alert.wav');
 const GOLD = '#D4AF37';
@@ -142,7 +147,7 @@ export default function DriverHomeScreen() {
   const [eta, setEta] = useState<number | null>(null);
   const [nextRide, setNextRide] = useState<any>(null);
   const [queuedRideToActivate, setQueuedRideToActivate] = useState<any>(null);
-  const [rideOfferSeconds, setRideOfferSeconds] = useState(20);
+  const [rideOfferSeconds, setRideOfferSeconds] = useState(DRIVER_OFFER_REVIEW_SECONDS);
   const [showOtp, setShowOtp] = useState(false);
   const [pickupCode, setPickupCode] = useState('');
   const [showCancel, setShowCancel] = useState(false);
@@ -224,7 +229,7 @@ export default function DriverHomeScreen() {
   // synchronized, while keeping the endpoint fully server-validated.
   const availableOffers = (trpc.driverTrips as any).availableOffers.useQuery(
     { driverId: user?.uid || '' },
-    { enabled: Boolean(user?.uid && isOnline && hasCurrentLocation), refetchInterval: 4000 },
+    { enabled: Boolean(user?.uid && isOnline && hasCurrentLocation), refetchInterval: DRIVER_OFFER_POLL_INTERVAL_MS },
   );
   // A query may refetch several times while the same offer is outstanding.
   // Keep a session-level record so one ride request produces one device alert.
@@ -421,7 +426,7 @@ export default function DriverHomeScreen() {
 
     setIncomingRide((current: any) => {
       if (current?.id === offeredRide.id) return current;
-      setRideOfferSeconds(20);
+      setRideOfferSeconds(DRIVER_OFFER_REVIEW_SECONDS);
       const offerId = String(offeredRide.id);
       if (!notifiedOfferIds.current.has(offerId)) {
         if (notifiedOfferIds.current.size >= 100) notifiedOfferIds.current.clear();
@@ -456,17 +461,13 @@ export default function DriverHomeScreen() {
     }).catch(() => {});
   }, [user?.uid]);
 
-  // Automatically expire unanswered requests and optionally accept approved matches.
+  // Show a review timer without silently declining the Rider's request. The
+  // server owns search expiry; the Driver must make an explicit decline.
   useEffect(() => {
-    if (!incomingRide || activeTrip) return;
-    const timer = setInterval(() => setRideOfferSeconds((seconds) => seconds - 1), 1000);
+    if (!incomingRide || activeTrip || rideOfferSeconds <= 0) return;
+    const timer = setInterval(() => setRideOfferSeconds(nextDriverOfferCountdown), 1000);
     return () => clearInterval(timer);
-  }, [incomingRide, activeTrip]);
-
-  useEffect(() => {
-    if (!incomingRide || activeTrip || rideOfferSeconds > 0) return;
-    handleDeclineRide();
-  }, [rideOfferSeconds, incomingRide, activeTrip]);
+  }, [incomingRide, activeTrip, rideOfferSeconds]);
 
   useEffect(() => {
     if (!incomingRide || activeTrip || !prefs.autoAccept) return;
@@ -656,7 +657,7 @@ export default function DriverHomeScreen() {
       });
       setActiveTrip(result.ride);
       setIncomingRide(null);
-      setRideOfferSeconds(20);
+      setRideOfferSeconds(DRIVER_OFFER_REVIEW_SECONDS);
     } catch (err) {
       Alert.alert('Error', 'Failed to accept ride');
     }
@@ -692,7 +693,7 @@ export default function DriverHomeScreen() {
     try {
       await respondToOffer.mutateAsync({ driverId: user.uid, rideId: incomingRide.id, decision: 'decline' });
       setIncomingRide(null);
-      setRideOfferSeconds(20);
+      setRideOfferSeconds(DRIVER_OFFER_REVIEW_SECONDS);
     } catch (err) {
       Alert.alert('Error', 'Failed to decline ride');
     }
@@ -1061,7 +1062,7 @@ export default function DriverHomeScreen() {
         {incomingRide && !activeTrip && (
           <Animated.View {...offerPanResponder.panHandlers} style={[styles.rideRequestCard, dynamicStyles.card, { transform: [{ translateX: offerSwipeX }] }]}>
             <View style={{ flex: 1 }}>
-              <View style={styles.offerHeader}><Text style={[styles.rideTitle, dynamicStyles.text]}>New Ride Request</Text><Text style={[styles.offerTimer, { color: rideOfferSeconds <= 5 ? RED : GOLD }]}>{Math.max(0, rideOfferSeconds)}s</Text></View>
+              <View style={styles.offerHeader}><Text style={[styles.rideTitle, dynamicStyles.text]}>New Ride Request</Text><Text style={[styles.offerTimer, { color: rideOfferSeconds <= 5 ? RED : GOLD }]}>{rideOfferSeconds > 0 ? `${rideOfferSeconds}s` : 'Review'}</Text></View>
               <Text style={[styles.rideName, dynamicStyles.text]}>{incomingRide.rider_name}</Text>
               <View style={styles.metaRow}>
                 {incomingRide.rider_rating && <Text style={[styles.metaText, dynamicStyles.muted]}>★ {Number(incomingRide.rider_rating).toFixed(1)}</Text>}
