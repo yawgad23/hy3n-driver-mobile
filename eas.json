@@ -38,6 +38,7 @@
       }
     },
     "production": {
+      "environment": "production",
       "ios": {
         "buildConfiguration": "Release"
       },
