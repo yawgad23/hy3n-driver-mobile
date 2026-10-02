@@ -11,6 +11,10 @@ test('Driver earnings labels direct Rider collections without a withdrawal claim
   assert.match(earnings, /Collected directly from Riders/);
   assert.match(earnings, /not a HY3N withdrawal balance/);
   assert.doesNotMatch(earnings, /Available to withdraw/);
+  assert.match(earnings, /style=\{styles\.balanceCopy\}/);
+  assert.match(earnings, /numberOfLines=\{1\} adjustsFontSizeToFit minimumFontScale=\{0\.72\}/);
+  assert.match(earnings, /balanceCopy: \{ flex: 1, minWidth: 0 \}/);
+  assert.match(earnings, /balanceAmount: \{ color: GREEN, fontSize: 20, fontWeight: '900', flexShrink: 1, textAlign: 'right' \}/);
 });
 
 test('Driver MoMo information screen does not expose a payout request form', () => {
