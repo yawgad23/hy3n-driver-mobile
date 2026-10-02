@@ -43,7 +43,7 @@ test('the map theme, current marker and active route remain in the HTML', () => 
   assert.match(exampleHtml, /background:#343a40/);
   assert.match(exampleHtml, /filter:brightness\(\.58\) saturate\(\.68\) contrast\(1\.02\)/);
   assert.match(exampleHtml, /data:image\/png;base64,eA==/);
-  assert.match(exampleHtml, /carMarker\.setLatLng\(current\)/);
+  assert.match(exampleHtml, /animateCarTo\(current\)/);
   assert.match(exampleHtml, /map\.fitBounds/);
   assert.match(exampleHtml, /map\.invalidateSize/);
   assert.match(exampleHtml, /window\.__HY3N_HEALTH__=function/);
@@ -51,6 +51,16 @@ test('the map theme, current marker and active route remain in the HTML', () => 
   assert.match(exampleHtml, /window\.__HY3N_LAYOUT__=function/);
   assert.match(exampleHtml, /document\.addEventListener\('visibilitychange'/);
   assert.doesNotMatch(exampleHtml, /tiles\.redraw\(\)/);
+});
+
+test('the Driver marker glides only to a new GPS target and ignores heading-only refreshes', () => {
+  assert.match(exampleHtml, /function samePoint\(first,second\)/);
+  assert.match(exampleHtml, /if\(samePoint\(carTarget,next\)\)return/);
+  assert.match(exampleHtml, /cancelAnimationFrame\(carAnimationFrame\)/);
+  assert.match(exampleHtml, /duration=elapsed\?Math\.max\(1200,Math\.min\(8000,elapsed\*\.92\)\):0/);
+  assert.match(exampleHtml, /requestAnimationFrame\(frame\)/);
+  assert.match(exampleHtml, /map\.panTo\(target,\{animate:true,duration:duration\/1000,noMoveStart:true\}\)/);
+  assert.doesNotMatch(exampleHtml, /carMarker\.setLatLng\(current\)/);
 });
 
 test('foreground surface recovery invalidates layout without evicting loaded tiles', () => {

@@ -18,7 +18,7 @@ export function buildDriverMapHtml(surface: string, carArt: string, generation: 
     html,body,#map{height:100%;margin:0;background:${surface};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
     .leaflet-control-zoom{display:none}
     .leaflet-tile{filter:${dark ? 'brightness(.58) saturate(.68) contrast(1.02)' : 'none'}}
-    .driver-marker{transition:transform .85s linear!important}
+    .driver-marker{transition:none!important}
     .driver-car{width:46px;height:46px;background-image:url('${carArt}');background-size:contain;background-position:center;background-repeat:no-repeat;filter:drop-shadow(0 2px 4px #0008);transform-origin:23px 23px;transition:transform .35s ease-out}
     .target-pin{width:26px;height:26px;border-radius:50% 50% 50% 0;background:#d4af37;border:3px solid #fff;box-shadow:0 2px 8px #0008;transform:rotate(-45deg)}
     .target-pin:after{content:'';display:block;width:8px;height:8px;background:#151515;border-radius:50%;margin:6px}
@@ -79,6 +79,9 @@ export function buildDriverMapHtml(surface: string, carArt: string, generation: 
         var routeRequest=0;
         var readySent=false;
         var etaElement=document.getElementById('eta');
+        var carAnimationFrame=null;
+        var carTarget=[fallbackPosition.latitude,fallbackPosition.longitude];
+        var carLastUpdateAt=0;
 
         function announceReady(){
           if(readySent)return;
@@ -101,6 +104,29 @@ export function buildDriverMapHtml(surface: string, carArt: string, generation: 
 
         function numberOr(value,fallback){var parsed=Number(value);return Number.isFinite(parsed)?parsed:fallback}
         function position(state){return [numberOr(state&&state.latitude,fallbackPosition.latitude),numberOr(state&&state.longitude,fallbackPosition.longitude)]}
+        function samePoint(first,second){return Math.abs(first[0]-second[0])<0.0000001&&Math.abs(first[1]-second[1])<0.0000001}
+        function animateCarTo(next){
+          if(samePoint(carTarget,next))return;
+          if(carAnimationFrame!==null)cancelAnimationFrame(carAnimationFrame);
+          var start=carMarker.getLatLng();
+          var target=L.latLng(next[0],next[1]);
+          carTarget=[next[0],next[1]];
+          if(map.distance(start,target)<0.5){carMarker.setLatLng(target);carLastUpdateAt=performance.now();return}
+          var now=performance.now();
+          var elapsed=carLastUpdateAt?now-carLastUpdateAt:0;
+          var duration=elapsed?Math.max(1200,Math.min(8000,elapsed*.92)):0;
+          carLastUpdateAt=now;
+          if(!duration){carMarker.setLatLng(target);return}
+          var startedAt=now;
+          var frame=function(timestamp){
+            var progress=Math.min(1,(timestamp-startedAt)/duration);
+            var eased=progress<1?progress*(2-progress):1;
+            carMarker.setLatLng([start.lat+(target.lat-start.lat)*eased,start.lng+(target.lng-start.lng)*eased]);
+            if(progress<1)carAnimationFrame=requestAnimationFrame(frame);else carAnimationFrame=null;
+          };
+          carAnimationFrame=requestAnimationFrame(frame);
+          map.panTo(target,{animate:true,duration:duration/1000,noMoveStart:true});
+        }
         function setCarHeading(heading){
           var icon=carMarker.getElement();
           var car=icon&&icon.querySelector('.driver-car');
@@ -149,9 +175,8 @@ export function buildDriverMapHtml(surface: string, carArt: string, generation: 
         }
         window.__HY3N_UPDATE__=function(state){
           var current=position(state);
-          carMarker.setLatLng(current);
+          animateCarTo(current);
           setCarHeading(state&&state.heading);
-          map.panTo(current,{animate:true,duration:.75,noMoveStart:true});
           updateTarget(state,current);
           updateEta(state);
           setTimeout(function(){setCarHeading(state&&state.heading)},0);
