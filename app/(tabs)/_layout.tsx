@@ -8,6 +8,7 @@ import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { useColors } from '@/hooks/use-colors';
 import { trpc } from '@/lib/trpc';
+import { DRIVER_FEE_STATUS_REFRESH_MS } from '@/lib/driver-fee-polling';
 import { startAuthenticatedDriverFee } from '@/lib/driver-fee-payment-api';
 import { openDriverSupportWhatsApp } from '@/lib/support-whatsapp';
 import { getApiBaseUrl } from '@/constants/oauth';
@@ -933,7 +934,7 @@ export default function DriverTabLayout() {
     { driverId },
     { 
       enabled: !!driverProfile && isDriverApproved(driverProfile),
-      refetchInterval: 15000,
+      refetchInterval: DRIVER_FEE_STATUS_REFRESH_MS,
     }
   );
 
