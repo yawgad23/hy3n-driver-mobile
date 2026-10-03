@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import * as ExpoLocation from 'expo-location';
 import { useDriverPreferences } from '@/hooks/use-driver-preferences';
 import { RIDE_CATEGORIES, FREE_WAITING_MINUTES, POPULAR_DESTINATIONS } from '@/constants/rides';
@@ -49,6 +49,7 @@ import {
   driverOfferAcceptedByServer,
   nextDriverOfferCountdown,
 } from '@/lib/driver-offer-lifecycle';
+import { driverTripTerminalStatus } from '@/lib/driver-trip-lifecycle';
 
 const INCOMING_TRIP_ALERT = require('../../assets/audio/incoming-trip-alert.wav');
 const GOLD = '#D4AF37';
@@ -174,6 +175,27 @@ export default function DriverHomeScreen() {
   const incomingAlertRunRef = useRef(0);
   const seenChatMessageIdsRef = useRef<Set<string> | null>(null);
   const tripActionInFlightRef = useRef(false);
+
+  const applyServerTerminalRide = useCallback((serverRide: any) => {
+    const terminalStatus = driverTripTerminalStatus(serverRide);
+    if (!terminalStatus) return false;
+
+    // The ride document is authoritative. A completion can commit while its
+    // HTTP response is delayed/lost; do not leave the Driver on a spinner or
+    // attempt a second completion, receipt, or settlement from the client.
+    tripActionInFlightRef.current = false;
+    setTripActionPending(false);
+    setActiveTrip((current: any) => current?.id === serverRide.id ? null : current);
+    setArrivedAt(null);
+    setTripStartedAt(null);
+    lastTripLocationRef.current = null;
+
+    if (terminalStatus === 'completed') {
+      setCompletedRide(serverRide);
+      setShowFareScreen(true);
+    }
+    return true;
+  }, []);
 
   const stopIncomingTripAlert = (resetPosition = true, skipNativeCommand = false) => {
     // Invalidate any pending seek/play chain before pausing. Without this,
@@ -498,9 +520,10 @@ export default function DriverHomeScreen() {
     if (!activeTrip?.id) return;
     return firestoreDB.subscribeDoc(COLLECTIONS.RIDES, activeTrip.id, (serverRide: any) => {
       if (!serverRide?.id) return;
+      if (applyServerTerminalRide(serverRide)) return;
       setActiveTrip((current: any) => current?.id === serverRide.id ? { ...current, ...serverRide } : current);
     });
-  }, [activeTrip?.id]);
+  }, [activeTrip?.id, applyServerTerminalRide]);
 
   // Show a review timer without silently declining the Rider's request. The
   // server owns search expiry; the Driver must make an explicit decline.
@@ -968,13 +991,8 @@ export default function DriverHomeScreen() {
       });
 
       const completed = { ...result.ride };
-      setCompletedRide(completed);
       if (nextRide?.status === 'driver_queued') setQueuedRideToActivate(nextRide);
-      setActiveTrip(null);
-      setArrivedAt(null);
-      setTripStartedAt(null);
-      lastTripLocationRef.current = null;
-      setShowFareScreen(true);
+      applyServerTerminalRide(completed);
     } catch {
       Alert.alert('Error', 'Failed to end trip');
     } finally {
