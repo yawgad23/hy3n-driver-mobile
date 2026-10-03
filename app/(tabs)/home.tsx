@@ -28,6 +28,7 @@ import { useThemeContext } from '@/lib/theme-provider';
 import { startDriverBackgroundLocationUpdates, stopDriverBackgroundLocationUpdates } from '@/lib/driver-background-location';
 import {
   DRIVER_FOREGROUND_LOCATION_POLICY,
+  DRIVER_FOREGROUND_PRESENCE_HEARTBEAT_MS,
   shouldTrackDriverLocation,
 } from '@/lib/driver-location-policy';
 import { driverAvailabilityLabel, hasUsableDriverLocation } from '@/lib/driver-location-readiness';
@@ -363,6 +364,27 @@ export default function DriverHomeScreen() {
       subscription?.remove();
     };
   }, [isOnline, activeTrip?.id]);
+
+  // iOS may remain quiet for a stationary foreground watch. Refresh the
+  // current position while this app remains online so Riders do not lose a
+  // legitimately available Driver after the server freshness window expires.
+  useEffect(() => {
+    if (!user?.uid || !shouldTrackDriverLocation(isOnline, Boolean(activeTrip?.id))) return;
+    let disposed = false;
+    const refreshPresence = async () => {
+      try {
+        const freshLocation = await ExpoLocation.getCurrentPositionAsync({ accuracy: ExpoLocation.Accuracy.Balanced });
+        if (!disposed && hasUsableDriverLocation(freshLocation)) setLocation(freshLocation);
+      } catch {
+        // The normal watch and background task keep running independently.
+      }
+    };
+    const interval = setInterval(() => { void refreshPresence(); }, DRIVER_FOREGROUND_PRESENCE_HEARTBEAT_MS);
+    return () => {
+      disposed = true;
+      clearInterval(interval);
+    };
+  }, [user?.uid, isOnline, activeTrip?.id]);
 
   useEffect(() => {
     if (driverProfile) setIsOnline(driverProfile.is_online || false);
