@@ -33,37 +33,59 @@ export function publishableDriverSpeedKmh(value: number | null | undefined): num
  */
 export function createDriverLocationPublisher({ getToken, post, baseUrl }: PublisherDependencies) {
   let newestAcceptedAt = 0;
+  let newestQueuedAt = 0;
   let inFlight: Promise<void> | null = null;
+  let pending: DriverLocationSample | null = null;
+
+  const send = async (sample: DriverLocationSample) => {
+    const recordedAt = new Date(sample.recordedAt).getTime();
+    const token = await getToken();
+    if (!token) throw new Error('Driver session is unavailable.');
+    const response = await post(`${baseUrl}/api/driver/location`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        latitude: sample.latitude,
+        longitude: sample.longitude,
+        heading: publishableDriverHeading(sample.heading),
+        speedKmh: publishableDriverSpeedKmh(sample.speedKmh),
+        recordedAt: sample.recordedAt,
+      }),
+    });
+    if (!response.ok) throw new Error(`Driver location update failed (${response.status}).`);
+    newestAcceptedAt = Math.max(newestAcceptedAt, recordedAt);
+  };
 
   const publish = async (sample: DriverLocationSample): Promise<boolean> => {
     const recordedAt = new Date(sample.recordedAt).getTime();
-    if (!Number.isFinite(recordedAt) || recordedAt < newestAcceptedAt) return false;
+    if (!Number.isFinite(recordedAt) || recordedAt < newestAcceptedAt || recordedAt < newestQueuedAt) return false;
+    newestQueuedAt = Math.max(newestQueuedAt, recordedAt);
 
-    const previous = inFlight;
+    // When mobile data is slow, retaining every GPS sample makes lifecycle
+    // actions queue behind obsolete uploads. Keep the newest point only; an
+    // equal timestamp is deliberately retained as a stationary heartbeat.
+    if (inFlight) {
+      pending = sample;
+      return true;
+    }
+
     const operation = (async () => {
-      if (previous) await previous.catch(() => {});
-      if (recordedAt < newestAcceptedAt) return;
-
-      const token = await getToken();
-      if (!token) throw new Error('Driver session is unavailable.');
-      const response = await post(`${baseUrl}/api/driver/location`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          latitude: sample.latitude,
-          longitude: sample.longitude,
-          heading: publishableDriverHeading(sample.heading),
-          speedKmh: publishableDriverSpeedKmh(sample.speedKmh),
-          recordedAt: sample.recordedAt,
-        }),
-      });
-      if (!response.ok) throw new Error(`Driver location update failed (${response.status}).`);
-      newestAcceptedAt = Math.max(newestAcceptedAt, recordedAt);
+      let next: DriverLocationSample | null = sample;
+      while (next) {
+        const current = next;
+        pending = null;
+        try {
+          await send(current);
+        } catch (error) {
+          newestQueuedAt = newestAcceptedAt;
+          throw error;
+        }
+        next = pending;
+      }
     })();
-
     inFlight = operation;
     try {
       await operation;

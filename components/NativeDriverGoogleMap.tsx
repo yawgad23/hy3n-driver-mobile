@@ -8,6 +8,7 @@ type Point = [latitude: number, longitude: number];
 type Props = {
   latitude?: number;
   longitude?: number;
+  locationTimestamp?: number | null;
   heading?: number | null;
   target?: MapTarget | null;
   etaMinutes?: number | null;
@@ -43,6 +44,12 @@ function region(point: Point): Region {
   return { latitude: point[0], longitude: point[1], latitudeDelta: 0.012, longitudeDelta: 0.012 };
 }
 
+function markerAnimationDuration(previousTimestamp: number | null, currentTimestamp: number | null | undefined) {
+  const current = Number(currentTimestamp);
+  if (!Number.isFinite(current) || previousTimestamp === null) return 2_650;
+  return Math.max(900, Math.min(7_500, current - previousTimestamp));
+}
+
 function routeRequestKey(origin: Point, target: Point) {
   // ~110 m grid prevents a directions request for every individual GPS sample.
   return `${origin[0].toFixed(3)}:${origin[1].toFixed(3)}:${target[0].toFixed(5)}:${target[1].toFixed(5)}`;
@@ -68,6 +75,7 @@ async function fetchRoadLine(origin: Point, target: Point, signal: AbortSignal):
 export default function NativeDriverGoogleMap({
   latitude,
   longitude,
+  locationTimestamp = null,
   heading = 0,
   target = null,
   etaMinutes = null,
@@ -78,6 +86,7 @@ export default function NativeDriverGoogleMap({
   const mapRef = useRef<MapView>(null);
   const userMovedMapRef = useRef(false);
   const previousLocationRef = useRef<Point | null>(null);
+  const previousLocationTimestampRef = useRef<number | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [roadLine, setRoadLine] = useState<Point[]>([]);
   const hasDeviceLocation = hasPoint(latitude, longitude);
@@ -96,9 +105,14 @@ export default function NativeDriverGoogleMap({
     if (!driverPoint) return;
     const nextRegion = region(driverPoint);
     if (!previousLocationRef.current) animatedDriverCoordinate.setValue(nextRegion);
-    else animatedDriverCoordinate.timing({ ...nextRegion, duration: 2_650, useNativeDriver: false } as any).start();
+    else animatedDriverCoordinate.timing({
+      ...nextRegion,
+      duration: markerAnimationDuration(previousLocationTimestampRef.current, locationTimestamp),
+      useNativeDriver: false,
+    } as any).start();
     previousLocationRef.current = driverPoint;
-  }, [animatedDriverCoordinate, driverPoint]);
+    if (Number.isFinite(Number(locationTimestamp))) previousLocationTimestampRef.current = Number(locationTimestamp);
+  }, [animatedDriverCoordinate, driverPoint, locationTimestamp]);
 
   useEffect(() => {
     if (!routeKey || !driverPoint || !targetPoint) {

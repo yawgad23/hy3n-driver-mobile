@@ -12,6 +12,7 @@ import { DriverAuthProvider, useDriverAuth } from "@/lib/driver-auth-context";
 import * as Notifications from 'expo-notifications';
 import { setupNotificationChannels } from '@/lib/notifications';
 import { listenForPushTokenRotation, registerAuthenticatedPushDevice } from '@/lib/push-device';
+import { emitDriverRideOffer } from '@/lib/ride-offer-signal';
 import {
   SafeAreaFrameContext,
   SafeAreaInsetsContext,
@@ -173,6 +174,7 @@ export default function RootLayout() {
     // Listen for notifications received while app is foregrounded
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
       console.log('[HY3N] Notification received:', notification.request.content.title);
+      if (notification.request.content.data?.type === 'ride_offer') emitDriverRideOffer();
     });
 
     // Listen for user tapping a notification

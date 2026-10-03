@@ -16,6 +16,8 @@ import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { trpc } from '@/lib/trpc';
 import { driverLocationPublisher } from '@/lib/driver-location-publisher';
+import { shouldPublishDriverTripMeter } from '@/lib/driver-trip-meter-publisher';
+import { subscribeDriverRideOffer } from '@/lib/ride-offer-signal';
 import { submitDriverSos } from '@/lib/safety';
 import { Linking } from 'react-native';
 import { RideChatModal } from '@/components/ride-chat-modal';
@@ -131,6 +133,7 @@ export default function DriverHomeScreen() {
   const respondToOffer = trpc.driverTrips.respondToOffer.useMutation();
   const arriveAtPickup = trpc.driverTrips.arrive.useMutation();
   const verifyPickup = trpc.driverTrips.verifyPickup.useMutation();
+  const verifyAndStart = (trpc.driverTrips as any).verifyAndStart.useMutation();
   // The deployed backend accepts a startLocation for the server trip meter;
   // the published package declaration is updated independently of the API.
   const startTrip = (trpc.driverTrips.start as any).useMutation();
@@ -170,6 +173,7 @@ export default function DriverHomeScreen() {
   const [tripDistanceKm, setTripDistanceKm] = useState(0);
   const [tripStartedAt, setTripStartedAt] = useState<string | null>(null);
   const lastTripLocationRef = useRef<ExpoLocation.LocationObject | null>(null);
+  const lastTripMeterPublishedAtRef = useRef(0);
   const lastSpeedRef = useRef<number | null>(null);
   const lastSafetyEventAtRef = useRef(0);
   const offerSwipeX = useRef(new Animated.Value(0)).current;
@@ -264,6 +268,12 @@ export default function DriverHomeScreen() {
     { driverId: user?.uid || '' },
     { enabled: Boolean(user?.uid && isOnline && hasCurrentLocation), refetchInterval: DRIVER_OFFER_POLL_INTERVAL_MS },
   );
+
+  // A server ride-offer push makes foreground delivery immediate instead of
+  // waiting for the next polling tick. Polling remains the safe fallback.
+  useEffect(() => subscribeDriverRideOffer(() => {
+    if (user?.uid && isOnline && hasCurrentLocation) void availableOffers.refetch();
+  }), [availableOffers, hasCurrentLocation, isOnline, user?.uid]);
   // A query may refetch several times while the same offer is outstanding.
   // Keep a session-level record so one ride request produces one device alert.
   const notifiedOfferIds = useRef<Set<string>>(new Set());
@@ -621,12 +631,15 @@ export default function DriverHomeScreen() {
   // movement before pickup without any of that approach distance being billed.
   useEffect(() => {
     if (!location || !user?.uid || activeTrip?.status !== 'in_progress' || !activeTrip?.trip_started_at) return;
+    const recordedAtMs = Number(location.timestamp || Date.now());
+    if (!shouldPublishDriverTripMeter(lastTripMeterPublishedAtRef.current, recordedAtMs)) return;
+    lastTripMeterPublishedAtRef.current = recordedAtMs;
     recordTripLocation.mutate({
       driverId: user.uid,
       rideId: activeTrip.id,
       latitude: location.coords.latitude,
       longitude: location.coords.longitude,
-      recordedAt: new Date(location.timestamp || Date.now()).toISOString(),
+      recordedAt: new Date(recordedAtMs).toISOString(),
     });
   }, [location, user?.uid, activeTrip?.id, activeTrip?.status, activeTrip?.trip_started_at]);
 
@@ -921,6 +934,7 @@ export default function DriverHomeScreen() {
       setTripStartedAt(startedAt);
       setTripDistanceKm(0);
       lastTripLocationRef.current = location;
+      lastTripMeterPublishedAtRef.current = 0;
       setArrivedAt(null);
     } catch {
       Alert.alert('Error', 'Failed to start trip');
@@ -945,18 +959,33 @@ export default function DriverHomeScreen() {
   };
 
   const handleVerifyPickupCode = async () => {
-    if (!activeTrip || !user?.uid || !pickupCode.trim()) return;
+    if (!activeTrip || !user?.uid || !pickupCode.trim() || tripActionInFlightRef.current) return;
+    tripActionInFlightRef.current = true;
+    setTripActionPending(true);
     try {
-      const result = await verifyPickup.mutateAsync({
+      const result = await verifyAndStart.mutateAsync({
         driverId: user.uid,
         rideId: activeTrip.id,
         pickupCode: pickupCode.trim(),
+        startLocation: location
+          ? { latitude: location.coords.latitude, longitude: location.coords.longitude }
+          : undefined,
       });
       setPickupCode('');
       setShowOtp(false);
-      await beginTrip(result.ride);
+      const updatedRide: any = result.ride;
+      const startedAt = updatedRide.trip_started_at || new Date().toISOString();
+      setActiveTrip(updatedRide);
+      setTripStartedAt(startedAt);
+      setTripDistanceKm(0);
+      lastTripLocationRef.current = location;
+      lastTripMeterPublishedAtRef.current = 0;
+      setArrivedAt(null);
     } catch (error: any) {
       Alert.alert('Unable to verify code', error?.message || 'Please ask the rider for the code shown in their app.');
+    } finally {
+      tripActionInFlightRef.current = false;
+      setTripActionPending(false);
     }
   };
 
@@ -1140,6 +1169,7 @@ export default function DriverHomeScreen() {
         <NativeDriverGoogleMap
           latitude={location?.coords.latitude}
           longitude={location?.coords.longitude}
+          locationTimestamp={location?.timestamp ?? null}
           heading={location?.coords.heading}
           target={activeNavigationTarget}
           etaMinutes={activeNavigationEta}

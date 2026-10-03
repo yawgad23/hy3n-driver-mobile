@@ -39,6 +39,31 @@ test('Driver location publisher serialises samples and rejects an older replay',
   assert.equal(replayed, false);
 });
 
+test('Driver location publisher drops obsolete queued GPS points while a slow upload is in flight', async () => {
+  const seen: string[] = [];
+  let unblockFirst: (() => void) | undefined;
+  const firstGate = new Promise<void>((resolve) => { unblockFirst = resolve; });
+  const publisher = createDriverLocationPublisher({
+    baseUrl: 'https://api.example.test',
+    getToken: async () => 'token',
+    post: async (_url, init) => {
+      const body = JSON.parse(String(init.body));
+      seen.push(body.recordedAt);
+      if (seen.length === 1) await firstGate;
+      return { ok: true, status: 200 };
+    },
+  });
+
+  const first = publisher.publish(sample(1));
+  await publisher.publish(sample(2));
+  await publisher.publish(sample(3));
+  const newest = publisher.publish(sample(4));
+  unblockFirst?.();
+  await Promise.all([first, newest]);
+
+  assert.deepEqual(seen, [sample(1).recordedAt, sample(4).recordedAt]);
+});
+
 test('Driver location publisher sends a repeated stationary iOS timestamp as an availability heartbeat', async () => {
   const seen: string[] = [];
   const publisher = createDriverLocationPublisher({
