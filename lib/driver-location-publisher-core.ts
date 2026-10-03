@@ -12,6 +12,19 @@ type PublisherDependencies = {
   baseUrl: string;
 };
 
+/** Core Location uses -1 when the compass heading is unavailable. */
+export function publishableDriverHeading(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 360
+    ? value
+    : null;
+}
+
+export function publishableDriverSpeedKmh(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 240
+    ? value
+    : null;
+}
+
 /**
  * Serialises GPS uploads and discards samples that are older than one already
  * accepted by the server. This gives Rider presence one monotonic source of
@@ -41,8 +54,8 @@ export function createDriverLocationPublisher({ getToken, post, baseUrl }: Publi
         body: JSON.stringify({
           latitude: sample.latitude,
           longitude: sample.longitude,
-          heading: sample.heading ?? null,
-          speedKmh: sample.speedKmh ?? null,
+          heading: publishableDriverHeading(sample.heading),
+          speedKmh: publishableDriverSpeedKmh(sample.speedKmh),
           recordedAt: sample.recordedAt,
         }),
       });

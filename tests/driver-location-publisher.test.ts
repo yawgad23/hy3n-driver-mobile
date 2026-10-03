@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createDriverLocationPublisher } from '../lib/driver-location-publisher-core';
+import {
+  createDriverLocationPublisher,
+  publishableDriverHeading,
+  publishableDriverSpeedKmh,
+} from '../lib/driver-location-publisher-core';
 
 const sample = (seconds: number) => ({
   latitude: 5.6037 + seconds / 100_000,
@@ -33,4 +37,12 @@ test('Driver location publisher serialises samples and rejects an older replay',
 
   assert.deepEqual(seen, [sample(1).recordedAt, sample(2).recordedAt]);
   assert.equal(replayed, false);
+});
+
+test('Driver location publisher treats iOS unknown heading as absent', () => {
+  assert.equal(publishableDriverHeading(-1), null);
+  assert.equal(publishableDriverHeading(null), null);
+  assert.equal(publishableDriverHeading(270), 270);
+  assert.equal(publishableDriverSpeedKmh(-1), null);
+  assert.equal(publishableDriverSpeedKmh(0), 0);
 });
