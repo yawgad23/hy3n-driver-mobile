@@ -27,8 +27,9 @@ export function publishableDriverSpeedKmh(value: number | null | undefined): num
 
 /**
  * Serialises GPS uploads and discards samples that are older than one already
- * accepted by the server. This gives Rider presence one monotonic source of
- * truth and prevents a delayed radio request from moving a car backwards.
+ * accepted by the server. An equal iOS timestamp is a legitimate stationary
+ * heartbeat: it must reach the server so a verified online Driver does not
+ * disappear from Rider maps simply because Core Location reused its cache.
  */
 export function createDriverLocationPublisher({ getToken, post, baseUrl }: PublisherDependencies) {
   let newestAcceptedAt = 0;
@@ -36,12 +37,12 @@ export function createDriverLocationPublisher({ getToken, post, baseUrl }: Publi
 
   const publish = async (sample: DriverLocationSample): Promise<boolean> => {
     const recordedAt = new Date(sample.recordedAt).getTime();
-    if (!Number.isFinite(recordedAt) || recordedAt <= newestAcceptedAt) return false;
+    if (!Number.isFinite(recordedAt) || recordedAt < newestAcceptedAt) return false;
 
     const previous = inFlight;
     const operation = (async () => {
       if (previous) await previous.catch(() => {});
-      if (recordedAt <= newestAcceptedAt) return;
+      if (recordedAt < newestAcceptedAt) return;
 
       const token = await getToken();
       if (!token) throw new Error('Driver session is unavailable.');

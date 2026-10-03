@@ -39,6 +39,23 @@ test('Driver location publisher serialises samples and rejects an older replay',
   assert.equal(replayed, false);
 });
 
+test('Driver location publisher sends a repeated stationary iOS timestamp as an availability heartbeat', async () => {
+  const seen: string[] = [];
+  const publisher = createDriverLocationPublisher({
+    baseUrl: 'https://api.example.test',
+    getToken: async () => 'token',
+    post: async (_url, init) => {
+      seen.push(JSON.parse(String(init.body)).recordedAt);
+      return { ok: true, status: 200 };
+    },
+  });
+
+  const parkedSample = sample(1);
+  assert.equal(await publisher.publish(parkedSample), true);
+  assert.equal(await publisher.publish(parkedSample), true);
+  assert.deepEqual(seen, [parkedSample.recordedAt, parkedSample.recordedAt]);
+});
+
 test('Driver location publisher treats iOS unknown heading as absent', () => {
   assert.equal(publishableDriverHeading(-1), null);
   assert.equal(publishableDriverHeading(null), null);
