@@ -11,3 +11,12 @@ test('Driver rating sheet opens with a selectable default score', () => {
   assert.doesNotMatch(source, /setRatingValue\(0\);/);
   assert.match(source, /Alert\.alert\('Thank you!', `Your \$\{ratingValue\}-star rating for/);
 });
+
+test('Driver rating submit is single-flight and visibly acknowledges pending work', () => {
+  assert.match(source, /const \[ratingSubmitting, setRatingSubmitting\] = useState\(false\)/);
+  assert.match(source, /const ratingSubmitInFlightRef = useRef\(false\)/);
+  assert.match(source, /if \(!completedRide \|\| ratingSubmitInFlightRef\.current\) return;/);
+  assert.match(source, /setRatingSubmitting\(true\)/);
+  assert.match(source, /disabled=\{ratingSubmitting\}/);
+  assert.match(source, /ratingSubmitting \? <ActivityIndicator size="small" color="#111"/);
+});

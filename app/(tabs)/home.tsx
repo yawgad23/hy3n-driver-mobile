@@ -153,6 +153,7 @@ export default function DriverHomeScreen() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [togglingOnline, setTogglingOnline] = useState(false);
   const [tripActionPending, setTripActionPending] = useState(false);
+  const [ratingSubmitting, setRatingSubmitting] = useState(false);
   const [eta, setEta] = useState<number | null>(null);
   const [nextRide, setNextRide] = useState<any>(null);
   const [queuedRideToActivate, setQueuedRideToActivate] = useState<any>(null);
@@ -175,6 +176,7 @@ export default function DriverHomeScreen() {
   const incomingAlertRunRef = useRef(0);
   const seenChatMessageIdsRef = useRef<Set<string> | null>(null);
   const tripActionInFlightRef = useRef(false);
+  const ratingSubmitInFlightRef = useRef(false);
 
   const applyServerTerminalRide = useCallback((serverRide: any) => {
     const terminalStatus = driverTripTerminalStatus(serverRide);
@@ -1003,7 +1005,9 @@ export default function DriverHomeScreen() {
 
   // Submit rating
   const handleSubmitRating = async () => {
-    if (!completedRide) return;
+    if (!completedRide || ratingSubmitInFlightRef.current) return;
+    ratingSubmitInFlightRef.current = true;
+    setRatingSubmitting(true);
     try {
       if (!user?.uid || !completedRide.rider_id || ratingValue < 1) throw new Error('Please choose a star rating.');
       await rateRider.mutateAsync({ driverId: user.uid, rideId: completedRide.id, riderId: completedRide.rider_id, rating: ratingValue, feedback: ratingFeedback, foundItem, safetyReport });
@@ -1025,6 +1029,9 @@ export default function DriverHomeScreen() {
         return;
       }
       Alert.alert('Unable to submit rating', message || 'Please check your connection and try again.');
+    } finally {
+      ratingSubmitInFlightRef.current = false;
+      setRatingSubmitting(false);
     }
   };
 
@@ -1544,7 +1551,7 @@ export default function DriverHomeScreen() {
             {/* Star Rating */}
             <View style={styles.starsContainer}>
               {[1, 2, 3, 4, 5].map(star => (
-                <TouchableOpacity key={star} onPress={() => setRatingValue(star)}>
+                <TouchableOpacity key={star} onPress={() => setRatingValue(star)} disabled={ratingSubmitting}>
                   <MaterialIcons
                     name={star <= ratingValue ? 'star' : 'star-outline'}
                     size={40}
@@ -1570,16 +1577,18 @@ export default function DriverHomeScreen() {
 
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <TouchableOpacity
-                style={[styles.ratingBtn, { backgroundColor: themeColors.border, flex: 1 }]}
+              style={[styles.ratingBtn, { backgroundColor: themeColors.border, flex: 1 }]}
                 onPress={() => { setShowRating(false); setRatingValue(5); }}
+                disabled={ratingSubmitting}
               >
                 <Text style={[styles.ratingBtnText, { color: themeColors.text }]}>Skip</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.ratingBtn, { backgroundColor: GOLD, flex: 1 }]}
                 onPress={handleSubmitRating}
+                disabled={ratingSubmitting}
               >
-                <Text style={styles.ratingBtnText}>Submit</Text>
+                {ratingSubmitting ? <ActivityIndicator size="small" color="#111" /> : <Text style={styles.ratingBtnText}>Submit</Text>}
               </TouchableOpacity>
             </View>
           </View>
