@@ -145,6 +145,7 @@ export default function DriverHomeScreen() {
   const [showChat, setShowChat] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [togglingOnline, setTogglingOnline] = useState(false);
+  const [tripActionPending, setTripActionPending] = useState(false);
   const [eta, setEta] = useState<number | null>(null);
   const [nextRide, setNextRide] = useState<any>(null);
   const [queuedRideToActivate, setQueuedRideToActivate] = useState<any>(null);
@@ -166,6 +167,7 @@ export default function DriverHomeScreen() {
   const offerSwipeX = useRef(new Animated.Value(0)).current;
   const incomingAlertRunRef = useRef(0);
   const seenChatMessageIdsRef = useRef<Set<string> | null>(null);
+  const tripActionInFlightRef = useRef(false);
 
   const stopIncomingTripAlert = (resetPosition = true, skipNativeCommand = false) => {
     // Invalidate any pending seek/play chain before pausing. Without this,
@@ -483,6 +485,17 @@ export default function DriverHomeScreen() {
     }).catch(() => {});
   }, [user?.uid]);
 
+  // The server writes traffic-aware ETA and road geometry after each GPS
+  // refresh. Subscribe to the active ride so the Driver sees those same live
+  // values rather than only the local straight-line fallback.
+  useEffect(() => {
+    if (!activeTrip?.id) return;
+    return firestoreDB.subscribeDoc(COLLECTIONS.RIDES, activeTrip.id, (serverRide: any) => {
+      if (!serverRide?.id) return;
+      setActiveTrip((current: any) => current?.id === serverRide.id ? { ...current, ...serverRide } : current);
+    });
+  }, [activeTrip?.id]);
+
   // Show a review timer without silently declining the Rider's request. The
   // server owns search expiry; the Driver must make an explicit decline.
   useEffect(() => {
@@ -661,7 +674,9 @@ export default function DriverHomeScreen() {
   };
 
   const handleAcceptRide = async () => {
-    if (!incomingRide || !user?.uid) return;
+    if (!incomingRide || !user?.uid || tripActionInFlightRef.current) return;
+    tripActionInFlightRef.current = true;
+    setTripActionPending(true);
     stopIncomingTripAlert();
     try {
       const result = await respondToOffer.mutateAsync({
@@ -682,6 +697,9 @@ export default function DriverHomeScreen() {
       setRideOfferSeconds(DRIVER_OFFER_REVIEW_SECONDS);
     } catch (err) {
       Alert.alert('Error', 'Failed to accept ride');
+    } finally {
+      tripActionInFlightRef.current = false;
+      setTripActionPending(false);
     }
   };
 
@@ -798,7 +816,9 @@ export default function DriverHomeScreen() {
 
   // Driver arrival at pickup
   const handleArrivedAtPickup = async () => {
-    if (!activeTrip || !user?.uid) return;
+    if (!activeTrip || !user?.uid || tripActionInFlightRef.current) return;
+    tripActionInFlightRef.current = true;
+    setTripActionPending(true);
     try {
       const result = await arriveAtPickup.mutateAsync({ driverId: user.uid, rideId: activeTrip.id });
       const updatedRide: any = result.ride;
@@ -814,11 +834,16 @@ export default function DriverHomeScreen() {
       });
     } catch (err) {
       Alert.alert('Error', 'Failed to mark arrival');
+    } finally {
+      tripActionInFlightRef.current = false;
+      setTripActionPending(false);
     }
   };
 
   const beginTrip = async (ride = activeTrip) => {
-    if (!ride || !user?.uid) return;
+    if (!ride || !user?.uid || tripActionInFlightRef.current) return;
+    tripActionInFlightRef.current = true;
+    setTripActionPending(true);
     try {
       const result = await startTrip.mutateAsync({
         driverId: user.uid,
@@ -836,6 +861,9 @@ export default function DriverHomeScreen() {
       setArrivedAt(null);
     } catch {
       Alert.alert('Error', 'Failed to start trip');
+    } finally {
+      tripActionInFlightRef.current = false;
+      setTripActionPending(false);
     }
   };
 
@@ -873,11 +901,13 @@ export default function DriverHomeScreen() {
   // rate snapshot. Drivers submit only travel telemetry; the amount is shown
   // after completion, not while an offer or trip is active.
   const handleEndTrip = async () => {
-    if (!activeTrip) return;
+    if (!activeTrip || tripActionInFlightRef.current) return;
     if (activeTrip.status !== 'in_progress' || !activeTrip.trip_started_at) {
       Alert.alert('Trip not started', 'A trip cannot be completed or charged until the rider is onboard and Start Trip has been confirmed.');
       return;
     }
+    tripActionInFlightRef.current = true;
+    setTripActionPending(true);
     try {
       const durationMinutes = tripStartedAt ? Math.max(1, (Date.now() - new Date(tripStartedAt).getTime()) / 60000) : Number(activeTrip.duration_minutes || 0);
 
@@ -910,6 +940,9 @@ export default function DriverHomeScreen() {
       setShowFareScreen(true);
     } catch {
       Alert.alert('Error', 'Failed to end trip');
+    } finally {
+      tripActionInFlightRef.current = false;
+      setTripActionPending(false);
     }
   };
 
@@ -1010,9 +1043,31 @@ export default function DriverHomeScreen() {
         label: activeTrip.status === 'in_progress' ? (activeTrip.destination_address || 'Drop-off') : (activeTrip.pickup_address || 'Pickup'),
       }
     : null;
-  const activeNavigationEta = activeNavigationTarget && location
-    ? calculateNavigationEtaMinutes(location.coords.latitude, location.coords.longitude, activeNavigationTarget.latitude, activeNavigationTarget.longitude)
-    : eta;
+  const activeRouteMetrics = activeTrip?.live_route_metrics && typeof activeTrip.live_route_metrics === 'object'
+    ? activeTrip.live_route_metrics as Record<string, unknown>
+    : null;
+  const expectedRoutePhase = activeTrip?.status === 'in_progress' ? 'destination' : 'pickup';
+  const activeRoutePoints = Array.isArray(activeRouteMetrics?.points)
+    ? activeRouteMetrics.points
+      .map((point: unknown) => {
+        const source: Record<string, unknown> | null = Array.isArray(point)
+          ? { lat: point[0], lng: point[1] }
+          : point && typeof point === 'object'
+            ? point as Record<string, unknown>
+            : null;
+        return [Number(source?.lat ?? source?.latitude), Number(source?.lng ?? source?.longitude)] as [number, number];
+      })
+      .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180)
+      .slice(0, 180)
+    : [];
+  const serverNavigationEta = activeRouteMetrics?.phase === expectedRoutePhase
+    ? Number(activeRouteMetrics.duration_minutes)
+    : Number.NaN;
+  const activeNavigationEta = Number.isFinite(serverNavigationEta) && serverNavigationEta > 0
+    ? Math.max(1, Math.ceil(serverNavigationEta))
+    : activeNavigationTarget && location
+      ? calculateNavigationEtaMinutes(location.coords.latitude, location.coords.longitude, activeNavigationTarget.latitude, activeNavigationTarget.longitude)
+      : eta;
 
   return (
     <View style={[styles.container, dynamicStyles.container]}>
@@ -1026,6 +1081,7 @@ export default function DriverHomeScreen() {
           heading={location?.coords.heading}
           target={activeNavigationTarget}
           etaMinutes={activeNavigationEta}
+          routePoints={activeRoutePoints}
           tripStatus={activeTrip ? (activeTrip.status === 'in_progress' ? 'dropoff' : 'pickup') : null}
           dark={isDark}
         />
@@ -1137,8 +1193,9 @@ export default function DriverHomeScreen() {
               <TouchableOpacity
                 style={[styles.rideBtn, { backgroundColor: GREEN }]}
                 onPress={handleAcceptRide}
+                disabled={tripActionPending}
               >
-                <MaterialIcons name="check" size={20} color="#FFF" />
+                {tripActionPending ? <ActivityIndicator size="small" color="#FFF" /> : <MaterialIcons name="check" size={20} color="#FFF" />}
               </TouchableOpacity>
             </View>
           </Animated.View>
@@ -1276,30 +1333,29 @@ export default function DriverHomeScreen() {
                 <TouchableOpacity
                   style={[styles.actionBtn, { backgroundColor: GREEN, flex: 1 }]}
                   onPress={handleStartTrip}
+                  disabled={tripActionPending}
                 >
-                  <MaterialIcons name="check" size={18} color="#FFF" />
-                  <Text style={styles.actionBtnText}>Start Trip</Text>
+                  {tripActionPending ? <ActivityIndicator size="small" color="#FFF" /> : <><MaterialIcons name="check" size={18} color="#FFF" /><Text style={styles.actionBtnText}>Start Trip</Text></>}
                 </TouchableOpacity>
               ) : activeTrip.status === 'driver_arriving' ? (
                 <TouchableOpacity
                   style={[styles.actionBtn, { backgroundColor: '#F59E0B', flex: 1 }]}
                   onPress={handleArrivedAtPickup}
+                  disabled={tripActionPending}
                 >
-                  <MaterialIcons name="location-on" size={18} color="#FFF" />
-                  <Text style={styles.actionBtnText}>Arrived</Text>
+                  {tripActionPending ? <ActivityIndicator size="small" color="#FFF" /> : <><MaterialIcons name="location-on" size={18} color="#FFF" /><Text style={styles.actionBtnText}>Arrived</Text></>}
                 </TouchableOpacity>
               ) : activeTrip.status === 'in_progress' ? (
-                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: RED, flex: 1 }]} onPress={handleEndTrip}>
-                  <MaterialIcons name="stop" size={18} color="#FFF" />
-                  <Text style={styles.actionBtnText}>End</Text>
+                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: RED, flex: 1 }]} onPress={handleEndTrip} disabled={tripActionPending}>
+                  {tripActionPending ? <ActivityIndicator size="small" color="#FFF" /> : <><MaterialIcons name="stop" size={18} color="#FFF" /><Text style={styles.actionBtnText}>End</Text></>}
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
                   style={[styles.actionBtn, { backgroundColor: '#F59E0B', flex: 1 }]}
                   onPress={handleArrivedAtPickup}
+                  disabled={tripActionPending}
                 >
-                  <MaterialIcons name="location-on" size={18} color="#FFF" />
-                  <Text style={styles.actionBtnText}>Arrived</Text>
+                  {tripActionPending ? <ActivityIndicator size="small" color="#FFF" /> : <><MaterialIcons name="location-on" size={18} color="#FFF" /><Text style={styles.actionBtnText}>Arrived</Text></>}
                 </TouchableOpacity>
               )}
               <TouchableOpacity

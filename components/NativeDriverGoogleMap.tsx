@@ -11,6 +11,7 @@ type Props = {
   heading?: number | null;
   target?: MapTarget | null;
   etaMinutes?: number | null;
+  routePoints?: Point[] | null;
   tripStatus?: 'pickup' | 'dropoff' | null;
   dark?: boolean;
 };
@@ -70,6 +71,7 @@ export default function NativeDriverGoogleMap({
   heading = 0,
   target = null,
   etaMinutes = null,
+  routePoints = null,
   tripStatus = null,
   dark = false,
 }: Props) {
@@ -84,7 +86,11 @@ export default function NativeDriverGoogleMap({
     ? [target.latitude, target.longitude] as Point
     : null;
   const animatedDriverCoordinate = useRef(new AnimatedRegion(region(driverPoint || [5.6037, -0.187]))).current;
-  const routeKey = useMemo(() => driverPoint && targetPoint ? routeRequestKey(driverPoint, targetPoint) : null, [driverPoint, targetPoint]);
+  const serverRoadLine = useMemo(() => (routePoints || [])
+    .filter(([routeLatitude, routeLongitude]) => hasPoint(routeLatitude, routeLongitude)), [routePoints]);
+  const routeKey = useMemo(() => serverRoadLine.length > 1 || !driverPoint || !targetPoint
+    ? null
+    : routeRequestKey(driverPoint, targetPoint), [driverPoint, serverRoadLine.length, targetPoint]);
 
   useEffect(() => {
     if (!driverPoint) return;
@@ -124,7 +130,7 @@ export default function NativeDriverGoogleMap({
 
   // Do not draw a direct GPS chord when routing is unavailable: that would
   // look like a navigable road but can send a Driver the wrong way.
-  const displayedRoadLine = roadLine.length > 1 ? roadLine : [];
+  const displayedRoadLine = serverRoadLine.length > 1 ? serverRoadLine : (roadLine.length > 1 ? roadLine : []);
 
   return (
     <View style={[styles.container, { backgroundColor: dark ? '#1f2933' : '#eef1f3' }]}>
