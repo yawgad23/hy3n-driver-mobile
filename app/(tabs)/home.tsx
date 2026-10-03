@@ -31,7 +31,11 @@ import {
   DRIVER_FOREGROUND_PRESENCE_HEARTBEAT_MS,
   shouldTrackDriverLocation,
 } from '@/lib/driver-location-policy';
-import { driverAvailabilityLabel, hasUsableDriverLocation } from '@/lib/driver-location-readiness';
+import {
+  driverAvailabilityLabel,
+  hasRecentUsableDriverLocation,
+  hasUsableDriverLocation,
+} from '@/lib/driver-location-readiness';
 import {
   INCOMING_TRIP_ALERT_PLAYBACK,
   INCOMING_TRIP_NOTIFICATION,
@@ -632,13 +636,19 @@ export default function DriverHomeScreen() {
     try {
       const newStatus = !isOnline;
       if (newStatus) {
-        const permission = await ExpoLocation.requestForegroundPermissionsAsync();
-        if (permission.status !== 'granted') {
-          Alert.alert('Location needed', 'Allow location before going online so Riders receive your real position.');
-          return;
+        // A fresh point from the existing foreground watcher is already a real
+        // device coordinate. Reusing it makes an off/on switch responsive
+        // instead of waiting for Core Location to obtain a second fix.
+        let freshLocation = hasRecentUsableDriverLocation(location) ? location : null;
+        if (!freshLocation) {
+          const permission = await ExpoLocation.requestForegroundPermissionsAsync();
+          if (permission.status !== 'granted') {
+            Alert.alert('Location needed', 'Allow location before going online so Riders receive your real position.');
+            return;
+          }
+          freshLocation = await ExpoLocation.getCurrentPositionAsync({ accuracy: ExpoLocation.Accuracy.BestForNavigation });
         }
-        const freshLocation = await ExpoLocation.getCurrentPositionAsync({ accuracy: ExpoLocation.Accuracy.BestForNavigation });
-        if (!hasUsableDriverLocation(freshLocation)) {
+        if (!freshLocation || !hasUsableDriverLocation(freshLocation)) {
           Alert.alert('Location unavailable', 'HY3N Driver could not get a valid current position. Please try again outside or check Location Services.');
           return;
         }
@@ -912,22 +922,21 @@ export default function DriverHomeScreen() {
       const durationMinutes = tripStartedAt ? Math.max(1, (Date.now() - new Date(tripStartedAt).getTime()) / 60000) : Number(activeTrip.duration_minutes || 0);
 
       if (!user?.uid) throw new Error('Sign in required');
-      if (location) {
-        // Send the final point before completion so the server includes the
-        // final travelled segment rather than the booking route estimate.
-        await recordTripLocation.mutateAsync({
-          driverId: user.uid,
-          rideId: activeTrip.id,
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-          recordedAt: new Date(location.timestamp || Date.now()).toISOString(),
-        });
-      }
-      const result = await completeTrip.mutateAsync({
+      // Combine the last GPS observation with the completion request. The
+      // server applies its same meter validation in one transaction, avoiding
+      // a second serial network round trip when the Driver taps End.
+      const result = await (completeTrip as any).mutateAsync({
         driverId: user.uid,
         rideId: activeTrip.id,
         actualDistanceKm: Number(tripDistanceKm.toFixed(2)),
         actualDurationMinutes: Number(durationMinutes.toFixed(1)),
+        ...(location ? {
+          finalLocation: {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+            recordedAt: new Date(location.timestamp || Date.now()).toISOString(),
+          },
+        } : {}),
       });
 
       const completed = { ...result.ride };
