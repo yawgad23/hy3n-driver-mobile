@@ -43,8 +43,10 @@ import {
 } from '@/lib/incoming-trip-alert';
 import { deliveryContactForDriver, isDeliveryRide } from '@/lib/delivery-contact';
 import {
+  DRIVER_ACCEPT_RECONCILIATION_DELAYS_MS,
   DRIVER_OFFER_POLL_INTERVAL_MS,
   DRIVER_OFFER_REVIEW_SECONDS,
+  driverOfferAcceptedByServer,
   nextDriverOfferCountdown,
 } from '@/lib/driver-offer-lifecycle';
 
@@ -685,13 +687,38 @@ export default function DriverHomeScreen() {
 
   const handleAcceptRide = async () => {
     if (!incomingRide || !user?.uid || tripActionInFlightRef.current) return;
+    const rideId = String(incomingRide.id);
+    let serverConfirmed = false;
+    const showAcceptedRide = (ride: any) => {
+      serverConfirmed = true;
+      setActiveTrip(ride);
+      setIncomingRide(null);
+      setRideOfferSeconds(DRIVER_OFFER_REVIEW_SECONDS);
+      // Do not leave the Accept button spinning when Firestore confirms the
+      // server-owned assignment but a mobile network response is delayed.
+      tripActionInFlightRef.current = false;
+      setTripActionPending(false);
+    };
+    const reconcileAcceptedRide = async () => {
+      try {
+        const serverRide = await firestoreDB.get(COLLECTIONS.RIDES, rideId);
+        if (!driverOfferAcceptedByServer(serverRide, user.uid)) return false;
+        showAcceptedRide(serverRide);
+        return true;
+      } catch {
+        return false;
+      }
+    };
     tripActionInFlightRef.current = true;
     setTripActionPending(true);
     stopIncomingTripAlert();
+    const reconciliationTimers = DRIVER_ACCEPT_RECONCILIATION_DELAYS_MS.map((delay) => setTimeout(() => {
+      if (!serverConfirmed) void reconcileAcceptedRide();
+    }, delay));
     try {
       const result = await respondToOffer.mutateAsync({
         driverId: user.uid,
-        rideId: incomingRide.id,
+        rideId,
         decision: 'accept',
         driverName: driverProfile?.full_name || undefined,
         ...buildVehicleFields({
@@ -702,12 +729,13 @@ export default function DriverHomeScreen() {
           year: (driverProfile as any)?.vehicle_full_model,
         }),
       });
-      setActiveTrip(result.ride);
-      setIncomingRide(null);
-      setRideOfferSeconds(DRIVER_OFFER_REVIEW_SECONDS);
-    } catch (err) {
-      Alert.alert('Error', 'Failed to accept ride');
+      showAcceptedRide(result.ride);
+    } catch (err: any) {
+      if (!await reconcileAcceptedRide()) {
+        Alert.alert('Unable to accept ride', err?.message || 'Please check your connection and try again.');
+      }
     } finally {
+      reconciliationTimers.forEach((timer) => clearTimeout(timer));
       tripActionInFlightRef.current = false;
       setTripActionPending(false);
     }
