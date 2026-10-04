@@ -21,8 +21,6 @@ import { subscribeDriverRideOffer } from '@/lib/ride-offer-signal';
 import { submitDriverSos } from '@/lib/safety';
 import { Linking } from 'react-native';
 import { RideChatModal } from '@/components/ride-chat-modal';
-import { InCallScreen, IncomingCallModal } from '@/components/in-call-screen';
-import { useVoiceCall } from '@/hooks/use-voice-call';
 import NativeDriverGoogleMap from '@/components/NativeDriverGoogleMap';
 import { Colors } from '@/constants/theme';
 import { buildVehicleFields } from '@/lib/vehicle';
@@ -164,7 +162,6 @@ export default function DriverHomeScreen() {
   const [showOtp, setShowOtp] = useState(false);
   const [pickupCode, setPickupCode] = useState('');
   const [showCancel, setShowCancel] = useState(false);
-  const [showCallOptions, setShowCallOptions] = useState(false);
   const [showFareScreen, setShowFareScreen] = useState(false);
   const [showTripSummary, setShowTripSummary] = useState(false);
   const [foundItem, setFoundItem] = useState('');
@@ -279,18 +276,19 @@ export default function DriverHomeScreen() {
   const notifiedOfferIds = useRef<Set<string>>(new Set());
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const call = useVoiceCall({
-    rideId: activeTrip?.id,
-    myId: user?.uid,
-    myName: driverProfile?.full_name || 'Driver',
-    myRole: 'driver',
-    otherName: activeTrip?.rider_name,
-  });
-
   const deliveryContact = deliveryContactForDriver(activeTrip);
   const isActiveDelivery = isDeliveryRide(activeTrip);
   const riderPhone = activeTrip?.rider_phone || activeTrip?.passenger_phone || activeTrip?.phone || '';
   const contactPhone = deliveryContact?.phone || riderPhone;
+  const startMobileNetworkCall = () => {
+    if (!contactPhone) {
+      Alert.alert('Call unavailable', 'This contact has no mobile number yet.');
+      return;
+    }
+    Linking.openURL(`tel:${contactPhone}`).catch(() => {
+      Alert.alert('Unable to call', 'This phone cannot open the mobile-network dialer.');
+    });
+  };
   const paymentLabel = (method?: string) => {
     if (method === 'mobile_money') return 'MoMo';
     if (method === 'wallet') return 'Wallet';
@@ -540,10 +538,10 @@ export default function DriverHomeScreen() {
   // Show a review timer without silently declining the Rider's request. The
   // server owns search expiry; the Driver must make an explicit decline.
   useEffect(() => {
-    if (!incomingRide || activeTrip || rideOfferSeconds <= 0) return;
+    if (!incomingRide || activeTrip) return;
     const timer = setInterval(() => setRideOfferSeconds(nextDriverOfferCountdown), 1000);
     return () => clearInterval(timer);
-  }, [incomingRide, activeTrip, rideOfferSeconds]);
+  }, [incomingRide?.id, activeTrip?.id]);
 
   useEffect(() => {
     if (!incomingRide || activeTrip || !prefs.autoAccept) return;
@@ -1416,7 +1414,7 @@ export default function DriverHomeScreen() {
                 <Text style={styles.actionBtnText}>Chat</Text>
                 {unreadCount > 0 && <View style={styles.unreadBadge}><Text style={styles.unreadText}>{unreadCount}</Text></View>}
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#475569', flex: 1 }]} onPress={() => setShowCallOptions(true)}>
+              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#475569', flex: 1 }]} onPress={startMobileNetworkCall}>
                 <MaterialIcons name="phone" size={18} color="#FFF" />
                 <Text style={styles.actionBtnText}>Call</Text>
               </TouchableOpacity>
@@ -1550,17 +1548,6 @@ export default function DriverHomeScreen() {
         </View>
       </Modal>
 
-      {/* Delivery contacts are only returned after server-side assignment. */}
-      <Modal visible={showCallOptions} transparent animationType="fade" onRequestClose={() => setShowCallOptions(false)}>
-        <View style={styles.sheetOverlay}>
-          <View style={[styles.sheet, { backgroundColor: isDark ? '#1a1a1a' : '#fff' }]}>
-            <View style={styles.modalHeader}><Text style={[styles.sheetTitle, dynamicStyles.text]}>Contact {deliveryContact?.label.toLowerCase() || 'rider'}</Text><TouchableOpacity onPress={() => setShowCallOptions(false)}><MaterialIcons name="close" size={22} color={themeColors.text} /></TouchableOpacity></View>
-            {!isActiveDelivery && <TouchableOpacity style={[styles.callOption, { borderColor: themeColors.border }]} onPress={async () => { setShowCallOptions(false); if (activeTrip?.rider_id) await call.startCall(activeTrip.rider_id); else Alert.alert('Call unavailable', 'The rider does not have an in-app call identifier.'); }}><MaterialIcons name="wifi-calling-3" size={24} color={BLUE} /><View style={{ flex: 1 }}><Text style={[styles.reasonText, dynamicStyles.text]}>In-app voice call</Text><Text style={[styles.optionSub, dynamicStyles.muted]}>Uses your data connection</Text></View></TouchableOpacity>}
-            <TouchableOpacity style={[styles.callOption, { borderColor: themeColors.border, opacity: contactPhone ? 1 : 0.45 }]} disabled={!contactPhone} onPress={() => { setShowCallOptions(false); Linking.openURL(`tel:${contactPhone}`).catch(() => Alert.alert('Unable to call', 'This phone cannot open the dialer.')); }}><MaterialIcons name="phone" size={24} color={GREEN} /><View style={{ flex: 1 }}><Text style={[styles.reasonText, dynamicStyles.text]}>Mobile network call</Text><Text style={[styles.optionSub, dynamicStyles.muted]}>{contactPhone || 'Phone number unavailable'}</Text></View></TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
       {/* Notification center */}
       <Modal visible={notifOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setNotifOpen(false)}>
         <View style={[styles.modalContainer, dynamicStyles.container]}>
@@ -1626,9 +1613,6 @@ export default function DriverHomeScreen() {
       </Modal>
 
       {/* Chat Modal */}
-      <IncomingCallModal call={call} otherName={activeTrip?.rider_name} otherRole="rider" />
-      <InCallScreen call={call} otherName={activeTrip?.rider_name} otherRole="rider" otherPhone={contactPhone} />
-
       <RideChatModal
         isOpen={showChat}
         onClose={() => setShowChat(false)}

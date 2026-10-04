@@ -177,11 +177,25 @@ export default function RootLayout() {
       if (notification.request.content.data?.type === 'ride_offer') emitDriverRideOffer();
     });
 
-    // Listen for user tapping a notification
+    const refreshRideOfferFromResponse = (response: Notifications.NotificationResponse | null) => {
+      if (response?.notification.request.content.data?.type === 'ride_offer') {
+        emitDriverRideOffer();
+      }
+    };
+
+    // Listen for user tapping a notification. The app can have been asleep
+    // when the offer arrived, so this must wake the authenticated offer query
+    // instead of waiting for its next background poll.
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
       const data = response.notification.request.content.data;
       console.log('[HY3N] Notification tapped:', data);
+      refreshRideOfferFromResponse(response);
     });
+    // Covers a cold launch directly from a ride-offer notification, before
+    // the response listener was registered.
+    void Notifications.getLastNotificationResponseAsync()
+      .then(refreshRideOfferFromResponse)
+      .catch(() => {});
 
     return () => {
       notificationListener.current?.remove();

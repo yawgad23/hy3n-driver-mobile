@@ -131,7 +131,6 @@ export const COLLECTIONS = {
   DRIVER_PROFILES: 'driver_profiles',
   DAILY_COMMISSION: 'daily_commissions',
   EARNINGS: 'earnings',
-  RIDE_CALLS: 'ride_calls',
   DRIVER_NOTIFICATIONS: 'driver_notifications',
   DRIVER_SAFETY_EVENTS: 'driver_safety_events',
   FOUND_ITEMS: 'found_items',
