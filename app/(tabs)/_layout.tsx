@@ -352,7 +352,7 @@ function CommissionGate({ driver, user, onConfirmed }: { driver: any; user: { ge
         <View style={{ alignItems: 'center', marginBottom: 12 }}>
           <MaterialIcons name="check-circle" size={80} color="#22C55E" />
           <Text style={[styles.gateTitle, { color: '#22C55E', marginTop: 12 }]}>Payment Successful!</Text>
-          <Text style={{ color: colors.muted, fontSize: 14, marginTop: 4 }}>Thank you for your payment</Text>
+          <Text style={{ color: colors.muted, fontSize: 14, marginTop: 4 }}>Medaase for your payment</Text>
         </View>
 
         {/* Beautiful Receipt Card */}

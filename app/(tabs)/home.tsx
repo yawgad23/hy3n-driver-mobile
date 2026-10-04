@@ -1039,7 +1039,7 @@ export default function DriverHomeScreen() {
       if (!user?.uid || !completedRide.rider_id || ratingValue < 1) throw new Error('Please choose a star rating.');
       await rateRider.mutateAsync({ driverId: user.uid, rideId: completedRide.id, riderId: completedRide.rider_id, rating: ratingValue, feedback: ratingFeedback, foundItem, safetyReport });
 
-      Alert.alert('Thank you!', `Your ${ratingValue}-star rating for ${completedRide.rider_name || 'this Rider'} has been submitted.`);
+      Alert.alert('Medaase!', `Your ${ratingValue}-star rating for ${completedRide.rider_name || 'this Rider'} has been submitted.`);
       setShowRating(false);
       setCompletedRide(null);
       setRatingValue(5);
@@ -1052,7 +1052,7 @@ export default function DriverHomeScreen() {
         setShowRating(false);
         setCompletedRide(null);
         setRatingValue(5);
-        Alert.alert('Thank you!', 'Your rating was already received.');
+        Alert.alert('Medaase!', 'Your rating was already received.');
         return;
       }
       Alert.alert('Unable to submit rating', message || 'Please check your connection and try again.');

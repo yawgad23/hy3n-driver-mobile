@@ -9,7 +9,8 @@ test('Driver rating sheet opens with a selectable default score', () => {
   assert.match(source, /const \[ratingValue, setRatingValue\] = useState\(5\)/);
   assert.match(source, /setRatingValue\(5\);\n    setShowRating\(true\);/);
   assert.doesNotMatch(source, /setRatingValue\(0\);/);
-  assert.match(source, /Alert\.alert\('Thank you!', `Your \$\{ratingValue\}-star rating for/);
+  assert.match(source, /Alert\.alert\('Medaase!', `Your \$\{ratingValue\}-star rating for/);
+  assert.doesNotMatch(source, /Thank you/i);
 });
 
 test('Driver rating submit is single-flight and visibly acknowledges pending work', () => {
