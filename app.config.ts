@@ -65,9 +65,9 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    // Keep Android releases independently versioned from iOS. 57002 is the
-    // next store-ready Driver Android version after the iOS 61 release line.
-    versionCode: 57002,
+    // Keep Android releases independently versioned from iOS. 57003 is the
+    // next store-ready Driver Android version after 57002.
+    versionCode: 57003,
     googleServicesFile: "./firebase/google-services.json",
     permissions: ["POST_NOTIFICATIONS", "ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_LOCATION"],
     intentFilters: [
