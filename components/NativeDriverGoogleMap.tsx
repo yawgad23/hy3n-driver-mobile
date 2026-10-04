@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import MapView, { AnimatedRegion, Marker, Polyline, PROVIDER_GOOGLE, type Region } from 'react-native-maps';
 import { nativeTrackingRegion } from '@/lib/native-map-camera';
 
@@ -138,6 +138,14 @@ export default function NativeDriverGoogleMap({
         <ActivityIndicator color="#006B3F" />
         <Text style={[styles.pendingTitle, { color: dark ? '#fff' : '#111' }]}>Getting your live location…</Text>
         <Text style={[styles.pendingBody, { color: dark ? '#d1d5db' : '#4b5563' }]}>Your map and ride requests will use your device location, not a fallback place.</Text>
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Open Location Settings"
+          onPress={() => { void Linking.openSettings().catch(() => {}); }}
+          style={styles.settingsButton}
+        >
+          <Text style={styles.settingsButtonText}>Check Location Settings</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -200,5 +208,7 @@ const styles = StyleSheet.create({
   locationPending: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28 },
   pendingTitle: { fontWeight: '700', marginTop: 12 },
   pendingBody: { textAlign: 'center', marginTop: 6 },
+  settingsButton: { marginTop: 18, backgroundColor: '#006B3F', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 11 },
+  settingsButtonText: { color: '#fff', fontWeight: '800' },
   loadingBadge: { position: 'absolute', top: '42%', alignSelf: 'center', backgroundColor: 'rgba(255,255,255,0.92)', padding: 14, borderRadius: 14 },
 });

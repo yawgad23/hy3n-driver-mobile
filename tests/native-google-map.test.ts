@@ -23,3 +23,13 @@ test('Driver map keeps a close road-level follow camera and reconciles an accept
   assert.match(screen, /firestoreDB\.get\(COLLECTIONS\.RIDES, rideId\)/);
   assert.match(screen, /driverOfferAcceptedByServer/);
 });
+
+test('Driver location loading never substitutes a fake map location and exposes settings recovery', () => {
+  assert.match(component, /Getting your live location/);
+  assert.match(component, /not a fallback place/);
+  assert.match(component, /Check Location Settings/);
+  assert.match(component, /Linking\.openSettings\(\)/);
+  assert.match(screen, /getLastKnownPositionAsync/);
+  assert.match(screen, /watchPositionAsync/);
+  assert.match(screen, /hasBootstrapDriverLocation/);
+});

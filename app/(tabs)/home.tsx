@@ -33,8 +33,10 @@ import {
 } from '@/lib/driver-location-policy';
 import {
   driverAvailabilityLabel,
+  hasBootstrapDriverLocation,
   hasRecentUsableDriverLocation,
   hasUsableDriverLocation,
+  shouldReplaceDriverLocation,
 } from '@/lib/driver-location-readiness';
 import {
   INCOMING_TRIP_ALERT_PLAYBACK,
@@ -144,6 +146,10 @@ export default function DriverHomeScreen() {
 
   const [isOnline, setIsOnline] = useState(false);
   const [location, setLocation] = useState<ExpoLocation.LocationObject | null>(null);
+  const updateLocation = useCallback((nextLocation: ExpoLocation.LocationObject | null | undefined) => {
+    if (!nextLocation || !hasUsableDriverLocation(nextLocation)) return;
+    setLocation((currentLocation) => shouldReplaceDriverLocation(currentLocation, nextLocation) ? nextLocation : currentLocation);
+  }, []);
   const hasCurrentLocation = hasUsableDriverLocation(location);
   const driverStatusLabel = driverAvailabilityLabel(isOnline, hasCurrentLocation);
   const [activeTrip, setActiveTrip] = useState<any>(null);
@@ -379,9 +385,16 @@ export default function DriverHomeScreen() {
     const beginLocationWatch = async () => {
       let { status } = await ExpoLocation.requestForegroundPermissionsAsync();
       if (status !== 'granted') return;
-      let loc = await ExpoLocation.getCurrentPositionAsync({ accuracy: ExpoLocation.Accuracy.BestForNavigation });
-      if (disposed) return;
-      setLocation(loc);
+
+      // iOS can keep a one-shot BestForNavigation request pending while it
+      // warms GPS. Paint only a recent *real* device coordinate first, then
+      // attach the continuous watcher immediately instead of blocking the map.
+      const cachedLocation = await ExpoLocation.getLastKnownPositionAsync({
+        maxAge: 60_000,
+        requiredAccuracy: 250,
+      });
+      if (!disposed && hasBootstrapDriverLocation(cachedLocation)) updateLocation(cachedLocation);
+
       const watch = await ExpoLocation.watchPositionAsync(
         {
           accuracy: ExpoLocation.Accuracy.BestForNavigation,
@@ -389,7 +402,7 @@ export default function DriverHomeScreen() {
           distanceInterval: DRIVER_FOREGROUND_LOCATION_POLICY.distanceIntervalMeters,
         },
         (newLoc) => {
-          if (!disposed) setLocation(newLoc);
+          if (!disposed) updateLocation(newLoc);
         },
       );
       if (disposed) {
@@ -397,13 +410,21 @@ export default function DriverHomeScreen() {
       } else {
         subscription = watch;
       }
+
+      // Keep the high-accuracy read as a refinement, but never let it delay
+      // the map or continuous updates. A late result cannot replace newer GPS.
+      void ExpoLocation.getCurrentPositionAsync({ accuracy: ExpoLocation.Accuracy.BestForNavigation })
+        .then((freshLocation) => {
+          if (!disposed) updateLocation(freshLocation);
+        })
+        .catch(() => {});
     };
     void beginLocationWatch().catch(() => {});
     return () => {
       disposed = true;
       subscription?.remove();
     };
-  }, [isOnline, activeTrip?.id]);
+  }, [isOnline, activeTrip?.id, updateLocation]);
 
   // iOS may remain quiet for a stationary foreground watch. Refresh the
   // current position while this app remains online so Riders do not lose a
