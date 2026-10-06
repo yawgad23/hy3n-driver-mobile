@@ -32,6 +32,11 @@ import {
   shouldTrackDriverLocation,
 } from '@/lib/driver-location-policy';
 import {
+  DRIVER_BACKGROUND_LOCATION_DISCLOSURE,
+  type DriverBackgroundLocationDisclosureDecision,
+  shouldShowDriverBackgroundLocationDisclosure,
+} from '@/lib/driver-background-location-disclosure';
+import {
   driverAvailabilityLabel,
   hasBootstrapDriverLocation,
   hasRecentUsableDriverLocation,
@@ -185,6 +190,7 @@ export default function DriverHomeScreen() {
   const seenChatMessageIdsRef = useRef<Set<string> | null>(null);
   const tripActionInFlightRef = useRef(false);
   const ratingSubmitInFlightRef = useRef(false);
+  const backgroundLocationDisclosureDecisionRef = useRef<DriverBackgroundLocationDisclosureDecision>('unseen');
 
   const applyServerTerminalRide = useCallback((serverRide: any) => {
     const terminalStatus = driverTripTerminalStatus(serverRide);
@@ -461,17 +467,19 @@ export default function DriverHomeScreen() {
   }, [driverProfile]);
 
   // Keep the live vehicle marker updating for Riders when a Driver backgrounds
-  // the app. iOS displays its standard location indicator and the Driver can
-  // stop tracking at any time by going offline.
+  // the app. Android requires this prominent disclosure immediately before the
+  // runtime background-location prompt; the Driver can stop sharing by going
+  // offline when no active trip remains.
   useEffect(() => {
     const shouldTrack = shouldTrackDriverLocation(isOnline, Boolean(activeTrip?.id));
     if (!shouldTrack || !user?.uid) {
+      backgroundLocationDisclosureDecisionRef.current = 'unseen';
       stopDriverBackgroundLocationUpdates().catch(() => {});
       return;
     }
 
     let cancelled = false;
-    startDriverBackgroundLocationUpdates().then((result) => {
+    const requestBackgroundLocation = () => startDriverBackgroundLocationUpdates().then((result) => {
       if (cancelled || result.started || result.reason === 'unsupported' || result.reason === 'cancelled') return;
       if (result.reason === 'background_denied') {
         Alert.alert('Background location needed', 'Allow “Always” location so Riders can see your vehicle moving after you leave HY3N Driver. You can still drive while the app is open.');
@@ -479,6 +487,33 @@ export default function DriverHomeScreen() {
         Alert.alert('Location needed', 'Allow location to go online and receive rides.');
       }
     }).catch(() => {});
+
+    if (shouldShowDriverBackgroundLocationDisclosure({
+      platform: Platform.OS,
+      shouldTrack,
+      decision: backgroundLocationDisclosureDecisionRef.current,
+    })) {
+      Alert.alert(
+        DRIVER_BACKGROUND_LOCATION_DISCLOSURE.title,
+        DRIVER_BACKGROUND_LOCATION_DISCLOSURE.message,
+        [
+          {
+            text: DRIVER_BACKGROUND_LOCATION_DISCLOSURE.notNowLabel,
+            style: 'cancel',
+            onPress: () => { backgroundLocationDisclosureDecisionRef.current = 'declined'; },
+          },
+          {
+            text: DRIVER_BACKGROUND_LOCATION_DISCLOSURE.continueLabel,
+            onPress: () => {
+              backgroundLocationDisclosureDecisionRef.current = 'accepted';
+              if (!cancelled) requestBackgroundLocation();
+            },
+          },
+        ],
+      );
+    } else if (backgroundLocationDisclosureDecisionRef.current !== 'declined') {
+      requestBackgroundLocation();
+    }
     return () => { cancelled = true; };
   }, [isOnline, activeTrip?.id, user?.uid]);
 

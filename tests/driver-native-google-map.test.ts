@@ -22,3 +22,11 @@ test('Driver Home retains one branded request sound per ride ID', () => {
   assert.match(driverHomeSource, /playedOfferAlertIdsRef\.current\.has\(offerId\)/);
   assert.match(driverHomeSource, /playedOfferAlertIdsRef\.current\.add\(offerId\)/);
 });
+
+test('Driver Home shows a prominent Android location disclosure before requesting background tracking', () => {
+  assert.match(driverHomeSource, /DRIVER_BACKGROUND_LOCATION_DISCLOSURE/);
+  assert.match(driverHomeSource, /shouldShowDriverBackgroundLocationDisclosure/);
+  assert.match(driverHomeSource, /backgroundLocationDisclosureDecisionRef\.current = 'accepted'/);
+  assert.match(driverHomeSource, /backgroundLocationDisclosureDecisionRef\.current = 'declined'/);
+  assert.match(driverHomeSource, /if \(!cancelled\) requestBackgroundLocation\(\)/);
+});
