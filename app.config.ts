@@ -65,11 +65,16 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    // Keep Android releases independently versioned from iOS. 57004 carries
-    // the published Android sign-out and duplicate-alert corrections.
-    versionCode: 57004,
+    // Keep Android releases independently versioned from iOS. 57005 removes
+    // unused media foreground-service capabilities from the Play artifact.
+    versionCode: 57005,
     googleServicesFile: "./firebase/google-services.json",
     permissions: ["POST_NOTIFICATIONS", "ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_LOCATION"],
+    // expo-audio merges audio recording/media-service permissions by default.
+    // HY3N only plays a short foreground ride-offer tone and never records or
+    // performs background media playback, so retain only the Driver's
+    // user-visible location foreground service.
+    blockedPermissions: ["android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK", "android.permission.RECORD_AUDIO"],
     intentFilters: [
       {
         action: "VIEW",
@@ -120,8 +125,10 @@ const config: ExpoConfig = {
     [
       "expo-video",
       {
-        supportsBackgroundPlayback: true,
-        supportsPictureInPicture: true,
+        // No Driver screen uses Expo Video. Keep the native module from
+        // declaring background playback or picture-in-picture capabilities.
+        supportsBackgroundPlayback: false,
+        supportsPictureInPicture: false,
       },
     ],
     [
