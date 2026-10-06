@@ -36,11 +36,25 @@ export function createDriverLocationPublisher({ getToken, post, baseUrl }: Publi
   let newestQueuedAt = 0;
   let inFlight: Promise<void> | null = null;
   let pending: DriverLocationSample | null = null;
+  let sessionGeneration = 0;
 
-  const send = async (sample: DriverLocationSample) => {
+  /**
+   * Stops this publisher from starting another queued GPS request after a
+   * Driver signs out. An already-started request cannot be revoked reliably,
+   * but it is prevented from advancing the queue into the next user session.
+   */
+  const clear = () => {
+    sessionGeneration += 1;
+    pending = null;
+    newestAcceptedAt = 0;
+    newestQueuedAt = 0;
+  };
+
+  const send = async (sample: DriverLocationSample, generation: number) => {
+    if (generation !== sessionGeneration) return false;
     const recordedAt = new Date(sample.recordedAt).getTime();
     const token = await getToken();
-    if (!token) throw new Error('Driver session is unavailable.');
+    if (generation !== sessionGeneration || !token) return false;
     const response = await post(`${baseUrl}/api/driver/location`, {
       method: 'POST',
       headers: {
@@ -55,8 +69,10 @@ export function createDriverLocationPublisher({ getToken, post, baseUrl }: Publi
         recordedAt: sample.recordedAt,
       }),
     });
+    if (generation !== sessionGeneration) return false;
     if (!response.ok) throw new Error(`Driver location update failed (${response.status}).`);
     newestAcceptedAt = Math.max(newestAcceptedAt, recordedAt);
+    return true;
   };
 
   const publish = async (sample: DriverLocationSample): Promise<boolean> => {
@@ -72,18 +88,19 @@ export function createDriverLocationPublisher({ getToken, post, baseUrl }: Publi
       return true;
     }
 
+    const generation = sessionGeneration;
     const operation = (async () => {
       let next: DriverLocationSample | null = sample;
-      while (next) {
+      while (next && generation === sessionGeneration) {
         const current = next;
         pending = null;
         try {
-          await send(current);
+          if (!await send(current, generation)) break;
         } catch (error) {
-          newestQueuedAt = newestAcceptedAt;
+          if (generation === sessionGeneration) newestQueuedAt = newestAcceptedAt;
           throw error;
         }
-        next = pending;
+        next = generation === sessionGeneration ? pending : null;
       }
     })();
     inFlight = operation;
@@ -95,5 +112,5 @@ export function createDriverLocationPublisher({ getToken, post, baseUrl }: Publi
     }
   };
 
-  return { publish };
+  return { publish, clear };
 }

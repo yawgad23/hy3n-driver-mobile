@@ -105,14 +105,24 @@ export default function NativeDriverGoogleMap({
     if (!driverPoint) return;
     const nextRegion = region(driverPoint);
     if (!previousLocationRef.current) animatedDriverCoordinate.setValue(nextRegion);
-    else animatedDriverCoordinate.timing({
-      ...nextRegion,
-      duration: markerAnimationDuration(previousLocationTimestampRef.current, locationTimestamp),
-      useNativeDriver: false,
-    } as any).start();
+    else {
+      animatedDriverCoordinate.stopAnimation(() => {});
+      animatedDriverCoordinate.timing({
+        ...nextRegion,
+        duration: markerAnimationDuration(previousLocationTimestampRef.current, locationTimestamp),
+        useNativeDriver: false,
+      } as any).start();
+    }
     previousLocationRef.current = driverPoint;
     if (Number.isFinite(Number(locationTimestamp))) previousLocationTimestampRef.current = Number(locationTimestamp);
   }, [animatedDriverCoordinate, driverPoint, locationTimestamp]);
+
+  // Stop native animated values before the Google map view is destroyed. This
+  // avoids an Android renderer callback targeting a Marker after sign-out has
+  // removed the authenticated map tree.
+  useEffect(() => () => {
+    animatedDriverCoordinate.stopAnimation(() => {});
+  }, [animatedDriverCoordinate]);
 
   useEffect(() => {
     if (!routeKey || !driverPoint || !targetPoint) {

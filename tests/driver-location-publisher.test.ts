@@ -64,6 +64,31 @@ test('Driver location publisher drops obsolete queued GPS points while a slow up
   assert.deepEqual(seen, [sample(1).recordedAt, sample(4).recordedAt]);
 });
 
+test('Driver session cleanup drops queued location work after sign-out', async () => {
+  const seen: string[] = [];
+  let unblockFirst: (() => void) | undefined;
+  const firstGate = new Promise<void>((resolve) => { unblockFirst = resolve; });
+  const publisher = createDriverLocationPublisher({
+    baseUrl: 'https://api.example.test',
+    getToken: async () => 'token',
+    post: async (_url, init) => {
+      seen.push(JSON.parse(String(init.body)).recordedAt);
+      if (seen.length === 1) await firstGate;
+      return { ok: true, status: 200 };
+    },
+  });
+
+  const first = publisher.publish(sample(1));
+  await publisher.publish(sample(2));
+  publisher.clear();
+  unblockFirst?.();
+  await first;
+
+  assert.deepEqual(seen, [sample(1).recordedAt]);
+  assert.equal(await publisher.publish(sample(3)), true);
+  assert.deepEqual(seen, [sample(1).recordedAt, sample(3).recordedAt]);
+});
+
 test('Driver location publisher sends a repeated stationary iOS timestamp as an availability heartbeat', async () => {
   const seen: string[] = [];
   const publisher = createDriverLocationPublisher({

@@ -181,6 +181,7 @@ export default function DriverHomeScreen() {
   const lastSafetyEventAtRef = useRef(0);
   const offerSwipeX = useRef(new Animated.Value(0)).current;
   const incomingAlertRunRef = useRef(0);
+  const playedOfferAlertIdsRef = useRef<Set<string>>(new Set());
   const seenChatMessageIdsRef = useRef<Set<string> | null>(null);
   const tripActionInFlightRef = useRef(false);
   const ratingSubmitInFlightRef = useRef(false);
@@ -345,6 +346,14 @@ export default function DriverHomeScreen() {
       return;
     }
 
+    // A polling refetch, foreground offer push, and Firestore reconciliation
+    // can all deliver the same offer while it is pending. The branded sound
+    // must run once for that ride ID, never once per refresh.
+    const offerId = String(incomingRide?.id || '');
+    if (!offerId || playedOfferAlertIdsRef.current.has(offerId)) return;
+    if (playedOfferAlertIdsRef.current.size >= 100) playedOfferAlertIdsRef.current.clear();
+    playedOfferAlertIdsRef.current.add(offerId);
+
     const alertRun = ++incomingAlertRunRef.current;
     incomingTripPlayer.loop = INCOMING_TRIP_ALERT_PLAYBACK.loop;
     incomingTripPlayer.volume = INCOMING_TRIP_ALERT_PLAYBACK.volume;
@@ -463,7 +472,7 @@ export default function DriverHomeScreen() {
 
     let cancelled = false;
     startDriverBackgroundLocationUpdates().then((result) => {
-      if (cancelled || result.started || result.reason === 'unsupported') return;
+      if (cancelled || result.started || result.reason === 'unsupported' || result.reason === 'cancelled') return;
       if (result.reason === 'background_denied') {
         Alert.alert('Background location needed', 'Allow “Always” location so Riders can see your vehicle moving after you leave HY3N Driver. You can still drive while the app is open.');
       } else {

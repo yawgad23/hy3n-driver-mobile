@@ -4,9 +4,11 @@ import * as TaskManager from 'expo-task-manager';
 import { Platform } from 'react-native';
 import { DRIVER_BACKGROUND_LOCATION_POLICY } from '@/lib/driver-location-policy';
 import { driverLocationPublisher } from '@/lib/driver-location-publisher';
+import { createDriverTrackingSession } from '@/lib/driver-tracking-session';
 
 export const DRIVER_BACKGROUND_LOCATION_TASK = 'hy3n-driver-background-location-v1';
 const BACKGROUND_TRACKING_ENABLED_KEY = 'hy3n:driver-background-location-enabled';
+const trackingSession = createDriverTrackingSession();
 
 async function publishDriverLocation(location: ExpoLocation.LocationObject) {
   await driverLocationPublisher.publish({
@@ -46,19 +48,26 @@ if (Platform.OS !== 'web' && !TaskManager.isTaskDefined(DRIVER_BACKGROUND_LOCATI
 
 export type BackgroundLocationStartResult = {
   started: boolean;
-  reason?: 'foreground_denied' | 'background_denied' | 'unsupported';
+  reason?: 'foreground_denied' | 'background_denied' | 'cancelled' | 'unsupported';
 };
 
 export async function startDriverBackgroundLocationUpdates(): Promise<BackgroundLocationStartResult> {
   if (Platform.OS === 'web') return { started: false, reason: 'unsupported' };
+  const startGeneration = trackingSession.capture();
 
   const foreground = await ExpoLocation.requestForegroundPermissionsAsync();
   if (foreground.status !== 'granted') return { started: false, reason: 'foreground_denied' };
+  if (!trackingSession.isCurrent(startGeneration)) return { started: false, reason: 'cancelled' };
 
   const background = await ExpoLocation.requestBackgroundPermissionsAsync();
   if (background.status !== 'granted') return { started: false, reason: 'background_denied' };
+  if (!trackingSession.isCurrent(startGeneration)) return { started: false, reason: 'cancelled' };
 
   await AsyncStorage.setItem(BACKGROUND_TRACKING_ENABLED_KEY, 'true');
+  if (!trackingSession.isCurrent(startGeneration)) {
+    await AsyncStorage.removeItem(BACKGROUND_TRACKING_ENABLED_KEY);
+    return { started: false, reason: 'cancelled' };
+  }
   const alreadyStarted = await ExpoLocation.hasStartedLocationUpdatesAsync(DRIVER_BACKGROUND_LOCATION_TASK);
   if (!alreadyStarted) {
     await ExpoLocation.startLocationUpdatesAsync(DRIVER_BACKGROUND_LOCATION_TASK, {
@@ -73,11 +82,19 @@ export async function startDriverBackgroundLocationUpdates(): Promise<Background
       },
     });
   }
+  if (!trackingSession.isCurrent(startGeneration)) {
+    await AsyncStorage.removeItem(BACKGROUND_TRACKING_ENABLED_KEY);
+    const stillStarted = await ExpoLocation.hasStartedLocationUpdatesAsync(DRIVER_BACKGROUND_LOCATION_TASK);
+    if (stillStarted) await ExpoLocation.stopLocationUpdatesAsync(DRIVER_BACKGROUND_LOCATION_TASK);
+    return { started: false, reason: 'cancelled' };
+  }
   return { started: true };
 }
 
 export async function stopDriverBackgroundLocationUpdates() {
   if (Platform.OS === 'web') return;
+  // Invalidate a permission/service start that may still be awaiting Android.
+  trackingSession.invalidate();
   await AsyncStorage.removeItem(BACKGROUND_TRACKING_ENABLED_KEY);
   const alreadyStarted = await ExpoLocation.hasStartedLocationUpdatesAsync(DRIVER_BACKGROUND_LOCATION_TASK);
   if (alreadyStarted) await ExpoLocation.stopLocationUpdatesAsync(DRIVER_BACKGROUND_LOCATION_TASK);

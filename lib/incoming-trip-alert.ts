@@ -10,6 +10,20 @@ export const INCOMING_TRIP_NOTIFICATION = Object.freeze({
   sound: false,
 });
 
+/**
+ * A foreground Driver receives the branded one-shot alert from the app after
+ * the authenticated offer query confirms eligibility. The remote wake-up must
+ * remain visible, but its Android channel sound would otherwise play on top of
+ * that branded alert (and can sound like the request is repeating).
+ */
+export function isDriverRideOfferNotification(data: unknown): boolean {
+  return Boolean(
+    data
+    && typeof data === 'object'
+    && String((data as Record<string, unknown>).type || '').trim().toLowerCase() === 'ride_offer',
+  );
+}
+
 type IncomingTripAlertInput = {
   isOnline: boolean;
   incomingRideId?: string | null;

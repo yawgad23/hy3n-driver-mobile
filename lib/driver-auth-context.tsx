@@ -2,6 +2,9 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useRef } from 'react';
 import { firebaseAuth, firestoreDB, COLLECTIONS } from './firebase';
 import type { User } from 'firebase/auth';
+import { stopDriverBackgroundLocationUpdates } from './driver-background-location';
+import { driverLocationPublisher } from './driver-location-publisher';
+import { cleanUpDriverSession } from './driver-session-cleanup';
 
 export interface DriverProfile {
   id: string;
@@ -191,10 +194,18 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
   };
 
   const signOut = async () => {
+    // Stop native tracking while the authenticated Driver tree is still
+    // mounted. On Android, asking Expo Location to stop at the same moment
+    // that a map, location watcher, and auth tree unmount can crash the app.
+    await cleanUpDriverSession({
+      clearQueuedLocationUpdates: driverLocationPublisher.clear,
+      stopBackgroundLocationUpdates: stopDriverBackgroundLocationUpdates,
+      report: (message) => console.warn(message),
+    });
+
     // Invalidate listeners before Firebase emits the signed-out callback.
     // The callback is the only place that sets the unauthenticated state and
-    // performs navigation, avoiding a second state transition while mounted
-    // Driver tabs are releasing native resources.
+    // performs navigation after tracking work has already been released.
     authTransitionRef.current += 1;
     clearProfileSubscription();
     setDriverProfile(null);

@@ -2,16 +2,23 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import { isDriverRideOfferNotification } from './incoming-trip-alert';
 
 // ── Foreground handler: always show alerts when app is open ──────────────────
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+  handleNotification: async (notification) => {
+    const isForegroundRideOffer = isDriverRideOfferNotification(notification.request.content.data);
+    return {
+      shouldShowAlert: true,
+      // The Home screen provides exactly one branded audio alert for a live
+      // offer. Keep the Android remote notification visual-only in foreground
+      // so its channel's default sound cannot duplicate that alert.
+      shouldPlaySound: !isForegroundRideOffer,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    };
+  },
 });
 
 // ── Android notification channels ────────────────────────────────────────────
