@@ -65,9 +65,9 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    // Keep Android releases independently versioned from iOS. 57005 removes
-    // unused media foreground-service capabilities from the Play artifact.
-    versionCode: 57005,
+    // Keep Android releases independently versioned from iOS. 57006 includes
+    // the required in-app background-location disclosure for Google Play.
+    versionCode: 57006,
     googleServicesFile: "./firebase/google-services.json",
     permissions: ["POST_NOTIFICATIONS", "ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_LOCATION"],
     // expo-audio merges audio recording/media-service permissions by default.
