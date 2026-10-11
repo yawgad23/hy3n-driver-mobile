@@ -9,6 +9,7 @@ const camera = readFileSync(path.join(process.cwd(), 'lib/native-map-camera.ts')
 
 test('Driver active map uses native Google Maps rather than a WebView', () => {
   assert.match(component, /provider=\{PROVIDER_GOOGLE\}/);
+  assert.match(component, /googleRenderer="LEGACY"/);
   assert.match(component, /Marker\.Animated/);
   assert.match(component, /animatedDriverCoordinate\.timing/);
   assert.doesNotMatch(component, /react-native-webview/);

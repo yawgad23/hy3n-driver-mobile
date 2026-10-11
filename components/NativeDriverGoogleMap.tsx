@@ -169,6 +169,10 @@ export default function NativeDriverGoogleMap({
       <MapView
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
+        // The current Android Maps renderer leaves an authenticated but blank
+        // tile surface on the affected Driver device. Keep native Google Maps
+        // while requesting the compatible renderer exposed by react-native-maps.
+        googleRenderer="LEGACY"
         initialRegion={region(driverPoint)}
         style={StyleSheet.absoluteFill}
         customMapStyle={dark ? DARK_GOOGLE_STYLE : undefined}
