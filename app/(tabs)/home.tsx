@@ -16,6 +16,7 @@ import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { trpc } from '@/lib/trpc';
 import { driverLocationPublisher } from '@/lib/driver-location-publisher';
+import { registerDriverForegroundLocationCleanup } from '@/lib/driver-foreground-location-runtime';
 import { shouldPublishDriverTripMeter } from '@/lib/driver-trip-meter-publisher';
 import { subscribeDriverRideOffer } from '@/lib/ride-offer-signal';
 import { submitDriverSos } from '@/lib/safety';
@@ -397,6 +398,12 @@ export default function DriverHomeScreen() {
     let disposed = false;
     const shouldTrack = shouldTrackDriverLocation(isOnline, Boolean(activeTrip?.id));
     if (!shouldTrack) return;
+    const stopForegroundWatch = () => {
+      disposed = true;
+      subscription?.remove();
+      subscription = undefined;
+    };
+    const unregisterForegroundWatch = registerDriverForegroundLocationCleanup(stopForegroundWatch);
     const beginLocationWatch = async () => {
       let { status } = await ExpoLocation.requestForegroundPermissionsAsync();
       if (status !== 'granted') return;
@@ -436,8 +443,8 @@ export default function DriverHomeScreen() {
     };
     void beginLocationWatch().catch(() => {});
     return () => {
-      disposed = true;
-      subscription?.remove();
+      unregisterForegroundWatch();
+      stopForegroundWatch();
     };
   }, [isOnline, activeTrip?.id, updateLocation]);
 
@@ -456,9 +463,14 @@ export default function DriverHomeScreen() {
       }
     };
     const interval = setInterval(() => { void refreshPresence(); }, DRIVER_FOREGROUND_PRESENCE_HEARTBEAT_MS);
-    return () => {
+    const stopPresenceHeartbeat = () => {
       disposed = true;
       clearInterval(interval);
+    };
+    const unregisterPresenceHeartbeat = registerDriverForegroundLocationCleanup(stopPresenceHeartbeat);
+    return () => {
+      unregisterPresenceHeartbeat();
+      stopPresenceHeartbeat();
     };
   }, [user?.uid, isOnline, activeTrip?.id]);
 

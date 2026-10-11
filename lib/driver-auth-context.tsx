@@ -3,6 +3,7 @@ import { useRef } from 'react';
 import { firebaseAuth, firestoreDB, COLLECTIONS } from './firebase';
 import type { User } from 'firebase/auth';
 import { stopDriverBackgroundLocationUpdates } from './driver-background-location';
+import { stopDriverForegroundLocationWork } from './driver-foreground-location-runtime';
 import { driverLocationPublisher } from './driver-location-publisher';
 import { cleanUpDriverSession } from './driver-session-cleanup';
 
@@ -198,6 +199,7 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
     // mounted. On Android, asking Expo Location to stop at the same moment
     // that a map, location watcher, and auth tree unmount can crash the app.
     await cleanUpDriverSession({
+      stopForegroundLocationWork: stopDriverForegroundLocationWork,
       clearQueuedLocationUpdates: driverLocationPublisher.clear,
       stopBackgroundLocationUpdates: stopDriverBackgroundLocationUpdates,
       report: (message) => console.warn(message),
