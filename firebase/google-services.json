@@ -14,6 +14,22 @@
       },
       "oauth_client": [
         {
+          "client_id": "362594902321-6e6rc7dmusragaillgh8nlhkvjs1htv8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hy3n.driver",
+            "certificate_hash": "1a79cdac2a4042ca7b85cbc9ede779b38aef952f"
+          }
+        },
+        {
+          "client_id": "362594902321-eofm295e7vg9ua7prqupak3i1dgo5cti.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hy3n.driver",
+            "certificate_hash": "d3c1a40c2460c488df2b18547f9d8ca8da43a304"
+          }
+        },
+        {
           "client_id": "362594902321-o9dsidn1o0h8s1r3qtc1u4eldu96sdkh.apps.googleusercontent.com",
           "client_type": 3
         }
