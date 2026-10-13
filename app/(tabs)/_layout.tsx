@@ -918,7 +918,7 @@ function isDriverApproved(driver: any): boolean {
 // ─── Main Shell ───────────────────────────────────────────────────────────────
 export default function DriverTabLayout() {
   const pathname = usePathname();
-  const { user, driverProfile, loading } = useDriverAuth();
+  const { user, driverProfile, loading, signingOut } = useDriverAuth();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const bottomPadding = Platform.OS === 'web' ? 12 : Math.max(insets.bottom, 8);
@@ -976,6 +976,18 @@ export default function DriverTabLayout() {
       router.replace('/' as any);
     }
   }, [loading, user]);
+
+  // Firebase is intentionally revoked only after this state has rendered for
+  // two frames. Keeping a lightweight shell here guarantees that Android has
+  // released MapView and the tab navigator before the auth redirect begins.
+  if (signingOut) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={GOLD} />
+        <Text style={{ color: colors.muted, marginTop: 14, fontSize: 14 }}>Signing out safely…</Text>
+      </View>
+    );
+  }
 
   if (loading || checkingCommission) {
     return (

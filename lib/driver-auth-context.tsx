@@ -6,6 +6,7 @@ import { stopDriverBackgroundLocationUpdates } from './driver-background-locatio
 import { stopDriverForegroundLocationWork } from './driver-foreground-location-runtime';
 import { driverLocationPublisher } from './driver-location-publisher';
 import { cleanUpDriverSession } from './driver-session-cleanup';
+import { waitForDriverNativeUnmount } from './driver-signout-transition';
 
 export interface DriverProfile {
   id: string;
@@ -58,6 +59,7 @@ interface DriverAuthContextType {
   user: User | null;
   driverProfile: DriverProfile | null;
   loading: boolean;
+  signingOut: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   startPhoneSignIn: (phone: string, appVerifier?: any) => Promise<{ verificationId: string; phoneNumber: string }>;
   confirmPhoneSignIn: (verificationId: string, code: string) => Promise<void>;
@@ -75,11 +77,13 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
   const [user, setUser] = useState<User | null>(null);
   const [driverProfile, setDriverProfile] = useState<DriverProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [signingOut, setSigningOut] = useState(false);
   // Keep profile reads and subscriptions tied to the current authenticated
   // session. A late Firestore response from a previous Driver must never put
   // profile state back after that Driver has signed out.
   const profileUnsubRef = useRef<(() => void) | null>(null);
   const authTransitionRef = useRef(0);
+  const signOutPromiseRef = useRef<Promise<void> | null>(null);
 
   const clearProfileSubscription = () => {
     if (profileUnsubRef.current) {
@@ -141,6 +145,7 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     const unsubscribe = firebaseAuth.onAuthStateChanged((firebaseUser) => {
       const authTransition = ++authTransitionRef.current;
+      setSigningOut(false);
       setUser(firebaseUser);
       clearProfileSubscription();
       if (firebaseUser) {
@@ -195,29 +200,50 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
   };
 
   const signOut = async () => {
-    // Stop native tracking while the authenticated Driver tree is still
-    // mounted. On Android, asking Expo Location to stop at the same moment
-    // that a map, location watcher, and auth tree unmount can crash the app.
-    await cleanUpDriverSession({
-      stopForegroundLocationWork: stopDriverForegroundLocationWork,
-      clearQueuedLocationUpdates: driverLocationPublisher.clear,
-      stopBackgroundLocationUpdates: stopDriverBackgroundLocationUpdates,
-      report: (message) => console.warn(message),
-    });
+    // A double tap or two sign-out controls must share one native teardown.
+    if (signOutPromiseRef.current) return signOutPromiseRef.current;
 
-    // Invalidate listeners before Firebase emits the signed-out callback.
-    // The callback is the only place that sets the unauthenticated state and
-    // performs navigation after tracking work has already been released.
-    authTransitionRef.current += 1;
-    clearProfileSubscription();
-    setDriverProfile(null);
-    setLoading(true);
+    const operation = (async () => {
+      // Stop tracking before removing the authenticated shell. This makes all
+      // later location callbacks inert while the native map is still mounted.
+      await cleanUpDriverSession({
+        stopForegroundLocationWork: stopDriverForegroundLocationWork,
+        clearQueuedLocationUpdates: driverLocationPublisher.clear,
+        stopBackgroundLocationUpdates: stopDriverBackgroundLocationUpdates,
+        report: (message) => console.warn(message),
+      });
+
+      // Render a map-free signing-out shell first. In the affected Android
+      // build, changing Firebase auth while MapView was releasing its renderer
+      // could terminate the process. The tab layout removes native maps here;
+      // the two-frame barrier below waits for that teardown to commit.
+      setSigningOut(true);
+      authTransitionRef.current += 1;
+      clearProfileSubscription();
+      setDriverProfile(null);
+      await waitForDriverNativeUnmount();
+
+      try {
+        await firebaseAuth.logout();
+      } catch (error) {
+        // Keep the authenticated shell usable when Firebase rejects the request.
+        const currentUser = firebaseAuth.getCurrentUser();
+        if (currentUser) {
+          setSigningOut(false);
+          setLoading(true);
+          await loadProfile(currentUser, authTransitionRef.current).finally(() => {
+            if (currentUser.uid === firebaseAuth.getCurrentUser()?.uid) setLoading(false);
+          });
+        }
+        throw error;
+      }
+    })();
+
+    signOutPromiseRef.current = operation;
     try {
-      await firebaseAuth.logout();
-    } catch (error) {
-      // Keep the authenticated shell usable when Firebase rejects the request.
-      if (firebaseAuth.getCurrentUser()) setLoading(false);
-      throw error;
+      await operation;
+    } finally {
+      if (signOutPromiseRef.current === operation) signOutPromiseRef.current = null;
     }
   };
 
@@ -243,7 +269,7 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
 
   return (
     <DriverAuthContext.Provider value={{
-      user, driverProfile, loading,
+      user, driverProfile, loading, signingOut,
       signIn, startPhoneSignIn, confirmPhoneSignIn, signInWithGoogle, signUp, signOut, deleteAccount,
       refreshProfile, updateDriverProfile,
     }}>
