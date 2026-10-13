@@ -907,7 +907,7 @@ export default function DriverHomeScreen() {
       setActiveTrip(null);
       setArrivedAt(null);
       setShowCancel(false);
-      Alert.alert('Trip cancelled', 'The rider has been notified.');
+      Alert.alert('Ride re-dispatched', 'The Rider has been notified and the request was sent to other nearby Drivers.');
     } catch {
       Alert.alert('Unable to cancel trip', 'Please try again.');
     }
