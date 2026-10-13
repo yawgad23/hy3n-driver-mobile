@@ -37,6 +37,17 @@
         "EXPO_PUBLIC_DAILY_COMMISSION_AMOUNT": "50"
       }
     },
+    "play-internal": {
+      "distribution": "store",
+      "environment": "production",
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://api-yvurtipaxq-ew.a.run.app",
+        "EXPO_PUBLIC_DAILY_COMMISSION_AMOUNT": "50"
+      }
+    },
     "production": {
       "environment": "production",
       "ios": {
