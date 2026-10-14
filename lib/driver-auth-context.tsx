@@ -263,6 +263,21 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
 
   const updateDriverProfile = async (data: Partial<DriverProfile>) => {
     if (!driverProfile?.id) return;
+    const hasContactChange = data.full_name !== undefined || data.email !== undefined || data.phone !== undefined;
+    if (hasContactChange) {
+      const updated = await firebaseAuth.updateDriverContact({
+        fullName: data.full_name,
+        email: data.email,
+        phone: data.phone,
+      });
+      setDriverProfile((previous) => previous ? {
+        ...previous,
+        full_name: updated.fullName || previous.full_name,
+        email: updated.email || previous.email,
+        phone: updated.phone || previous.phone,
+      } : previous);
+      return;
+    }
     await firestoreDB.update(COLLECTIONS.DRIVER_PROFILES, driverProfile.id, data);
     setDriverProfile(prev => prev ? { ...prev, ...data } : null);
   };

@@ -274,6 +274,69 @@ export const firebaseAuth = {
     return payload;
   },
 
+  async submitDriverProfile(input: {
+    fullName: string;
+    email: string;
+    phone: string;
+    momoNumber?: string;
+    city: string;
+    serviceType: 'car' | 'okada' | 'delivery';
+    rideCategories: Array<'standard' | 'comfort' | 'kantanka' | 'executive' | 'okada' | 'express_delivery'>;
+    vehicleMake: string;
+    vehicleModel: string;
+    vehiclePlate: string;
+    vehicleColor?: string;
+    vehicleYear?: string;
+    documents: {
+      ghanaCardFront?: string;
+      ghanaCardBack?: string;
+      licenseFront?: string;
+      licenseBack?: string;
+      profilePhoto?: string;
+      vehiclePhoto?: string;
+      insurance?: string;
+      roadworthy?: string;
+    };
+  }) {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('Please sign in again before submitting your application.');
+    const apiBaseUrl = getApiBaseUrl();
+    if (!apiBaseUrl) throw new Error('Driver application submission is temporarily unavailable. Please try again later.');
+    const idToken = await currentUser.getIdToken(true);
+    const response = await fetch(`${apiBaseUrl}/api/account/profile/driver`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.success !== true) {
+      const error = new Error(payload?.message || 'Your Driver application could not be saved. Please try again.') as Error & { code?: string };
+      error.code = payload?.code;
+      throw error;
+    }
+    return payload.profile;
+  },
+
+  async updateDriverContact(input: { fullName?: string; email?: string; phone?: string }) {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('Please sign in again before updating your account.');
+    const apiBaseUrl = getApiBaseUrl();
+    if (!apiBaseUrl) throw new Error('Account updates are temporarily unavailable. Please try again later.');
+    const idToken = await currentUser.getIdToken(true);
+    const response = await fetch(`${apiBaseUrl}/api/account/profile/contact`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'driver', ...input }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.success !== true) {
+      const error = new Error(payload?.message || 'Your contact details could not be updated. Please try again.') as Error & { code?: string };
+      error.code = payload?.code;
+      throw error;
+    }
+    return payload.profile;
+  },
+
   /**
    * Sends a Firebase Authentication SMS to verify the Driver's own phone.
    *

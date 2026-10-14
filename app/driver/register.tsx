@@ -8,9 +8,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as ImagePicker from 'expo-image-picker';
 import { useDriverAuth } from '@/lib/driver-auth-context';
-import { firestoreDB, COLLECTIONS, auth as firebaseAuthObj, firebaseAuth } from '@/lib/firebase';
+import { auth as firebaseAuthObj, firebaseAuth } from '@/lib/firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { buildVehicleFields } from '@/lib/vehicle';
 import { openDriverSupportWhatsApp } from '@/lib/support-whatsapp';
 
 const GOLD = '#D4AF37';
@@ -353,41 +352,30 @@ export default function DriverRegisterScreen() {
       const defaultCats = serviceType === 'okada' ? ['okada'] : serviceType === 'delivery' ? ['express_delivery'] : ['standard'];
       const rideCategories = selectedCategories.length > 0 ? selectedCategories : defaultCats;
 
-      const profileData = {
-        user_id: user.uid,
-        full_name: fullName,
-        phone,
+      await firebaseAuth.submitDriverProfile({
+        fullName,
         email: email || user.email || '',
-        momo_number: momoNumber,
-        ...buildVehicleFields({ make: vehicleMake, model: vehicleModel, plate: vehiclePlate, colour: vehicleColor, year: vehicleFullModel }),
+        phone,
+        momoNumber,
         city,
-        service_type: serviceType,
-        ride_categories: rideCategories,
-        ghana_card_front_url: ghanaCardFront,
-        ghana_card_back_url: ghanaCardBack,
-        drivers_license_front_url: licenseFront,
-        drivers_license_back_url: licenseBack,
-        profile_photo_url: driverPhoto,
-        vehicle_registration_url: vehiclePhoto,
-        insurance_url: insurancePhoto,
-        roadworthy_url: roadworthyPhoto,
-        approval_status: 'pending',
-        is_online: false,
-        total_earnings: 0,
-        total_rides: 0,
-        rating: 5,
-      };
-
-      const existing = await firestoreDB.list(COLLECTIONS.DRIVER_PROFILES, { user_id: user.uid });
-      if (existing.length > 0) {
-        await firestoreDB.update(COLLECTIONS.DRIVER_PROFILES, existing[0].id, profileData);
-      } else {
-        await firestoreDB.create(COLLECTIONS.DRIVER_PROFILES, profileData);
-      }
-      // The standalone backend addresses driver profiles by Firebase UID for
-      // location updates and ride acceptance. Keep this canonical document in
-      // sync even when an older profile was created with an auto-generated ID.
-      await firestoreDB.set(COLLECTIONS.DRIVER_PROFILES, user.uid, profileData);
+        serviceType: serviceType as 'car' | 'okada' | 'delivery',
+        rideCategories: rideCategories as Array<'standard' | 'comfort' | 'kantanka' | 'executive' | 'okada' | 'express_delivery'>,
+        vehicleMake,
+        vehicleModel,
+        vehiclePlate,
+        vehicleColor,
+        vehicleYear: vehicleFullModel,
+        documents: {
+          ghanaCardFront,
+          ghanaCardBack,
+          licenseFront,
+          licenseBack,
+          profilePhoto: driverPhoto,
+          vehiclePhoto,
+          insurance: insurancePhoto,
+          roadworthy: roadworthyPhoto,
+        },
+      });
       setStep(5);
     } catch (err: any) {
       setError(err?.message || 'Failed to submit application.');
