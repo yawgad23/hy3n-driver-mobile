@@ -65,9 +65,8 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    // Keep Android releases independently versioned from iOS. 57008 adds the
-    // map-safe sign-out transition after the Maps authorisation repair.
-    versionCode: 57008,
+    // 57009 adds server-owned phone/email identity claims for registration.
+    versionCode: 57009,
     googleServicesFile: "./firebase/google-services.json",
     permissions: ["POST_NOTIFICATIONS", "ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_LOCATION"],
     // expo-audio merges audio recording/media-service permissions by default.
