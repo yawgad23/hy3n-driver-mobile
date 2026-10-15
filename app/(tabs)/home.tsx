@@ -67,9 +67,10 @@ import { driverTripTerminalStatus } from '@/lib/driver-trip-lifecycle';
 import { activeTripDetails } from '@/lib/driver-active-trip-details';
 import { tripNavigationDestination } from '@/lib/driver-turn-navigation';
 import {
-  driverMapAppNavigationLabel,
+  driverGoogleMapsAppUri,
   driverMapAppNavigationUri,
   driverMapAppWebFallbackUri,
+  driverOtherAndroidMapsUri,
   type DriverNavigationPlatform,
 } from '@/lib/driver-navigation-fallback';
 
@@ -152,6 +153,7 @@ export default function DriverHomeScreen() {
   const [completedRide, setCompletedRide] = useState<any>(null);
   const [showRating, setShowRating] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [showNavigationChooser, setShowNavigationChooser] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [togglingOnline, setTogglingOnline] = useState(false);
   const [tripActionPending, setTripActionPending] = useState(false);
@@ -280,17 +282,33 @@ export default function DriverHomeScreen() {
       Alert.alert('Navigation unavailable', 'This trip does not have a valid pickup or drop-off location yet.');
       return;
     }
+    setShowNavigationChooser(true);
+  };
+  const openSelectedTripNavigation = (choice: 'apple' | 'google' | 'other') => {
+    if (!activeTrip) return;
+    const phase = activeTrip.status === 'in_progress' ? 'dropoff' : 'pickup';
+    const destination = tripNavigationDestination(activeTrip, phase);
+    if (!destination) return;
     const platform: DriverNavigationPlatform = Platform.OS === 'ios' ? 'ios' : 'android';
-    const mapAppUri = driverMapAppNavigationUri(destination, platform);
+    const mapAppUri = choice === 'apple'
+      ? driverMapAppNavigationUri(destination, 'ios')
+      : choice === 'google'
+        ? driverGoogleMapsAppUri(destination, platform)
+        : driverOtherAndroidMapsUri(destination);
     const webFallbackUri = driverMapAppWebFallbackUri(destination);
     if (!mapAppUri) return;
+    setShowNavigationChooser(false);
 
-    // This is always available during a trip—not only after embedded guidance
-    // fails—so a Driver can choose the phone's navigation app at any time.
+    // The Driver selects the map app first. Only a missing Google Maps app
+    // falls back to the official web directions page; "Other map app" never
+    // redirects to Google Maps behind the Driver's back.
     void Linking.openURL(mapAppUri).catch(() => {
-      if (!webFallbackUri) return;
+      if (choice !== 'google' || !webFallbackUri) {
+        Alert.alert('Unable to open navigation', 'The selected maps app is not available on this phone.');
+        return;
+      }
       return Linking.openURL(webFallbackUri).catch(() => {
-        Alert.alert('Unable to open navigation', 'No supported maps app could be opened on this phone.');
+        Alert.alert('Unable to open navigation', 'Google Maps could not be opened on this phone.');
       });
     });
   };
@@ -1426,7 +1444,7 @@ export default function DriverHomeScreen() {
                 style={[styles.navigateTripBtn, { backgroundColor: '#075985' }]}
                 onPress={openTripNavigation}
                 accessibilityRole="button"
-                accessibilityLabel={driverMapAppNavigationLabel(Platform.OS === 'ios' ? 'ios' : 'android')}
+                accessibilityLabel="Choose navigation app"
               >
                 <MaterialIcons name="navigation" size={19} color="#FFF" />
                 <Text style={styles.actionBtnText}>Navigate</Text>
@@ -1646,6 +1664,36 @@ export default function DriverHomeScreen() {
         currentUserRole="driver"
         currentUserName={driverProfile?.full_name || "Driver"}
       />
+
+      <Modal visible={showNavigationChooser} transparent animationType="fade" onRequestClose={() => setShowNavigationChooser(false)}>
+        <View style={styles.navigationChooserBackdrop}>
+          <View style={[styles.navigationChooser, dynamicStyles.card]}>
+            <Text style={[styles.navigationChooserTitle, dynamicStyles.text]}>Choose navigation app</Text>
+            <Text style={[styles.navigationChooserText, dynamicStyles.muted]}>
+              Open directions for this {activeTrip?.status === 'in_progress' ? 'drop-off' : 'pickup'}.
+            </Text>
+            {Platform.OS === 'ios' && (
+              <TouchableOpacity style={[styles.navigationChoice, { backgroundColor: '#111827' }]} onPress={() => openSelectedTripNavigation('apple')}>
+                <MaterialIcons name="map" size={21} color="#FFF" />
+                <Text style={styles.navigationChoiceText}>Apple Maps</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={[styles.navigationChoice, { backgroundColor: '#075985' }]} onPress={() => openSelectedTripNavigation('google')}>
+              <MaterialIcons name="navigation" size={21} color="#FFF" />
+              <Text style={styles.navigationChoiceText}>Google Maps</Text>
+            </TouchableOpacity>
+            {Platform.OS === 'android' && (
+              <TouchableOpacity style={[styles.navigationChoice, { backgroundColor: '#475569' }]} onPress={() => openSelectedTripNavigation('other')}>
+                <MaterialIcons name="apps" size={21} color="#FFF" />
+                <Text style={styles.navigationChoiceText}>Other map app</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.navigationCancelButton} onPress={() => setShowNavigationChooser(false)}>
+              <Text style={[styles.navigationCancelText, dynamicStyles.text]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1733,6 +1781,14 @@ const styles = StyleSheet.create({
   activeTripActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   navigateTripBtn: { alignItems: 'center', borderRadius: 12, flexDirection: 'row', gap: 8, justifyContent: 'center', paddingVertical: 12, width: '100%' },
   actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 12 },
+  navigationChooserBackdrop: { alignItems: 'center', backgroundColor: 'rgba(2, 6, 23, 0.62)', flex: 1, justifyContent: 'flex-end', padding: 16 },
+  navigationChooser: { borderRadius: 22, borderWidth: 1, maxWidth: 520, padding: 20, width: '100%' },
+  navigationChooserTitle: { fontSize: 19, fontWeight: '900' },
+  navigationChooserText: { fontSize: 14, lineHeight: 20, marginBottom: 16, marginTop: 6 },
+  navigationChoice: { alignItems: 'center', borderRadius: 13, flexDirection: 'row', gap: 11, justifyContent: 'center', marginTop: 9, paddingVertical: 14 },
+  navigationChoiceText: { color: '#FFF', fontSize: 15, fontWeight: '900' },
+  navigationCancelButton: { alignItems: 'center', marginTop: 12, paddingVertical: 10 },
+  navigationCancelText: { fontSize: 15, fontWeight: '800' },
   actionBtnText: { color: '#FFF', fontWeight: '800', fontSize: 13 },
   unreadBadge: { position: 'absolute', top: -8, right: -8, width: 20, height: 20, borderRadius: 10, backgroundColor: RED, alignItems: 'center', justifyContent: 'center' },
   unreadText: { color: '#FFF', fontSize: 10, fontWeight: '900' },

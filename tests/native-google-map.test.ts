@@ -70,13 +70,19 @@ test('Driver navigation never substitutes a fake map location and exposes settin
   assert.match(screen, /hasBootstrapDriverLocation/);
 });
 
-test('Driver has an always-available platform maps-app Navigate button during a trip', () => {
+test('Driver presents a map-app choice when Navigate is tapped during a trip', () => {
   assert.match(screen, /const openTripNavigation/);
+  assert.match(screen, /setShowNavigationChooser\(true\)/);
+  assert.match(screen, /const openSelectedTripNavigation/);
   assert.match(screen, /tripNavigationDestination\(activeTrip, phase\)/);
+  assert.match(screen, /driverGoogleMapsAppUri/);
+  assert.match(screen, /driverOtherAndroidMapsUri/);
   assert.match(screen, /driverMapAppNavigationUri/);
   assert.match(screen, /driverMapAppWebFallbackUri/);
-  assert.match(screen, /driverMapAppNavigationLabel/);
-  assert.match(screen, /This is always available during a trip/);
+  assert.match(screen, /Choose navigation app/);
+  assert.match(screen, /Apple Maps/);
+  assert.match(screen, /Google Maps/);
+  assert.match(screen, /Other map app/);
   assert.match(screen, /<Text style=\{styles\.actionBtnText\}>Navigate<\/Text>/);
 });
 
