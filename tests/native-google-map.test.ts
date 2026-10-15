@@ -6,6 +6,7 @@ import test from 'node:test';
 const component = readFileSync(path.join(process.cwd(), 'components/NativeDriverGoogleMap.tsx'), 'utf8');
 const screen = readFileSync(path.join(process.cwd(), 'app/(tabs)/home.tsx'), 'utf8');
 const configPlugin = readFileSync(path.join(process.cwd(), 'plugins/with-google-navigation.js'), 'utf8');
+const appConfig = readFileSync(path.join(process.cwd(), 'app.config.ts'), 'utf8');
 
 test('Driver active map uses embedded Google Navigation instead of leaving HY3N', () => {
   assert.match(component, /@googlemaps\/react-native-navigation-sdk/);
@@ -87,6 +88,9 @@ test('Driver presents a map-app choice when Navigate is tapped during a trip', (
 });
 
 test('native build configuration persists the Navigation SDK API key and Android desugaring support', () => {
+  assert.match(appConfig, /EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID/);
+  assert.match(appConfig, /EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_IOS/);
+  assert.match(appConfig, /nativeGoogleNavigationPlugin/);
   assert.match(configPlugin, /com\.google\.android\.geo\.API_KEY/);
   assert.match(configPlugin, /coreLibraryDesugaringEnabled true/);
   assert.match(configPlugin, /desugar_jdk_libs_nio:2\.0\.4/);

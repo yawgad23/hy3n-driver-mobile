@@ -6,8 +6,15 @@ import type { ExpoConfig } from "expo/config";
 // must be separately restricted in Google Cloud. They are injected only by
 // EAS at build time and must never reuse the server-only Routes API key.
 const nativeGoogleMaps = {
-  iosApiKey: process.env.GOOGLE_MAPS_IOS_API_KEY?.trim() || "",
-  androidApiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY?.trim() || "",
+  // EAS stores the existing restricted client keys under the public Expo names.
+  // Retain the non-public aliases for local/native tooling compatibility, but
+  // compile the same restricted key into Navigation SDK on both platforms.
+  iosApiKey: process.env.GOOGLE_MAPS_IOS_API_KEY?.trim()
+    || process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_IOS?.trim()
+    || "",
+  androidApiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY?.trim()
+    || process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID?.trim()
+    || "",
 };
 const nativeGoogleNavigationPlugin: [string, Record<string, string>] | null =
   nativeGoogleMaps.iosApiKey && nativeGoogleMaps.androidApiKey
