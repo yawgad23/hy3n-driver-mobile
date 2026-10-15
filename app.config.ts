@@ -54,7 +54,9 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    buildNumber: "84",
+    // Build 85 delivers the validated native Navigation lifecycle repair to
+    // TestFlight internal testers. Android remains at its published 57011.
+    buildNumber: "85",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
