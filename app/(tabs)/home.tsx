@@ -1443,7 +1443,10 @@ export default function DriverHomeScreen() {
           )}
         </View>
 
-        {!activeTrip && <View style={[styles.onlineCard, dynamicStyles.card]}>
+        {/* Keep the Driver's existing availability control visible while an
+            assigned ride is being navigated. It is hidden only by the full
+            incoming-offer card, never removed by the navigation experience. */}
+        {!incomingRide && <View style={[styles.onlineCard, dynamicStyles.card]}>
           <View style={styles.onlineLeft}>
             <Animated.View style={[styles.onlineDot, { backgroundColor: isOnline ? GREEN : themeColors.muted, transform: [{ scale: isOnline ? pulseAnim : 1 }] }]} />
             <Text style={[styles.onlineStatus, dynamicStyles.text]}>{isOnline ? (hasCurrentLocation ? 'You are Online' : 'Getting your location…') : 'You are Offline'}</Text>

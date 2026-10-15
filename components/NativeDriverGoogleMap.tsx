@@ -300,9 +300,16 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
           mapColorScheme={dark ? MapColorScheme.DARK : MapColorScheme.LIGHT}
           navigationNightMode={dark ? NavigationNightMode.FORCE_NIGHT : NavigationNightMode.FORCE_DAY}
           mapStyle={dark ? CLEAN_NIGHT_GOOGLE_STYLE : CLEAN_DAY_GOOGLE_STYLE}
-          navigationUIEnabledPreference={NavigationUIEnabledPreference.DISABLED}
+          // Match the familiar driving-navigation pattern: when a ride has a
+          // target, Navigation SDK owns the top maneuver banner and bottom
+          // live ETA/distance panel. HY3N keeps this UI off while the Driver
+          // is merely online without an assigned trip.
+          navigationUIEnabledPreference={hasTarget
+            ? NavigationUIEnabledPreference.AUTOMATIC
+            : NavigationUIEnabledPreference.DISABLED}
           headerEnabled={hasTarget}
           footerEnabled={hasTarget}
+          tripProgressBarEnabled={hasTarget}
           trafficEnabled
           trafficPromptsEnabled={false}
           trafficIncidentCardsEnabled={false}

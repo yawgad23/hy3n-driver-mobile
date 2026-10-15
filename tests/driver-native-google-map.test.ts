@@ -42,8 +42,14 @@ test('accepted queued trips activate immediately after the current trip ends', (
   assert.match(driverHomeSource, /setNextRide\(null\)/);
 });
 
-test('the trip screen stays map-first while accepted offers retain their server quote', () => {
-  assert.match(driverHomeSource, /!activeTrip && <View style=\{\[styles\.onlineCard/);
+test('the trip screen stays map-first while retaining availability and destination controls', () => {
+  assert.match(driverHomeSource, /!incomingRide && <View style=\{\[styles\.onlineCard/);
+  assert.match(driverHomeSource, /You are Online/);
+  assert.match(driverHomeSource, /Go Offline/);
+  assert.match(driverHomeSource, /isOnline && !activeTrip && \(/);
+  assert.match(driverHomeSource, /styles\.destFilterBar/);
+  assert.match(nativeMapSource, /NavigationUIEnabledPreference\.AUTOMATIC/);
+  assert.match(nativeMapSource, /tripProgressBarEnabled=\{hasTarget\}/);
   assert.match(driverHomeSource, /activeTripDetails\(incomingRide\)\.bookedFare/);
   assert.match(driverHomeSource, /BOOKED FARE/);
   assert.doesNotMatch(driverHomeSource, /Active Trip Navigation Card/);
