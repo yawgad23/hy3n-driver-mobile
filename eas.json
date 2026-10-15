@@ -29,6 +29,7 @@
     },
     "testflight": {
       "distribution": "store",
+      "environment": "production",
       "ios": {
         "buildConfiguration": "Release"
       },
