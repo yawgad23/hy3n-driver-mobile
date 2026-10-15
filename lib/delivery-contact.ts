@@ -11,7 +11,8 @@ function text(value: unknown): string {
 }
 
 export function isDeliveryRide(ride: Record<string, any> | null | undefined): boolean {
-  return String(ride?.category || '').trim().toLowerCase() === 'express_delivery';
+  const category = String(ride?.category || '').trim().toLowerCase();
+  return category === 'express_delivery' || category === 'car_delivery';
 }
 
 /**

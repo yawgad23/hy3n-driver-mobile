@@ -107,6 +107,7 @@ const AC_INCLUDED_CATEGORIES = new Set(['comfort', 'kantanka', 'executive']);
 
 function rideCategoryName(category: unknown) {
   const id = String(category || '').trim().toLowerCase();
+  if (id === 'executive') return 'Executive'; // historic trips only
   return RIDE_CATEGORIES.find((item) => item.id === id)?.name || 'Standard';
 }
 

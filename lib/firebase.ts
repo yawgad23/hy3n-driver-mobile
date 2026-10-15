@@ -281,7 +281,7 @@ export const firebaseAuth = {
     momoNumber?: string;
     city: string;
     serviceType: 'car' | 'okada' | 'delivery';
-    rideCategories: Array<'standard' | 'comfort' | 'kantanka' | 'executive' | 'okada' | 'express_delivery'>;
+    rideCategories: Array<'standard' | 'comfort' | 'kantanka' | 'car_delivery' | 'executive' | 'okada' | 'express_delivery'>;
     vehicleMake: string;
     vehicleModel: string;
     vehiclePlate: string;

@@ -23,13 +23,13 @@ const ALL_CATEGORIES = [
   { id: 'standard',         label: 'Standard',          description: 'Everyday affordable rides',             icon: 'directions-car' as const },
   { id: 'comfort',          label: 'Comfort',            description: 'Newer cars with extra space',            icon: 'airline-seat-recline-extra' as const },
   { id: 'kantanka',         label: 'Kantanka',           description: 'Mini SUVs (Kantanka Hyen, etc.)',        icon: 'directions-car' as const },
-  { id: 'executive',        label: 'Executive',          description: 'Luxury high-end vehicles',               icon: 'star' as const },
+  { id: 'car_delivery',     label: 'Car Delivery',       description: 'Deliver parcels using your car',          icon: 'local-shipping' as const },
   { id: 'okada',            label: 'Okada',              description: 'Fast motorbike rides',                   icon: 'two-wheeler' as const },
   { id: 'express_delivery', label: 'Express Delivery',   description: 'Package and parcel deliveries',          icon: 'inventory' as const },
 ];
 
 const CATEGORIES_BY_SERVICE: Record<string, string[]> = {
-  car:      ['standard', 'comfort', 'kantanka', 'executive'],
+  car:      ['standard', 'comfort', 'kantanka', 'car_delivery'],
   okada:    ['okada'],
   delivery: ['express_delivery'],
 };
@@ -258,8 +258,8 @@ export default function DriverRegisterScreen() {
   const toggleCategory = (id: string) => {
     setSelectedCategories(prev => {
       if (prev.includes(id)) return prev.filter(c => c !== id);
-      // Kantanka unlocks all; others capped at 2
-      if (id === 'kantanka') return ['standard', 'comfort', 'kantanka', 'executive'];
+      // Kantanka unlocks all car services; others are capped at two.
+      if (id === 'kantanka') return ['standard', 'comfort', 'kantanka', 'car_delivery'];
       if (prev.length >= maxCategories) return prev; // silently ignore if at cap
       return [...prev, id];
     });
@@ -359,7 +359,7 @@ export default function DriverRegisterScreen() {
         momoNumber,
         city,
         serviceType: serviceType as 'car' | 'okada' | 'delivery',
-        rideCategories: rideCategories as Array<'standard' | 'comfort' | 'kantanka' | 'executive' | 'okada' | 'express_delivery'>,
+        rideCategories: rideCategories as Array<'standard' | 'comfort' | 'kantanka' | 'car_delivery' | 'executive' | 'okada' | 'express_delivery'>,
         vehicleMake,
         vehicleModel,
         vehiclePlate,

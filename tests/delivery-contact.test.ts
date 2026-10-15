@@ -31,3 +31,8 @@ test('shows the sender before collection and the recipient after the delivery tr
     packageDescription: 'Sealed document envelope',
   });
 });
+
+test('treats Car Delivery as a protected delivery service', () => {
+  assert.equal(isDeliveryRide({ ...deliveryRide, category: 'car_delivery' }), true);
+  assert.equal(deliveryContactForDriver({ ...deliveryRide, category: 'car_delivery' })?.label, 'Sender');
+});
