@@ -106,14 +106,25 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
       // Read every matching record so a stale pending record cannot hide an
       // approved record updated by the admin portal.
       const candidates: any[] = [];
-      const canonical = await firestoreDB.get(COLLECTIONS.DRIVER_PROFILES, firebaseUser.uid);
-      if (canonical) candidates.push(canonical);
-      const byUserId = await firestoreDB.list(COLLECTIONS.DRIVER_PROFILES, { user_id: firebaseUser.uid });
-      const byEmail = firebaseUser.email
-        ? await firestoreDB.list(COLLECTIONS.DRIVER_PROFILES, { email: firebaseUser.email })
-        : [];
-      for (const profile of [...byUserId, ...byEmail]) {
-        if (!candidates.some((existing) => existing.id === profile.id)) candidates.push(profile);
+      try {
+        const canonical = await firestoreDB.get(COLLECTIONS.DRIVER_PROFILES, firebaseUser.uid);
+        if (canonical) candidates.push(canonical);
+        const byUserId = await firestoreDB.list(COLLECTIONS.DRIVER_PROFILES, { user_id: firebaseUser.uid });
+        const byEmail = firebaseUser.email
+          ? await firestoreDB.list(COLLECTIONS.DRIVER_PROFILES, { email: firebaseUser.email })
+          : [];
+        for (const profile of [...byUserId, ...byEmail]) {
+          if (!candidates.some((existing) => existing.id === profile.id)) candidates.push(profile);
+        }
+      } catch (error) {
+        // After a secure phone link, the backend remains the authority for the
+        // authenticated Driver's profile. Continue with its scoped fallback.
+        console.warn('[HY3N] Direct Driver profile read failed; using protected fallback.', error);
+      }
+
+      if (candidates.length === 0) {
+        const protectedProfile = await firebaseAuth.getCurrentDriverProfile();
+        if (protectedProfile) candidates.push(protectedProfile);
       }
 
       const isApproved = (profile: any) => {

@@ -226,6 +226,28 @@ export const firebaseAuth = {
     return payload;
   },
 
+  /**
+   * Reads only the already authenticated Driver's own profile through the
+   * protected backend. It is a safe fallback when an immediate Firestore read
+   * follows a phone-account link and the native client has a stale result.
+   */
+  async getCurrentDriverProfile() {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('Please sign in again.');
+    const apiBaseUrl = getApiBaseUrl();
+    if (!apiBaseUrl) throw new Error('Your Driver profile is temporarily unavailable. Please try again.');
+    const idToken = await currentUser.getIdToken(true);
+    const response = await fetch(`${apiBaseUrl}/api/driver/profile/current`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (response.status === 404) return null;
+    if (!response.ok || payload?.success !== true || !payload?.profile) {
+      throw new Error(payload?.message || 'Your Driver profile could not be loaded right now. Please try again.');
+    }
+    return payload.profile;
+  },
+
   async logout() {
     // The Driver account session is owned by the Firebase JavaScript SDK.
     // React Native Firebase is used only to deliver native phone-verification
