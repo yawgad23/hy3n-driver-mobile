@@ -38,6 +38,12 @@ import {
   shouldShowDriverBackgroundLocationDisclosure,
 } from '@/lib/driver-background-location-disclosure';
 import {
+  beginDriverBackgroundLocationRequest,
+  finishDriverBackgroundLocationRequest,
+  shouldShowDriverBackgroundLocationWarning,
+  type DriverBackgroundLocationRequestState,
+} from '@/lib/driver-background-location-request-guard';
+import {
   driverAvailabilityLabel,
   hasBootstrapDriverLocation,
   hasRecentUsableDriverLocation,
@@ -167,6 +173,8 @@ export default function DriverHomeScreen() {
   const tripActionInFlightRef = useRef(false);
   const ratingSubmitInFlightRef = useRef(false);
   const backgroundLocationDisclosureDecisionRef = useRef<DriverBackgroundLocationDisclosureDecision>('unseen');
+  const backgroundLocationRequestStateRef = useRef<DriverBackgroundLocationRequestState>('ready');
+  const backgroundLocationWarningShownRef = useRef(false);
 
   const applyServerTerminalRide = useCallback((serverRide: any) => {
     const terminalStatus = driverTripTerminalStatus(serverRide);
@@ -440,19 +448,43 @@ export default function DriverHomeScreen() {
     const shouldTrack = shouldTrackDriverLocation(isOnline, Boolean(activeTrip?.id));
     if (!shouldTrack || !user?.uid) {
       backgroundLocationDisclosureDecisionRef.current = 'unseen';
+      backgroundLocationRequestStateRef.current = 'ready';
+      backgroundLocationWarningShownRef.current = false;
       stopDriverBackgroundLocationUpdates().catch(() => {});
       return;
     }
 
     let cancelled = false;
-    const requestBackgroundLocation = () => startDriverBackgroundLocationUpdates().then((result) => {
-      if (cancelled || result.started || result.reason === 'unsupported' || result.reason === 'cancelled') return;
-      if (result.reason === 'background_denied') {
-        Alert.alert('Background location needed', 'Allow “Always” location so Riders can see your vehicle moving after you leave HY3N Driver. You can still drive while the app is open.');
-      } else {
-        Alert.alert('Location needed', 'Allow location to go online and receive rides.');
-      }
-    }).catch(() => {});
+    const requestBackgroundLocation = () => {
+      const request = beginDriverBackgroundLocationRequest({
+        shouldTrack,
+        state: backgroundLocationRequestStateRef.current,
+      });
+      backgroundLocationRequestStateRef.current = request.state;
+      if (!request.shouldRequest) return;
+
+      void startDriverBackgroundLocationUpdates().then((result) => {
+        if (cancelled) return;
+        backgroundLocationRequestStateRef.current = finishDriverBackgroundLocationRequest(result);
+        // A denied Android permission can be returned again after a render or
+        // activity resume. Warn once, then require an intentional offline/
+        // online restart before another background-location request.
+        if (!shouldShowDriverBackgroundLocationWarning(result) || backgroundLocationWarningShownRef.current) return;
+        backgroundLocationWarningShownRef.current = true;
+        if (result.reason === 'background_denied') {
+          Alert.alert(
+            'Background location needed',
+            'Allow “Always” location so Riders can see your vehicle moving after you leave HY3N Driver. You can still drive while the app is open.',
+            [{ text: 'OK' }],
+          );
+        } else {
+          Alert.alert('Location needed', 'Allow location to go online and receive rides.', [{ text: 'OK' }]);
+        }
+      }).catch(() => {
+        if (cancelled) return;
+        backgroundLocationRequestStateRef.current = 'blocked';
+      });
+    };
 
     if (shouldShowDriverBackgroundLocationDisclosure({
       platform: Platform.OS,
