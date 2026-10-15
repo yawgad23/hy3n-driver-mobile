@@ -64,6 +64,7 @@ import {
   isTurnByTurnDestination,
   tripNavigationDestination,
 } from '@/lib/driver-turn-navigation';
+import { activeTripDetails } from '@/lib/driver-active-trip-details';
 
 const INCOMING_TRIP_ALERT = require('../../assets/audio/incoming-trip-alert.wav');
 const GOLD = '#D4AF37';
@@ -334,6 +335,7 @@ export default function DriverHomeScreen() {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const deliveryContact = deliveryContactForDriver(activeTrip);
   const isActiveDelivery = isDeliveryRide(activeTrip);
+  const activeFareDetails = activeTripDetails(activeTrip);
   const riderPhone = activeTrip?.rider_phone || activeTrip?.passenger_phone || activeTrip?.phone || '';
   const contactPhone = deliveryContact?.phone || riderPhone;
   const startMobileNetworkCall = () => {
@@ -1435,15 +1437,28 @@ export default function DriverHomeScreen() {
                 <Text style={[styles.categoryBadge, { color: GOLD }]}>{rideCategoryName(activeTrip.category)}</Text>
                 <Text style={[styles.metaText, dynamicStyles.muted]}>{paymentLabel(activeTrip.payment_method)}</Text>
               </View>
+              {activeFareDetails.bookedFare !== null && (
+                <View style={[styles.bookedFareCard, { borderColor: `${GOLD}55`, backgroundColor: isDark ? '#2C260E' : '#FFF8DD' }]} accessibilityLabel={`Booked fare ${formatPassengerFare(activeFareDetails.bookedFare)}`}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.bookedFareLabel}>BOOKED FARE</Text>
+                    <Text style={[styles.bookedFareCaption, dynamicStyles.muted]}>Server-locked at booking</Text>
+                  </View>
+                  <Text style={styles.bookedFareAmount}>{formatPassengerFare(activeFareDetails.bookedFare)}</Text>
+                </View>
+              )}
               {hasIncludedAirConditioning(activeTrip.category) && (
                 <View style={styles.acServiceBanner} accessibilityLabel={airConditioningReminder(activeTrip.category, 'trip') || undefined}>
                   <MaterialIcons name="ac-unit" size={17} color="#075985" />
                   <Text style={[styles.acServiceText, { flex: 1 }]}>{airConditioningReminder(activeTrip.category, 'trip')}</Text>
                 </View>
               )}
-              <Text style={[styles.navSub, dynamicStyles.muted]} numberOfLines={1}>
-                {activeTrip.status === 'in_progress' ? activeTrip.destination_address : activeTrip.pickup_address}
-              </Text>
+              <View style={styles.tripRouteSummary}>
+                <View style={styles.tripRouteLine} />
+                <MaterialIcons name="my-location" size={15} color={GREEN} style={styles.tripRoutePickupIcon} />
+                <Text style={[styles.tripRouteText, dynamicStyles.muted]} numberOfLines={1}>Pickup · {activeTrip.pickup_address || 'Pickup'}</Text>
+                <MaterialIcons name="location-on" size={17} color={RED} style={styles.tripRouteDropoffIcon} />
+                <Text style={[styles.tripRouteText, dynamicStyles.muted]} numberOfLines={1}>Drop-off · {activeTrip.destination_address || 'Destination'}</Text>
+              </View>
               {isActiveDelivery && deliveryContact && (
                 <View style={[styles.deliveryContactCard, { borderColor: themeColors.border }]}>
                   <MaterialIcons name={activeTrip.status === 'in_progress' ? 'person-pin-circle' : 'inventory-2'} size={18} color={GOLD} />
@@ -1456,11 +1471,16 @@ export default function DriverHomeScreen() {
               )}
               {activeTrip.status === 'in_progress' && <Text style={[styles.tripTracking, dynamicStyles.muted]}>Tracked: {tripDistanceKm.toFixed(2)} km</Text>}
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 12 }}>
-                <Text style={[styles.metaText, dynamicStyles.muted]}>Final fare appears when the trip ends</Text>
-                {activeNavigationEta && !isDriverAtPickup && (
-                  <Text style={[styles.etaText, dynamicStyles.muted]}>{activeNavigationEta} min</Text>
+                <Text style={[styles.metaText, dynamicStyles.muted]}>
+                  {activeFareDetails.estimatedDistanceKm !== null
+                    ? `${activeFareDetails.estimatedDistanceKm.toFixed(1)} km route`
+                    : 'Route details update live'}
+                </Text>
+                {(activeFareDetails.estimatedDurationMinutes ?? activeNavigationEta) && !isDriverAtPickup && (
+                  <Text style={[styles.etaText, dynamicStyles.muted]}>{Math.max(1, Math.ceil(activeFareDetails.estimatedDurationMinutes ?? activeNavigationEta ?? 0))} min</Text>
                 )}
               </View>
+              {activeFareDetails.bookedFare !== null && <Text style={[styles.bookedFareNote, dynamicStyles.muted]}>Final fare is calculated by HY3N from the completed trip and any approved waiting time.</Text>}
             </View>
             <TouchableOpacity
               style={[styles.navBtn, { backgroundColor: BLUE }]}
@@ -1795,6 +1815,16 @@ const styles = StyleSheet.create({
   navStatus: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   navTitle: { fontSize: 16, fontWeight: '900', marginTop: 4 },
   navSub: { fontSize: 13, marginTop: 2 },
+  bookedFareCard: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, marginTop: 10, paddingHorizontal: 11, paddingVertical: 9, gap: 10 },
+  bookedFareLabel: { color: '#9A7500', fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+  bookedFareCaption: { fontSize: 10, fontWeight: '600', marginTop: 1 },
+  bookedFareAmount: { color: '#B8860B', fontSize: 21, fontWeight: '900' },
+  bookedFareNote: { fontSize: 10, fontWeight: '600', lineHeight: 14, marginTop: 7 },
+  tripRouteSummary: { marginTop: 9, paddingLeft: 23, gap: 4, position: 'relative' },
+  tripRouteLine: { position: 'absolute', left: 7, top: 10, bottom: 10, width: 1, backgroundColor: '#94A3B8' },
+  tripRoutePickupIcon: { position: 'absolute', left: 0, top: 0 },
+  tripRouteDropoffIcon: { position: 'absolute', left: -1, bottom: -1 },
+  tripRouteText: { fontSize: 11, fontWeight: '600', lineHeight: 16 },
   deliveryContactCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 9, padding: 9, borderWidth: 1, borderRadius: 10 },
   deliveryContactTitle: { fontSize: 12, fontWeight: '900' },
   deliveryContactText: { fontSize: 11, lineHeight: 15, marginTop: 2 },
