@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
   AudioGuidance,
   CameraPerspective,
@@ -13,6 +13,7 @@ import {
   TaskRemovedBehavior,
   TravelMode,
   useNavigation,
+  type MapViewController,
   type NavigationViewController,
 } from '@googlemaps/react-native-navigation-sdk';
 
@@ -29,6 +30,36 @@ type Props = {
 
 const GOLD = '#D4AF37';
 const GREEN = '#22C55E';
+const DRIVER_VEHICLE_MARKER_ID = 'hy3n-driver-vehicle';
+// Keep the active Driver map as clean as the previous HY3N Google Map: retain
+// roads, route and traffic, but remove business pins, restaurant/store names,
+// transit badges and parcel labels that compete with driving instructions.
+const CLEAN_DAY_GOOGLE_STYLE = JSON.stringify([
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'administrative.land_parcel', stylers: [{ visibility: 'off' }] },
+  { featureType: 'road.local', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+]);
+const CLEAN_NIGHT_GOOGLE_STYLE = JSON.stringify([
+  { elementType: 'geometry', stylers: [{ color: '#1f2933' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#d9e2ec' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#1f2933' }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'administrative.land_parcel', stylers: [{ visibility: 'off' }] },
+  { featureType: 'road.local', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#39424e' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#222a33' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#5d6876' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#111827' }] },
+]);
+// These names are installed by plugins/with-google-navigation.js. The Google
+// Navigation SDK requires native asset names here, not a Metro asset URI.
+const DRIVER_VEHICLE_MARKER_ASSET = Platform.select({
+  android: 'hy3n_driver_car_marker.png',
+  ios: 'HY3NDriverCarMarker',
+  default: 'hy3n_driver_car_marker.png',
+});
 
 function hasPoint(latitude?: number, longitude?: number) {
   return Number.isFinite(latitude)
@@ -61,8 +92,9 @@ function readableNavigationFailure(status: NavigationSessionStatus | RouteStatus
  * HY3N while Google supplies the live route, maneuver banner, automatic
  * rerouting, and spoken left/right guidance.
  */
-function DriverNavigationSurface({ latitude, longitude, target, tripStatus, dark = false }: Props) {
+function DriverNavigationSurface({ latitude, longitude, heading, target, tripStatus, dark = false }: Props) {
   const { navigationController, removeAllListeners, setOnArrival, setOnLocationChanged } = useNavigation();
+  const [mapViewController, setMapViewController] = useState<MapViewController | null>(null);
   const [navigationViewController, setNavigationViewController] = useState<NavigationViewController | null>(null);
   const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
   const [navigationLocationReady, setNavigationLocationReady] = useState(false);
@@ -70,10 +102,37 @@ function DriverNavigationSurface({ latitude, longitude, target, tripStatus, dark
   const navigationRequestRef = useRef(0);
   const lastTargetKeyRef = useRef<string | null>(null);
   const hasDeviceLocation = hasPoint(latitude, longitude);
-  const hasTarget = target ? hasPoint(target.latitude, target.longitude) : false;
-  const targetKey = hasTarget && target
-    ? `${tripStatus || 'target'}:${target.latitude.toFixed(6)}:${target.longitude.toFixed(6)}:${target.label}`
+  const targetLatitude = Number(target?.latitude);
+  const targetLongitude = Number(target?.longitude);
+  const targetLabel = target?.label?.trim() || (tripStatus === 'dropoff' ? 'Drop-off' : 'Pickup');
+  const hasTarget = hasPoint(targetLatitude, targetLongitude);
+  const targetKey = hasTarget
+    ? `${tripStatus || 'target'}:${targetLatitude.toFixed(6)}:${targetLongitude.toFixed(6)}:${targetLabel}`
     : null;
+
+  // The Navigation SDK supplies the blue navigation puck for routing. Keep the
+  // existing HY3N car image as the Driver's clearly visible, heading-aware map
+  // marker as well, including while turn-by-turn guidance is active.
+  useEffect(() => {
+    if (!mapViewController || !hasDeviceLocation) return;
+    void mapViewController.addMarker({
+      id: DRIVER_VEHICLE_MARKER_ID,
+      position: { lat: Number(latitude), lng: Number(longitude) },
+      imgPath: DRIVER_VEHICLE_MARKER_ASSET,
+      title: 'Your HY3N vehicle',
+      rotation: Number(heading) || 0,
+      flat: true,
+      anchor: { u: 0.5, v: 0.5 },
+      visible: true,
+    }).catch(() => {
+      // Guidance remains usable if the optional branded marker cannot load.
+      // Native-project validation verifies the asset on both platforms.
+    });
+  }, [hasDeviceLocation, heading, latitude, longitude, mapViewController]);
+
+  useEffect(() => () => {
+    mapViewController?.removeMarker(DRIVER_VEHICLE_MARKER_ID);
+  }, [mapViewController]);
 
   const followDriver = useCallback(() => {
     if (!navigationViewController) return;
@@ -100,7 +159,7 @@ function DriverNavigationSurface({ latitude, longitude, target, tripStatus, dark
   useEffect(() => {
     const request = ++navigationRequestRef.current;
 
-    if (!hasTarget || !targetKey || !target) {
+    if (!hasTarget || !targetKey) {
       lastTargetKeyRef.current = null;
       if (initializedRef.current) {
         void (async () => {
@@ -157,8 +216,8 @@ function DriverNavigationSurface({ latitude, longitude, target, tripStatus, dark
 
         const routeStatus = await navigationController.setDestination(
           {
-            title: target.label || (tripStatus === 'dropoff' ? 'Drop-off' : 'Pickup'),
-            position: { lat: target.latitude, lng: target.longitude },
+            title: targetLabel,
+            position: { lat: targetLatitude, lng: targetLongitude },
             preferSameSideOfRoad: true,
           },
           {
@@ -192,7 +251,7 @@ function DriverNavigationSurface({ latitude, longitude, target, tripStatus, dark
     return () => {
       cancelled = true;
     };
-  }, [followDriver, hasDeviceLocation, hasTarget, navigationController, navigationLocationReady, navigationViewController, target, targetKey, tripStatus]);
+  }, [followDriver, hasDeviceLocation, hasTarget, navigationController, navigationLocationReady, navigationViewController, targetKey, targetLabel, targetLatitude, targetLongitude]);
 
   return (
     <View style={styles.container}>
@@ -207,20 +266,25 @@ function DriverNavigationSurface({ latitude, longitude, target, tripStatus, dark
           }}
           mapColorScheme={dark ? MapColorScheme.DARK : MapColorScheme.LIGHT}
           navigationNightMode={dark ? NavigationNightMode.FORCE_NIGHT : NavigationNightMode.FORCE_DAY}
+          mapStyle={dark ? CLEAN_NIGHT_GOOGLE_STYLE : CLEAN_DAY_GOOGLE_STYLE}
           navigationUIEnabledPreference={NavigationUIEnabledPreference.DISABLED}
           headerEnabled={hasTarget}
           footerEnabled={hasTarget}
           trafficEnabled
-          trafficPromptsEnabled
-          trafficIncidentCardsEnabled
+          trafficPromptsEnabled={false}
+          trafficIncidentCardsEnabled={false}
           speedometerEnabled
           speedLimitIconEnabled
           recenterButtonEnabled
-          reportIncidentButtonEnabled
+          reportIncidentButtonEnabled={false}
           myLocationEnabled
           myLocationButtonEnabled
           compassEnabled
+          indoorEnabled={false}
+          indoorLevelPickerEnabled={false}
+          buildingsEnabled={false}
           mapToolbarEnabled={false}
+          onMapViewControllerCreated={setMapViewController}
           onNavigationViewControllerCreated={setNavigationViewController}
           onRecenterButtonClick={followDriver}
           androidStylingOptions={{
