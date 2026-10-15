@@ -7,6 +7,7 @@ import { stopDriverForegroundLocationWork } from './driver-foreground-location-r
 import { driverLocationPublisher } from './driver-location-publisher';
 import { cleanUpDriverSession } from './driver-session-cleanup';
 import { waitForDriverNativeUnmount } from './driver-signout-transition';
+import { isLatestDriverProfileLoad } from './driver-profile-load-order';
 
 export interface DriverProfile {
   id: string;
@@ -83,6 +84,7 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
   // profile state back after that Driver has signed out.
   const profileUnsubRef = useRef<(() => void) | null>(null);
   const authTransitionRef = useRef(0);
+  const profileLoadGenerationRef = useRef(0);
   const signOutPromiseRef = useRef<Promise<void> | null>(null);
 
   const clearProfileSubscription = () => {
@@ -93,9 +95,11 @@ export function DriverAuthProvider({ children }: { children: React.ReactNode }) 
   };
 
   const loadProfile = async (firebaseUser: User, authTransition: number) => {
+    const profileLoadGeneration = ++profileLoadGenerationRef.current;
     const isCurrentSession = () => (
       authTransition === authTransitionRef.current
       && firebaseAuth.getCurrentUser()?.uid === firebaseUser.uid
+      && isLatestDriverProfileLoad(profileLoadGeneration, profileLoadGenerationRef.current)
     );
     try {
       // There may be both a UID-keyed document and an older auto-ID document.
