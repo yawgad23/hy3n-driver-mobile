@@ -109,9 +109,9 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
     ? `${tripStatus || 'target'}:${targetLatitude.toFixed(6)}:${targetLongitude.toFixed(6)}:${targetLabel}`
     : null;
 
-  // The Navigation SDK supplies the blue navigation puck for routing. Keep the
-  // existing HY3N car image as the Driver's clearly visible, heading-aware map
-  // marker as well, including while turn-by-turn guidance is active.
+  // Show one Driver position only: the existing HY3N car image. The Navigation
+  // SDK's default blue location arrow/puck is disabled below so it cannot sit
+  // underneath or beside the branded, heading-aware vehicle marker.
   useEffect(() => {
     if (!mapViewController || !hasDeviceLocation) return;
     void mapViewController.addMarker({
@@ -282,8 +282,8 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
           speedLimitIconEnabled
           recenterButtonEnabled
           reportIncidentButtonEnabled={false}
-          myLocationEnabled
-          myLocationButtonEnabled
+          myLocationEnabled={false}
+          myLocationButtonEnabled={false}
           compassEnabled
           indoorEnabled={false}
           indoorLevelPickerEnabled={false}

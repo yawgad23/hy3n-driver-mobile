@@ -26,12 +26,15 @@ test('Driver active map uses embedded Google Navigation instead of leaving HY3N'
 
 test('Driver embedded navigation retains the existing HY3N car marker on both native maps', () => {
   assert.match(component, /DRIVER_VEHICLE_MARKER_ID = 'hy3n-driver-vehicle'/);
+  assert.match(component, /Show one Driver position only/);
   assert.match(component, /mapViewController\.addMarker/);
   assert.match(component, /imgPath: DRIVER_VEHICLE_MARKER_ASSET/);
   assert.match(component, /rotation: Number\(heading\) \|\| 0/);
   assert.match(component, /flat: true/);
   assert.match(component, /onMapViewControllerCreated=\{setMapViewController\}/);
   assert.match(component, /removeMarker\(DRIVER_VEHICLE_MARKER_ID\)/);
+  assert.match(component, /myLocationEnabled=\{false\}/);
+  assert.match(component, /myLocationButtonEnabled=\{false\}/);
   assert.match(configPlugin, /hy3n_driver_car_marker\.png/);
   assert.match(configPlugin, /IOS_DRIVER_CAR_MARKER = 'HY3NDriverCarMarker'/);
   assert.match(configPlugin, /\$\{IOS_DRIVER_CAR_MARKER\}\.imageset/);
