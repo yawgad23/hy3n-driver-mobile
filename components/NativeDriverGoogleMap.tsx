@@ -16,6 +16,12 @@ import {
   type MapViewController,
   type NavigationViewController,
 } from '@googlemaps/react-native-navigation-sdk';
+import {
+  driverMapAppNavigationLabel,
+  driverMapAppNavigationUri,
+  driverMapAppWebFallbackUri,
+  type DriverNavigationPlatform,
+} from '@/lib/driver-navigation-fallback';
 
 type MapTarget = { latitude: number; longitude: number; label: string };
 type Props = {
@@ -97,6 +103,7 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
   const [mapViewController, setMapViewController] = useState<MapViewController | null>(null);
   const [navigationViewController, setNavigationViewController] = useState<NavigationViewController | null>(null);
   const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
+  const [navigationFailed, setNavigationFailed] = useState(false);
   const [navigationLocationReady, setNavigationLocationReady] = useState(false);
   const initializedRef = useRef(false);
   const navigationRequestRef = useRef(0);
@@ -139,6 +146,26 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
     void navigationViewController.setFollowingPerspective(CameraPerspective.TILTED).catch(() => {});
   }, [navigationViewController]);
 
+  const openMapAppFallback = useCallback(() => {
+    if (!hasTarget) return;
+    const platform: DriverNavigationPlatform = Platform.OS === 'ios' ? 'ios' : 'android';
+    const destination = { latitude: targetLatitude, longitude: targetLongitude };
+    const nativeUri = driverMapAppNavigationUri(destination, platform);
+    const webFallbackUri = driverMapAppWebFallbackUri(destination);
+    if (!nativeUri) return;
+
+    // First use the platform's installed navigation app. If it is unavailable
+    // on Android, the official Google Maps directions URL remains a safe
+    // fallback. Both choices retain server-derived ride coordinates.
+    void Linking.openURL(nativeUri).catch(() => {
+      if (!webFallbackUri) return;
+      return Linking.openURL(webFallbackUri).catch(() => {
+        setNavigationMessage('Unable to open a maps app on this phone.');
+        setNavigationFailed(false);
+      });
+    });
+  }, [hasTarget, targetLatitude, targetLongitude]);
+
   useEffect(() => {
     setOnArrival(() => {
       setNavigationMessage('You have reached this stop. Confirm your HY3N trip action below.');
@@ -173,11 +200,13 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
         })();
       }
       setNavigationMessage(null);
+      setNavigationFailed(false);
       return;
     }
 
     if (!hasDeviceLocation) {
       setNavigationMessage('Getting your live location before guidance starts.');
+      setNavigationFailed(false);
       return;
     }
 
@@ -185,6 +214,7 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
 
     let cancelled = false;
     setNavigationMessage('Preparing in-app navigation…');
+    setNavigationFailed(false);
 
     void (async () => {
       try {
@@ -192,6 +222,7 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
         if (cancelled || navigationRequestRef.current !== request) return;
         if (!accepted) {
           setNavigationMessage('Accept Google Navigation terms to receive turn-by-turn guidance.');
+          setNavigationFailed(true);
           return;
         }
 
@@ -200,6 +231,7 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
           if (cancelled || navigationRequestRef.current !== request) return;
           if (sessionStatus !== NavigationSessionStatus.OK) {
             setNavigationMessage(readableNavigationFailure(sessionStatus));
+            setNavigationFailed(true);
             return;
           }
           initializedRef.current = true;
@@ -211,6 +243,7 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
 
         if (!navigationLocationReady) {
           setNavigationMessage('Finding your position for turn-by-turn guidance…');
+          setNavigationFailed(false);
           return;
         }
 
@@ -232,6 +265,7 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
         if (cancelled || navigationRequestRef.current !== request) return;
         if (routeStatus !== RouteStatus.OK) {
           setNavigationMessage(readableNavigationFailure(routeStatus));
+          setNavigationFailed(true);
           return;
         }
 
@@ -241,9 +275,11 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
         followDriver();
         lastTargetKeyRef.current = targetKey;
         setNavigationMessage(null);
+        setNavigationFailed(false);
       } catch {
         if (!cancelled && navigationRequestRef.current === request) {
           setNavigationMessage('Navigation could not start. Please check location and connection.');
+          setNavigationFailed(true);
         }
       }
     })();
@@ -313,6 +349,18 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
       {navigationMessage && hasDeviceLocation && (
         <View style={[styles.navigationMessage, dark && styles.navigationMessageDark]} pointerEvents="box-none">
           <Text style={styles.navigationMessageText}>{navigationMessage}</Text>
+          {navigationFailed && hasTarget && (
+            <TouchableOpacity
+              accessibilityLabel={driverMapAppNavigationLabel(Platform.OS === 'ios' ? 'ios' : 'android')}
+              accessibilityRole="button"
+              onPress={openMapAppFallback}
+              style={styles.mapAppFallbackButton}
+            >
+              <Text style={styles.mapAppFallbackButtonText}>
+                {driverMapAppNavigationLabel(Platform.OS === 'ios' ? 'ios' : 'android')}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </View>
@@ -366,4 +414,13 @@ const styles = StyleSheet.create({
   },
   navigationMessageDark: { backgroundColor: 'rgba(2, 6, 23, 0.96)' },
   navigationMessageText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', lineHeight: 18, textAlign: 'center' },
+  mapAppFallbackButton: {
+    alignSelf: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 11,
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  mapAppFallbackButtonText: { color: '#075985', fontSize: 13, fontWeight: '900' },
 });
