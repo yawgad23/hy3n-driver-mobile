@@ -104,7 +104,6 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
   const [navigationViewController, setNavigationViewController] = useState<NavigationViewController | null>(null);
   const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
   const [navigationFailed, setNavigationFailed] = useState(false);
-  const [navigationLocationReady, setNavigationLocationReady] = useState(false);
   const initializedRef = useRef(false);
   const navigationRequestRef = useRef(0);
   const lastTargetKeyRef = useRef<string | null>(null);
@@ -170,11 +169,12 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
     setOnArrival(() => {
       setNavigationMessage('You have reached this stop. Confirm your HY3N trip action below.');
     });
-    // The Navigation SDK road-snaps its own position. Do not request a route
-    // until that SDK has supplied its first live location fix.
-    setOnLocationChanged(() => setNavigationLocationReady(true));
+    // Location updates make the camera return to its road-snapped Driver view.
+    // Do not wait for this callback before setting the route: on iOS the
+    // Navigation SDK can emit its first callback only after guidance starts.
+    setOnLocationChanged(followDriver);
     return () => removeAllListeners();
-  }, [removeAllListeners, setOnArrival, setOnLocationChanged]);
+  }, [followDriver, removeAllListeners, setOnArrival, setOnLocationChanged]);
 
   useEffect(() => () => {
     navigationRequestRef.current += 1;
@@ -241,12 +241,9 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
           navigationController.startUpdatingLocation();
         }
 
-        if (!navigationLocationReady) {
-          setNavigationMessage('Finding your position for turn-by-turn guidance…');
-          setNavigationFailed(false);
-          return;
-        }
-
+        // The supplied device coordinate has already passed validation above.
+        // Set the destination immediately, then let Navigation SDK road-snap
+        // subsequent GPS updates while live guidance is running.
         const routeStatus = await navigationController.setDestination(
           {
             title: targetLabel,
@@ -287,7 +284,7 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
     return () => {
       cancelled = true;
     };
-  }, [followDriver, hasDeviceLocation, hasTarget, navigationController, navigationLocationReady, navigationViewController, targetKey, targetLabel, targetLatitude, targetLongitude]);
+  }, [followDriver, hasDeviceLocation, hasTarget, navigationController, navigationViewController, targetKey, targetLabel, targetLatitude, targetLongitude]);
 
   return (
     <View style={styles.container}>

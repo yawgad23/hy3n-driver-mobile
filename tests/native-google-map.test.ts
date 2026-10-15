@@ -16,7 +16,8 @@ test('Driver active map uses embedded Google Navigation instead of leaving HY3N'
   assert.match(component, /AudioGuidance\.BLUETOOTH_AUDIO/);
   assert.match(component, /RouteStatus\.NO_ROUTE_FOUND/);
   assert.match(component, /setOnLocationChanged/);
-  assert.match(component, /Finding your position for turn-by-turn guidance/);
+  assert.match(component, /Set the destination immediately/);
+  assert.doesNotMatch(component, /if \(!navigationLocationReady\)/);
   assert.match(screen, /NativeDriverGoogleMap/);
   assert.doesNotMatch(screen, /googleMapsTurnByTurnUri/);
   assert.doesNotMatch(screen, /launchGoogleMapsTurnByTurn/);
