@@ -1,228 +1,305 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import MapView, { AnimatedRegion, Marker, Polyline, PROVIDER_GOOGLE, type Region } from 'react-native-maps';
-import { nativeTrackingRegion } from '@/lib/native-map-camera';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  AudioGuidance,
+  CameraPerspective,
+  MapColorScheme,
+  NavigationNightMode,
+  NavigationProvider,
+  NavigationSessionStatus,
+  NavigationUIEnabledPreference,
+  NavigationView,
+  RouteStatus,
+  TaskRemovedBehavior,
+  TravelMode,
+  useNavigation,
+  type NavigationViewController,
+} from '@googlemaps/react-native-navigation-sdk';
 
 type MapTarget = { latitude: number; longitude: number; label: string };
-type Point = [latitude: number, longitude: number];
 type Props = {
   latitude?: number;
   longitude?: number;
   locationTimestamp?: number | null;
   heading?: number | null;
   target?: MapTarget | null;
-  etaMinutes?: number | null;
-  routePoints?: Point[] | null;
   tripStatus?: 'pickup' | 'dropoff' | null;
   dark?: boolean;
 };
 
-const DARK_GOOGLE_STYLE = [
-  { elementType: 'geometry', stylers: [{ color: '#1f2933' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#d9e2ec' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#1f2933' }] },
-  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#39424e' }] },
-  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#222a33' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#5d6876' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#111827' }] },
-];
+const GOLD = '#D4AF37';
+const GREEN = '#22C55E';
 
-function hasPoint(latitude: unknown, longitude: unknown): latitude is number {
-  return Number.isFinite(Number(latitude))
-    && Number.isFinite(Number(longitude))
+function hasPoint(latitude?: number, longitude?: number) {
+  return Number.isFinite(latitude)
+    && Number.isFinite(longitude)
     && Math.abs(Number(latitude)) <= 90
     && Math.abs(Number(longitude)) <= 180
     && !(Number(latitude) === 0 && Number(longitude) === 0);
 }
 
-function pointToCoordinate([latitude, longitude]: Point) {
-  return { latitude, longitude };
-}
-
-function region(point: Point): Region {
-  return { latitude: point[0], longitude: point[1], latitudeDelta: 0.012, longitudeDelta: 0.012 };
-}
-
-function markerAnimationDuration(previousTimestamp: number | null, currentTimestamp: number | null | undefined) {
-  const current = Number(currentTimestamp);
-  if (!Number.isFinite(current) || previousTimestamp === null) return 2_650;
-  return Math.max(900, Math.min(7_500, current - previousTimestamp));
-}
-
-function routeRequestKey(origin: Point, target: Point) {
-  // ~110 m grid prevents a directions request for every individual GPS sample.
-  return `${origin[0].toFixed(3)}:${origin[1].toFixed(3)}:${target[0].toFixed(5)}:${target[1].toFixed(5)}`;
-}
-
-async function fetchRoadLine(origin: Point, target: Point, signal: AbortSignal): Promise<Point[]> {
-  const url = `https://router.project-osrm.org/route/v1/driving/${origin[1]},${origin[0]};${target[1]},${target[0]}?overview=full&geometries=geojson&steps=false`;
-  const response = await fetch(url, { signal });
-  if (!response.ok) return [];
-  const body = await response.json();
-  const coordinates = body?.routes?.[0]?.geometry?.coordinates;
-  if (!Array.isArray(coordinates)) return [];
-  return coordinates
-    .filter((coordinate: unknown) => Array.isArray(coordinate) && coordinate.length >= 2)
-    .map((coordinate: any) => [Number(coordinate[1]), Number(coordinate[0])] as Point)
-    .filter(([latitude, longitude]) => hasPoint(latitude, longitude));
+function readableNavigationFailure(status: NavigationSessionStatus | RouteStatus) {
+  switch (status) {
+    case NavigationSessionStatus.NOT_AUTHORIZED:
+      return 'Embedded navigation is not authorised for this app yet.';
+    case NavigationSessionStatus.LOCATION_PERMISSION_MISSING:
+    case RouteStatus.LOCATION_DISABLED:
+    case RouteStatus.LOCATION_UNKNOWN:
+      return 'Turn on precise location to start in-app navigation.';
+    case NavigationSessionStatus.NETWORK_ERROR:
+    case RouteStatus.NETWORK_ERROR:
+      return 'Navigation needs an internet connection to load this route.';
+    case RouteStatus.NO_ROUTE_FOUND:
+      return 'A driving route could not be found for this location.';
+    default:
+      return 'Navigation could not start. Please try again.';
+  }
 }
 
 /**
- * Native Google Maps surface for the Driver. Unlike the retired Leaflet page,
- * the map never remounts or reloads tiles when GPS or app foreground state changes.
+ * The Driver map is an embedded Google Navigation SDK surface. It stays inside
+ * HY3N while Google supplies the live route, maneuver banner, automatic
+ * rerouting, and spoken left/right guidance.
  */
-export default function NativeDriverGoogleMap({
-  latitude,
-  longitude,
-  locationTimestamp = null,
-  heading = 0,
-  target = null,
-  etaMinutes = null,
-  routePoints = null,
-  tripStatus = null,
-  dark = false,
-}: Props) {
-  const mapRef = useRef<MapView>(null);
-  const userMovedMapRef = useRef(false);
-  const previousLocationRef = useRef<Point | null>(null);
-  const previousLocationTimestampRef = useRef<number | null>(null);
-  const [mapReady, setMapReady] = useState(false);
-  const [roadLine, setRoadLine] = useState<Point[]>([]);
+function DriverNavigationSurface({ latitude, longitude, target, tripStatus, dark = false }: Props) {
+  const { navigationController, removeAllListeners, setOnArrival, setOnLocationChanged } = useNavigation();
+  const [navigationViewController, setNavigationViewController] = useState<NavigationViewController | null>(null);
+  const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
+  const [navigationLocationReady, setNavigationLocationReady] = useState(false);
+  const initializedRef = useRef(false);
+  const navigationRequestRef = useRef(0);
+  const lastTargetKeyRef = useRef<string | null>(null);
   const hasDeviceLocation = hasPoint(latitude, longitude);
-  const driverPoint = hasDeviceLocation ? [Number(latitude), Number(longitude)] as Point : null;
-  const targetPoint = target && hasPoint(target.latitude, target.longitude)
-    ? [target.latitude, target.longitude] as Point
+  const hasTarget = target ? hasPoint(target.latitude, target.longitude) : false;
+  const targetKey = hasTarget && target
+    ? `${tripStatus || 'target'}:${target.latitude.toFixed(6)}:${target.longitude.toFixed(6)}:${target.label}`
     : null;
-  const animatedDriverCoordinate = useRef(new AnimatedRegion(region(driverPoint || [5.6037, -0.187]))).current;
-  const serverRoadLine = useMemo(() => (routePoints || [])
-    .filter(([routeLatitude, routeLongitude]) => hasPoint(routeLatitude, routeLongitude)), [routePoints]);
-  const routeKey = useMemo(() => serverRoadLine.length > 1 || !driverPoint || !targetPoint
-    ? null
-    : routeRequestKey(driverPoint, targetPoint), [driverPoint, serverRoadLine.length, targetPoint]);
+
+  const followDriver = useCallback(() => {
+    if (!navigationViewController) return;
+    void navigationViewController.setFollowingPerspective(CameraPerspective.TILTED).catch(() => {});
+  }, [navigationViewController]);
 
   useEffect(() => {
-    if (!driverPoint) return;
-    const nextRegion = region(driverPoint);
-    if (!previousLocationRef.current) animatedDriverCoordinate.setValue(nextRegion);
-    else {
-      animatedDriverCoordinate.stopAnimation(() => {});
-      animatedDriverCoordinate.timing({
-        ...nextRegion,
-        duration: markerAnimationDuration(previousLocationTimestampRef.current, locationTimestamp),
-        useNativeDriver: false,
-      } as any).start();
-    }
-    previousLocationRef.current = driverPoint;
-    if (Number.isFinite(Number(locationTimestamp))) previousLocationTimestampRef.current = Number(locationTimestamp);
-  }, [animatedDriverCoordinate, driverPoint, locationTimestamp]);
+    setOnArrival(() => {
+      setNavigationMessage('You have reached this stop. Confirm your HY3N trip action below.');
+    });
+    // The Navigation SDK road-snaps its own position. Do not request a route
+    // until that SDK has supplied its first live location fix.
+    setOnLocationChanged(() => setNavigationLocationReady(true));
+    return () => removeAllListeners();
+  }, [removeAllListeners, setOnArrival, setOnLocationChanged]);
 
-  // Stop native animated values before the Google map view is destroyed. This
-  // avoids an Android renderer callback targeting a Marker after sign-out has
-  // removed the authenticated map tree.
   useEffect(() => () => {
-    animatedDriverCoordinate.stopAnimation(() => {});
-  }, [animatedDriverCoordinate]);
+    navigationRequestRef.current += 1;
+    // Navigation sessions are heavyweight. Release the native guidance engine
+    // when the Driver goes offline or leaves this screen.
+    if (initializedRef.current) void navigationController.cleanup().catch(() => {});
+  }, [navigationController]);
 
   useEffect(() => {
-    if (!routeKey || !driverPoint || !targetPoint) {
-      setRoadLine([]);
+    const request = ++navigationRequestRef.current;
+
+    if (!hasTarget || !targetKey || !target) {
+      lastTargetKeyRef.current = null;
+      if (initializedRef.current) {
+        void (async () => {
+          try {
+            await navigationController.stopGuidance();
+            await navigationController.clearDestinations();
+            await navigationViewController?.setNavigationUIEnabled(false);
+          } catch {
+            // The session may already have been released while a trip changed.
+          }
+        })();
+      }
+      setNavigationMessage(null);
       return;
     }
-    const controller = new AbortController();
-    fetchRoadLine(driverPoint, targetPoint, controller.signal)
-      .then((points) => { if (!controller.signal.aborted) setRoadLine(points); })
-      .catch(() => { if (!controller.signal.aborted) setRoadLine([]); });
-    return () => controller.abort();
-  }, [driverPoint, routeKey, targetPoint]);
 
-  useEffect(() => {
-    if (!mapReady || userMovedMapRef.current || !driverPoint) return;
-    const nextRegion = nativeTrackingRegion(driverPoint, targetPoint, driverPoint);
-    if (nextRegion) mapRef.current?.animateToRegion(nextRegion, targetPoint ? 650 : 350);
-  }, [driverPoint, mapReady, targetPoint]);
+    if (!hasDeviceLocation) {
+      setNavigationMessage('Getting your live location before guidance starts.');
+      return;
+    }
 
-  if (!driverPoint) {
-    return (
-      <View style={[styles.locationPending, { backgroundColor: dark ? '#1f2933' : '#eef1f3' }]}>
-        <ActivityIndicator color="#006B3F" />
-        <Text style={[styles.pendingTitle, { color: dark ? '#fff' : '#111' }]}>Getting your live location…</Text>
-        <Text style={[styles.pendingBody, { color: dark ? '#d1d5db' : '#4b5563' }]}>Your map and ride requests will use your device location, not a fallback place.</Text>
-        <TouchableOpacity
-          accessibilityRole="button"
-          accessibilityLabel="Open Location Settings"
-          onPress={() => { void Linking.openSettings().catch(() => {}); }}
-          style={styles.settingsButton}
-        >
-          <Text style={styles.settingsButtonText}>Check Location Settings</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+    if (lastTargetKeyRef.current === targetKey) return;
 
-  // Do not draw a direct GPS chord when routing is unavailable: that would
-  // look like a navigable road but can send a Driver the wrong way.
-  const displayedRoadLine = serverRoadLine.length > 1 ? serverRoadLine : (roadLine.length > 1 ? roadLine : []);
+    let cancelled = false;
+    setNavigationMessage('Preparing in-app navigation…');
+
+    void (async () => {
+      try {
+        const accepted = await navigationController.showTermsAndConditionsDialog();
+        if (cancelled || navigationRequestRef.current !== request) return;
+        if (!accepted) {
+          setNavigationMessage('Accept Google Navigation terms to receive turn-by-turn guidance.');
+          return;
+        }
+
+        if (!initializedRef.current) {
+          const sessionStatus = await navigationController.init();
+          if (cancelled || navigationRequestRef.current !== request) return;
+          if (sessionStatus !== NavigationSessionStatus.OK) {
+            setNavigationMessage(readableNavigationFailure(sessionStatus));
+            return;
+          }
+          initializedRef.current = true;
+          navigationController.setAudioGuidanceType(
+            AudioGuidance.VOICE_ALERTS_AND_GUIDANCE | AudioGuidance.BLUETOOTH_AUDIO,
+          );
+          navigationController.startUpdatingLocation();
+        }
+
+        if (!navigationLocationReady) {
+          setNavigationMessage('Finding your position for turn-by-turn guidance…');
+          return;
+        }
+
+        const routeStatus = await navigationController.setDestination(
+          {
+            title: target.label || (tripStatus === 'dropoff' ? 'Drop-off' : 'Pickup'),
+            position: { lat: target.latitude, lng: target.longitude },
+            preferSameSideOfRoad: true,
+          },
+          {
+            routingOptions: { travelMode: TravelMode.DRIVING },
+            displayOptions: {
+              showDestinationMarkers: true,
+              showStopSigns: true,
+              showTrafficLights: true,
+            },
+          },
+        );
+        if (cancelled || navigationRequestRef.current !== request) return;
+        if (routeStatus !== RouteStatus.OK) {
+          setNavigationMessage(readableNavigationFailure(routeStatus));
+          return;
+        }
+
+        await navigationController.startGuidance();
+        if (cancelled || navigationRequestRef.current !== request) return;
+        await navigationViewController?.setNavigationUIEnabled(true);
+        followDriver();
+        lastTargetKeyRef.current = targetKey;
+        setNavigationMessage(null);
+      } catch {
+        if (!cancelled && navigationRequestRef.current === request) {
+          setNavigationMessage('Navigation could not start. Please check location and connection.');
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [followDriver, hasDeviceLocation, hasTarget, navigationController, navigationLocationReady, navigationViewController, target, targetKey, tripStatus]);
 
   return (
-    <View style={[styles.container, { backgroundColor: dark ? '#1f2933' : '#eef1f3' }]}>
-      <MapView
-        ref={mapRef}
-        provider={PROVIDER_GOOGLE}
-        // The current Android Maps renderer leaves an authenticated but blank
-        // tile surface on the affected Driver device. Keep native Google Maps
-        // while requesting the compatible renderer exposed by react-native-maps.
-        googleRenderer="LEGACY"
-        initialRegion={region(driverPoint)}
-        style={StyleSheet.absoluteFill}
-        customMapStyle={dark ? DARK_GOOGLE_STYLE : undefined}
-        showsBuildings={false}
-        showsCompass={false}
-        showsPointsOfInterests={false}
-        showsScale={false}
-        toolbarEnabled={false}
-        onMapReady={() => setMapReady(true)}
-        onPanDrag={() => { userMovedMapRef.current = true; }}
-      >
-        {displayedRoadLine.length > 1 && <Polyline
-          coordinates={displayedRoadLine.map(pointToCoordinate)}
-          strokeColor="#006B3F"
-          strokeWidth={6}
-          lineCap="round"
-          lineJoin="round"
-          zIndex={1}
-        />}
-        {targetPoint && <Marker
-          coordinate={pointToCoordinate(targetPoint)}
-          pinColor={tripStatus === 'dropoff' ? '#D4AF37' : '#006B3F'}
-          title={target?.label || 'Next stop'}
-          description={etaMinutes ? `${Math.max(1, Math.round(etaMinutes))} min away` : undefined}
-          zIndex={3}
-        />}
-        <Marker.Animated
-          coordinate={animatedDriverCoordinate as any}
-          image={require('@/assets/images/driver-map-car-marker.png')}
-          anchor={{ x: 0.5, y: 0.5 }}
-          flat
-          rotation={Number(heading) || 0}
-          tracksViewChanges={false}
-          title="Your HY3N vehicle"
-          zIndex={8}
+    <View style={styles.container}>
+      {hasDeviceLocation ? (
+        <NavigationView
+          style={StyleSheet.absoluteFill}
+          initialCameraPosition={{
+            target: { lat: Number(latitude), lng: Number(longitude) },
+            zoom: 16,
+            bearing: 0,
+            tilt: 0,
+          }}
+          mapColorScheme={dark ? MapColorScheme.DARK : MapColorScheme.LIGHT}
+          navigationNightMode={dark ? NavigationNightMode.FORCE_NIGHT : NavigationNightMode.FORCE_DAY}
+          navigationUIEnabledPreference={NavigationUIEnabledPreference.DISABLED}
+          headerEnabled={hasTarget}
+          footerEnabled={hasTarget}
+          trafficEnabled
+          trafficPromptsEnabled
+          trafficIncidentCardsEnabled
+          speedometerEnabled
+          speedLimitIconEnabled
+          recenterButtonEnabled
+          reportIncidentButtonEnabled
+          myLocationEnabled
+          myLocationButtonEnabled
+          compassEnabled
+          mapToolbarEnabled={false}
+          onNavigationViewControllerCreated={setNavigationViewController}
+          onRecenterButtonClick={followDriver}
+          androidStylingOptions={{
+            primaryDayModeThemeColor: GREEN,
+            secondaryDayModeThemeColor: GOLD,
+            primaryNightModeThemeColor: GREEN,
+            secondaryNightModeThemeColor: GOLD,
+          }}
+          iOSStylingOptions={{
+            navigationHeaderPrimaryBackgroundColor: GREEN,
+            navigationHeaderSecondaryBackgroundColor: GOLD,
+            navigationHeaderPrimaryBackgroundColorNightMode: '#111111',
+            navigationHeaderSecondaryBackgroundColorNightMode: '#1D2939',
+          }}
         />
-      </MapView>
-      {!mapReady && <View pointerEvents="none" style={styles.loadingBadge}>
-        <ActivityIndicator color="#006B3F" />
-      </View>}
+      ) : (
+        <View style={[styles.locationGate, dark && styles.locationGateDark]}>
+          <Text style={[styles.locationGateTitle, dark && styles.locationGateTextDark]}>Getting your live location</Text>
+          <Text style={[styles.locationGateText, dark && styles.locationGateTextDark]}>HY3N does not use a fallback place for Driver navigation.</Text>
+          <TouchableOpacity onPress={() => Linking.openSettings()} style={styles.settingsButton} accessibilityRole="button">
+            <Text style={styles.settingsButtonText}>Check Location Settings</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {navigationMessage && hasDeviceLocation && (
+        <View style={[styles.navigationMessage, dark && styles.navigationMessageDark]} pointerEvents="box-none">
+          <Text style={styles.navigationMessageText}>{navigationMessage}</Text>
+        </View>
+      )}
     </View>
   );
 }
 
+export default function NativeDriverGoogleMap(props: Props) {
+  return (
+    <NavigationProvider
+      termsAndConditionsDialogOptions={{
+        title: 'HY3N Driver Navigation',
+        companyName: 'HY3N Transport Services',
+        showOnlyDisclaimer: false,
+        uiParams: {
+          acceptButtonTextColor: GREEN,
+          cancelButtonTextColor: '#B91C1C',
+        },
+      }}
+      taskRemovedBehavior={TaskRemovedBehavior.CONTINUE_SERVICE}
+    >
+      <DriverNavigationSurface {...props} />
+    </NavigationProvider>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  locationPending: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28 },
-  pendingTitle: { fontWeight: '700', marginTop: 12 },
-  pendingBody: { textAlign: 'center', marginTop: 6 },
-  settingsButton: { marginTop: 18, backgroundColor: '#006B3F', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 11 },
-  settingsButtonText: { color: '#fff', fontWeight: '800' },
-  loadingBadge: { position: 'absolute', top: '42%', alignSelf: 'center', backgroundColor: 'rgba(255,255,255,0.92)', padding: 14, borderRadius: 14 },
+  container: { ...StyleSheet.absoluteFillObject },
+  locationGate: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    justifyContent: 'center',
+    padding: 28,
+  },
+  locationGateDark: { backgroundColor: '#111827' },
+  locationGateTitle: { color: '#0F172A', fontSize: 19, fontWeight: '900', textAlign: 'center' },
+  locationGateText: { color: '#475569', fontSize: 14, lineHeight: 20, marginTop: 8, textAlign: 'center' },
+  locationGateTextDark: { color: '#E2E8F0' },
+  settingsButton: { backgroundColor: GREEN, borderRadius: 14, marginTop: 18, paddingHorizontal: 18, paddingVertical: 12 },
+  settingsButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },
+  navigationMessage: {
+    alignSelf: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.94)',
+    borderRadius: 14,
+    bottom: 122,
+    left: 24,
+    paddingHorizontal: 15,
+    paddingVertical: 11,
+    position: 'absolute',
+    right: 24,
+  },
+  navigationMessageDark: { backgroundColor: 'rgba(2, 6, 23, 0.96)' },
+  navigationMessageText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', lineHeight: 18, textAlign: 'center' },
 });

@@ -9,12 +9,16 @@ const nativeMapSource = readFileSync(
 );
 const driverHomeSource = readFileSync(path.join(__dirname, '../app/(tabs)/home.tsx'), 'utf8');
 
-test('Driver native map cancels marker animation before an updated target and on unmount', () => {
-  assert.match(nativeMapSource, /animatedDriverCoordinate\.stopAnimation\(\(\) => \{\}\);\s*animatedDriverCoordinate\.timing/);
-  assert.match(
-    nativeMapSource,
-    /useEffect\(\(\) => \(\) => \{\s*animatedDriverCoordinate\.stopAnimation\(\(\) => \{\}\);\s*\}, \[animatedDriverCoordinate\]\)/,
-  );
+test('Driver native navigation keeps maneuver, traffic, safety, and re-centering controls inside HY3N', () => {
+  assert.match(nativeMapSource, /trafficEnabled/);
+  assert.match(nativeMapSource, /trafficPromptsEnabled/);
+  assert.match(nativeMapSource, /trafficIncidentCardsEnabled/);
+  assert.match(nativeMapSource, /speedometerEnabled/);
+  assert.match(nativeMapSource, /speedLimitIconEnabled/);
+  assert.match(nativeMapSource, /recenterButtonEnabled/);
+  assert.match(nativeMapSource, /reportIncidentButtonEnabled/);
+  assert.match(nativeMapSource, /myLocationEnabled/);
+  assert.match(nativeMapSource, /showTermsAndConditionsDialog/);
 });
 
 test('Driver Home retains one branded request sound per ride ID', () => {
@@ -29,4 +33,18 @@ test('Driver Home shows a prominent Android location disclosure before requestin
   assert.match(driverHomeSource, /backgroundLocationDisclosureDecisionRef\.current = 'accepted'/);
   assert.match(driverHomeSource, /backgroundLocationDisclosureDecisionRef\.current = 'declined'/);
   assert.match(driverHomeSource, /if \(!cancelled\) requestBackgroundLocation\(\)/);
+});
+
+test('accepted queued trips activate immediately after the current trip ends', () => {
+  assert.match(driverHomeSource, /const queuedRide = nextRide\?\.status === 'driver_queued' \? nextRide : null/);
+  assert.match(driverHomeSource, /await activateQueuedTrip\.mutateAsync/);
+  assert.match(driverHomeSource, /setActiveTrip\(activation\.ride\)/);
+  assert.match(driverHomeSource, /setNextRide\(null\)/);
+});
+
+test('the trip screen stays map-first while accepted offers retain their server quote', () => {
+  assert.match(driverHomeSource, /!activeTrip && <View style=\{\[styles\.onlineCard/);
+  assert.match(driverHomeSource, /activeTripDetails\(incomingRide\)\.bookedFare/);
+  assert.match(driverHomeSource, /BOOKED FARE/);
+  assert.doesNotMatch(driverHomeSource, /Active Trip Navigation Card/);
 });

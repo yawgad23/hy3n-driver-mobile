@@ -58,12 +58,6 @@ import {
   nextDriverOfferCountdown,
 } from '@/lib/driver-offer-lifecycle';
 import { driverTripTerminalStatus } from '@/lib/driver-trip-lifecycle';
-import {
-  googleMapsNavigationFallbackUrl,
-  googleMapsTurnByTurnUri,
-  isTurnByTurnDestination,
-  tripNavigationDestination,
-} from '@/lib/driver-turn-navigation';
 import { activeTripDetails } from '@/lib/driver-active-trip-details';
 
 const INCOMING_TRIP_ALERT = require('../../assets/audio/incoming-trip-alert.wav');
@@ -79,32 +73,6 @@ function formatPassengerFare(value: unknown) {
   const whole = Math.floor(amount);
   return `GH₵${whole + (amount - whole > 0.5 ? 1 : 0)}`;
 }
-
-function calculateNavigationEtaMinutes(latitude: number, longitude: number, targetLatitude: number, targetLongitude: number) {
-  const toRadians = (value: number) => (value * Math.PI) / 180;
-  const dLat = toRadians(targetLatitude - latitude);
-  const dLng = toRadians(targetLongitude - longitude);
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRadians(latitude)) * Math.cos(toRadians(targetLatitude)) * Math.sin(dLng / 2) ** 2;
-  const straightLineKm = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  // Conservative road-distance and urban driving-speed factors update with each GPS point.
-  return Math.max(1, Math.ceil((straightLineKm * 1.25 / 24) * 60));
-}
-
-const DARK_MAP_STYLE = [
-  { elementType: 'geometry', stylers: [{ color: '#1b1f24' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#d2d7de' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#1b1f24' }] },
-  { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#4b5563' }] },
-  { featureType: 'poi', elementType: 'geometry', stylers: [{ color: '#242b33' }] },
-  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#1d3a2a' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#303841' }] },
-  { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#3b4652' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#6b5725' }] },
-  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#e5e7eb' }] },
-  { featureType: 'transit', elementType: 'geometry', stylers: [{ color: '#26313a' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#102b46' }] },
-  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#9fc5e8' }] },
-];
 
 const { height } = Dimensions.get('window');
 
@@ -175,7 +143,6 @@ export default function DriverHomeScreen() {
   const [togglingOnline, setTogglingOnline] = useState(false);
   const [tripActionPending, setTripActionPending] = useState(false);
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
-  const [eta, setEta] = useState<number | null>(null);
   const [nextRide, setNextRide] = useState<any>(null);
   const [queuedRideToActivate, setQueuedRideToActivate] = useState<any>(null);
   const [rideOfferSeconds, setRideOfferSeconds] = useState(DRIVER_OFFER_REVIEW_SECONDS);
@@ -236,62 +203,6 @@ export default function DriverHomeScreen() {
     if (resetPosition && Platform.OS !== 'ios') incomingTripPlayer.seekTo(0).catch(() => {});
   };
 
-  const launchGoogleMapsTurnByTurn = useCallback(async (latitude: number, longitude: number) => {
-    const destination = { latitude, longitude };
-    if (!isTurnByTurnDestination(destination)) {
-      Alert.alert('Navigation unavailable', 'This trip does not have a valid destination yet.');
-      return false;
-    }
-    const androidTurnByTurnUri = googleMapsTurnByTurnUri(destination);
-    const crossPlatformFallbackUrl = googleMapsNavigationFallbackUrl(destination);
-    try {
-      if (Platform.OS === 'android' && androidTurnByTurnUri) {
-        // This opens the installed Google Maps driving UI with its moving map,
-        // live rerouting, and spoken left/right guidance.
-        await Linking.openURL(androidTurnByTurnUri);
-        return true;
-      }
-      if (crossPlatformFallbackUrl) {
-        await Linking.openURL(crossPlatformFallbackUrl);
-        return true;
-      }
-    } catch {
-      // Android devices without the Maps app can still use the universal Maps
-      // URL, which opens Google Maps in the browser or the installed app.
-      try {
-        if (crossPlatformFallbackUrl) {
-          await Linking.openURL(crossPlatformFallbackUrl);
-          return true;
-        }
-      } catch {
-        // The user-facing message below is intentionally concise while driving.
-      }
-    }
-    Alert.alert('Google Maps unavailable', 'Install or enable Google Maps, then tap the navigation button again.');
-    return false;
-  }, []);
-
-  // Navigation Switcher Logic
-  const openNavigation = (lat: number, lng: number, label: string) => {
-    const scheme = Platform.select({ ios: 'maps:0,0?q=', android: 'geo:0,0?q=' });
-    const latLng = `${lat},${lng}`;
-    const url = Platform.select({
-      ios: `${scheme}${label}@${latLng}`,
-      android: `${scheme}${latLng}(${label})`
-    });
-
-    Alert.alert(
-      "Navigate with",
-      "Choose your preferred navigation app",
-      [
-        { text: "Google Maps voice navigation", onPress: () => { void launchGoogleMapsTurnByTurn(lat, lng); } },
-        { text: "Waze", onPress: () => Linking.openURL(`https://waze.com/ul?ll=${latLng}&navigate=yes`) },
-        { text: Platform.OS === 'ios' ? "Apple Maps" : "Cancel", onPress: () => url && Linking.openURL(url) },
-        { text: "Cancel", style: "cancel" }
-      ]
-    );
-  };
-
   // The previous demand-zone circles obscured the map and were not real cars.
   // Keep the control state only for backwards-compatible layout, but do not
   // render artificial circles over the driver's location map.
@@ -335,7 +246,6 @@ export default function DriverHomeScreen() {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const deliveryContact = deliveryContactForDriver(activeTrip);
   const isActiveDelivery = isDeliveryRide(activeTrip);
-  const activeFareDetails = activeTripDetails(activeTrip);
   const riderPhone = activeTrip?.rider_phone || activeTrip?.passenger_phone || activeTrip?.phone || '';
   const contactPhone = deliveryContact?.phone || riderPhone;
   const startMobileNetworkCall = () => {
@@ -915,8 +825,9 @@ export default function DriverHomeScreen() {
         }),
         queueAfterRideId: activeTrip.id,
       });
+      // A queued next ride stays out of the way while the current trip is
+      // running. It becomes the active pickup immediately after completion.
       setNextRide(result.ride);
-      Alert.alert('Next ride queued', `You will be connected to ${nextRide.rider_name || 'your next rider'} after this trip.`);
     } catch {
       Alert.alert('Unable to queue ride', 'Please try again.');
     }
@@ -1055,13 +966,6 @@ export default function DriverHomeScreen() {
       lastTripLocationRef.current = location;
       lastTripMeterPublishedAtRef.current = 0;
       setArrivedAt(null);
-      const dropoff = tripNavigationDestination(updatedRide, 'dropoff');
-      if (dropoff) {
-        // Start the same Google Maps driving experience that supplies the
-        // spoken turn prompts and visual maneuver guidance in leading driver
-        // apps. HY3N remains running underneath for live trip updates.
-        void launchGoogleMapsTurnByTurn(dropoff.latitude, dropoff.longitude);
-      }
     } catch {
       Alert.alert('Error', 'Failed to start trip');
     } finally {
@@ -1148,7 +1052,27 @@ export default function DriverHomeScreen() {
       });
 
       const completed = { ...result.ride };
-      if (nextRide?.status === 'driver_queued') setQueuedRideToActivate(nextRide);
+      const queuedRide = nextRide?.status === 'driver_queued' ? nextRide : null;
+      if (queuedRide) {
+        // A Driver who has already accepted another offer should not be stopped
+        // by a full fare card. Preserve the completed ride server-side, then
+        // switch the embedded navigation straight to the next pickup.
+        const activation = await activateQueuedTrip.mutateAsync({
+          driverId: user.uid,
+          rideId: queuedRide.id,
+          completedRideId: completed.id,
+        });
+        setCompletedRide(completed);
+        setActiveTrip(activation.ride);
+        setNextRide(null);
+        setQueuedRideToActivate(null);
+        setArrivedAt(null);
+        setTripStartedAt(null);
+        setTripDistanceKm(0);
+        lastTripLocationRef.current = location;
+        lastTripMeterPublishedAtRef.current = 0;
+        return;
+      }
       applyServerTerminalRide(completed);
     } catch {
       Alert.alert('Error', 'Failed to end trip');
@@ -1260,31 +1184,8 @@ export default function DriverHomeScreen() {
         label: activeTrip.status === 'in_progress' ? (activeTrip.destination_address || 'Drop-off') : (activeTrip.pickup_address || 'Pickup'),
       }
     : null;
-  const activeRouteMetrics = activeTrip?.live_route_metrics && typeof activeTrip.live_route_metrics === 'object'
-    ? activeTrip.live_route_metrics as Record<string, unknown>
-    : null;
-  const expectedRoutePhase = activeTrip?.status === 'in_progress' ? 'destination' : 'pickup';
-  const activeRoutePoints = Array.isArray(activeRouteMetrics?.points)
-    ? activeRouteMetrics.points
-      .map((point: unknown) => {
-        const source: Record<string, unknown> | null = Array.isArray(point)
-          ? { lat: point[0], lng: point[1] }
-          : point && typeof point === 'object'
-            ? point as Record<string, unknown>
-            : null;
-        return [Number(source?.lat ?? source?.latitude), Number(source?.lng ?? source?.longitude)] as [number, number];
-      })
-      .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180)
-      .slice(0, 180)
-    : [];
-  const serverNavigationEta = activeRouteMetrics?.phase === expectedRoutePhase
-    ? Number(activeRouteMetrics.duration_minutes)
-    : Number.NaN;
-  const activeNavigationEta = Number.isFinite(serverNavigationEta) && serverNavigationEta > 0
-    ? Math.max(1, Math.ceil(serverNavigationEta))
-    : activeNavigationTarget && location
-      ? calculateNavigationEtaMinutes(location.coords.latitude, location.coords.longitude, activeNavigationTarget.latitude, activeNavigationTarget.longitude)
-      : eta;
+
+
 
   return (
     <View style={[styles.container, dynamicStyles.container]}>
@@ -1298,8 +1199,6 @@ export default function DriverHomeScreen() {
           locationTimestamp={location?.timestamp ?? null}
           heading={location?.coords.heading}
           target={activeNavigationTarget}
-          etaMinutes={activeNavigationEta}
-          routePoints={activeRoutePoints}
           tripStatus={activeTrip ? (activeTrip.status === 'in_progress' ? 'dropoff' : 'pickup') : null}
           dark={isDark}
         />
@@ -1366,6 +1265,12 @@ export default function DriverHomeScreen() {
                 <Text style={[styles.categoryBadge, { color: GOLD }]}>{rideCategoryName(incomingRide.category)}</Text>
                 {!!(incomingRide.distance_km || incomingRide.estimated_distance_km) && <Text style={[styles.metaText, dynamicStyles.muted]}>{Number(incomingRide.distance_km || incomingRide.estimated_distance_km).toFixed(1)} km</Text>}
               </View>
+              {activeTripDetails(incomingRide).bookedFare !== null && (
+                <View style={[styles.offerFareChip, { backgroundColor: isDark ? '#2C260E' : '#FFF8DD', borderColor: `${GOLD}55` }]} accessibilityLabel={`Booked fare ${formatPassengerFare(activeTripDetails(incomingRide).bookedFare)}`}>
+                  <Text style={styles.offerFareLabel}>BOOKED FARE</Text>
+                  <Text style={styles.offerFareAmount}>{formatPassengerFare(activeTripDetails(incomingRide).bookedFare)}</Text>
+                </View>
+              )}
               {hasIncludedAirConditioning(incomingRide.category) && (
                 <View style={styles.acServiceBanner} accessibilityLabel={airConditioningReminder(incomingRide.category, 'pickup') || undefined}>
                   <MaterialIcons name="ac-unit" size={17} color="#075985" />
@@ -1419,117 +1324,18 @@ export default function DriverHomeScreen() {
           </Animated.View>
         )}
 
-        {/* Active Trip Navigation Card */}
-        {activeTrip && (
-          <View style={[styles.navCard, dynamicStyles.card]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.navStatus, { color: GREEN }]}>
-                {activeTrip.status === 'driver_arrived'
-                  ? 'Waiting for Rider'
-                  : activeTrip.status === 'in_progress'
-                    ? 'Trip in Progress'
-                    : 'Navigate to Pickup'}
-              </Text>
-              <Text style={[styles.navTitle, dynamicStyles.text]}>{activeTrip.rider_name}</Text>
-              <View style={styles.metaRow}>
-                {activeTrip.rider_rating && <Text style={[styles.metaText, dynamicStyles.muted]}>★ {Number(activeTrip.rider_rating).toFixed(1)}</Text>}
-                {Number(activeTrip.rider_rating_count) > 0 && <Text style={[styles.metaText, dynamicStyles.muted]}>· {Math.floor(Number(activeTrip.rider_rating_count))} ratings</Text>}
-                <Text style={[styles.categoryBadge, { color: GOLD }]}>{rideCategoryName(activeTrip.category)}</Text>
-                <Text style={[styles.metaText, dynamicStyles.muted]}>{paymentLabel(activeTrip.payment_method)}</Text>
-              </View>
-              {activeFareDetails.bookedFare !== null && (
-                <View style={[styles.bookedFareCard, { borderColor: `${GOLD}55`, backgroundColor: isDark ? '#2C260E' : '#FFF8DD' }]} accessibilityLabel={`Booked fare ${formatPassengerFare(activeFareDetails.bookedFare)}`}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.bookedFareLabel}>BOOKED FARE</Text>
-                    <Text style={[styles.bookedFareCaption, dynamicStyles.muted]}>Server-locked at booking</Text>
-                  </View>
-                  <Text style={styles.bookedFareAmount}>{formatPassengerFare(activeFareDetails.bookedFare)}</Text>
-                </View>
-              )}
-              {hasIncludedAirConditioning(activeTrip.category) && (
-                <View style={styles.acServiceBanner} accessibilityLabel={airConditioningReminder(activeTrip.category, 'trip') || undefined}>
-                  <MaterialIcons name="ac-unit" size={17} color="#075985" />
-                  <Text style={[styles.acServiceText, { flex: 1 }]}>{airConditioningReminder(activeTrip.category, 'trip')}</Text>
-                </View>
-              )}
-              <View style={styles.tripRouteSummary}>
-                <View style={styles.tripRouteLine} />
-                <MaterialIcons name="my-location" size={15} color={GREEN} style={styles.tripRoutePickupIcon} />
-                <Text style={[styles.tripRouteText, dynamicStyles.muted]} numberOfLines={1}>Pickup · {activeTrip.pickup_address || 'Pickup'}</Text>
-                <MaterialIcons name="location-on" size={17} color={RED} style={styles.tripRouteDropoffIcon} />
-                <Text style={[styles.tripRouteText, dynamicStyles.muted]} numberOfLines={1}>Drop-off · {activeTrip.destination_address || 'Destination'}</Text>
-              </View>
-              {isActiveDelivery && deliveryContact && (
-                <View style={[styles.deliveryContactCard, { borderColor: themeColors.border }]}>
-                  <MaterialIcons name={activeTrip.status === 'in_progress' ? 'person-pin-circle' : 'inventory-2'} size={18} color={GOLD} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.deliveryContactTitle, dynamicStyles.text]}>{deliveryContact.label} · {deliveryContact.name}</Text>
-                    {deliveryContact.packageDescription && <Text style={[styles.deliveryContactText, dynamicStyles.muted]} numberOfLines={1}>Package: {deliveryContact.packageDescription}</Text>}
-                    {deliveryContact.instructions && <Text style={[styles.deliveryContactText, dynamicStyles.muted]} numberOfLines={2}>{deliveryContact.instructions}</Text>}
-                  </View>
-                </View>
-              )}
-              {activeTrip.status === 'in_progress' && <Text style={[styles.tripTracking, dynamicStyles.muted]}>Tracked: {tripDistanceKm.toFixed(2)} km</Text>}
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 12 }}>
-                <Text style={[styles.metaText, dynamicStyles.muted]}>
-                  {activeFareDetails.estimatedDistanceKm !== null
-                    ? `${activeFareDetails.estimatedDistanceKm.toFixed(1)} km route`
-                    : 'Route details update live'}
-                </Text>
-                {(activeFareDetails.estimatedDurationMinutes ?? activeNavigationEta) && !isDriverAtPickup && (
-                  <Text style={[styles.etaText, dynamicStyles.muted]}>{Math.max(1, Math.ceil(activeFareDetails.estimatedDurationMinutes ?? activeNavigationEta ?? 0))} min</Text>
-                )}
-              </View>
-              {activeFareDetails.bookedFare !== null && <Text style={[styles.bookedFareNote, dynamicStyles.muted]}>Final fare is calculated by HY3N from the completed trip and any approved waiting time.</Text>}
-            </View>
-            <TouchableOpacity
-              style={[styles.navBtn, { backgroundColor: BLUE }]}
-              onPress={() => {
-                const target = activeTrip.status === 'in_progress' ? activeTrip.destination : activeTrip.pickup;
-                openNavigation(target.lat || 0, target.lng || 0, target.address);
-              }}
-            >
-              <MaterialIcons name="navigation" size={20} color="#FFF" />
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Waiting Timer */}
-        {activeTrip && waitingStartedAt && isDriverAtPickup && (
-          <View style={[styles.timerCard, dynamicStyles.card, { alignItems: 'stretch', paddingVertical: 13 }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-              <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: waitTime < FREE_WAITING_MINUTES * 60 ? `${GREEN}20` : `${GOLD}24`, alignItems: 'center', justifyContent: 'center' }}>
-                <MaterialIcons name="schedule" size={19} color={waitTime < FREE_WAITING_MINUTES * 60 ? GREEN : GOLD} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: waitTime < FREE_WAITING_MINUTES * 60 ? GREEN : GOLD, fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                  {waitTime < FREE_WAITING_MINUTES * 60 ? 'Rider wait · complimentary time' : 'Paid waiting time'}
-                </Text>
-                <Text style={[styles.timerText, dynamicStyles.text, { marginTop: 2 }]}>
-                  {waitTime < FREE_WAITING_MINUTES * 60
-                    ? `${Math.floor((FREE_WAITING_MINUTES * 60 - waitTime) / 60)}:${String((FREE_WAITING_MINUTES * 60 - waitTime) % 60).padStart(2, '0')} free time remaining`
-                    : 'Paid waiting time is being recorded'}
-                </Text>
-              </View>
-            </View>
-            <Text style={[styles.metaText, dynamicStyles.muted, { marginTop: 10, lineHeight: 16 }]}>
-              {waitTime < FREE_WAITING_MINUTES * 60
-                ? `Paid wait starts after ${FREE_WAITING_MINUTES} minutes. The rider sees the same countdown.`
-                : `The charge stops when the trip starts. Total wait: ${Math.floor(waitTime / 60)}m ${String(waitTime % 60).padStart(2, '0')}s.`}
-            </Text>
-          </View>
-        )}
-
-        {/* Back-to-back ride queue */}
-        {activeTrip && nextRide && (
+        {/* A queued trip is intentionally shown only as an offer. Once the Driver
+            accepts it, the Navigation SDK owns the screen and activates the next
+            pickup immediately after this trip is completed. */}
+        {activeTrip && nextRide && nextRide.status !== 'driver_queued' && (
           <View style={[styles.queueCard, dynamicStyles.card]}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.queueTitle, dynamicStyles.text]}>Next ride available</Text>
+              <Text style={[styles.queueTitle, dynamicStyles.text]}>New ride available</Text>
               <Text style={[styles.queueText, dynamicStyles.muted]} numberOfLines={1}>{nextRide.rider_name || 'Rider'} · {nextRide.pickup_address || 'Pickup'} → {nextRide.destination_address || 'Destination'}</Text>
-              {Number(nextRide.rider_rating_count) > 0 && <Text style={[styles.metaText, dynamicStyles.muted]}>★ {Number(nextRide.rider_rating).toFixed(1)} · {Math.floor(Number(nextRide.rider_rating_count))} ratings</Text>}
-              {hasIncludedAirConditioning(nextRide.category) && <Text style={styles.queueAcText}><MaterialIcons name="ac-unit" size={12} color="#075985" /> {rideCategoryName(nextRide.category)} includes AC</Text>}
             </View>
-            {nextRide.status === 'driver_queued' ? <View style={styles.queuedTag}><Text style={styles.queuedTagText}>Queued</Text></View> : <TouchableOpacity style={styles.queueButton} onPress={handleAcceptQueuedRide}><Text style={styles.queueButtonText}>Queue</Text></TouchableOpacity>}
+            <TouchableOpacity style={styles.queueButton} onPress={handleAcceptQueuedRide} accessibilityLabel="Accept next ride">
+              <Text style={styles.queueButtonText}>Accept</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -1552,7 +1358,7 @@ export default function DriverHomeScreen() {
         )}
 
         {/* Action Buttons */}
-        <View style={{ flexDirection: 'row', gap: 8 }}>
+        <View style={[styles.activeTripActions, activeTrip && { paddingBottom: insets.bottom + 6 }]}>
           {activeTrip && (
             <>
               <TouchableOpacity style={[styles.actionBtn, { backgroundColor: BLUE, flex: 1 }]} onPress={openChat}>
@@ -1605,7 +1411,7 @@ export default function DriverHomeScreen() {
           )}
         </View>
 
-        <View style={[styles.onlineCard, dynamicStyles.card]}>
+        {!activeTrip && <View style={[styles.onlineCard, dynamicStyles.card]}>
           <View style={styles.onlineLeft}>
             <Animated.View style={[styles.onlineDot, { backgroundColor: isOnline ? GREEN : themeColors.muted, transform: [{ scale: isOnline ? pulseAnim : 1 }] }]} />
             <Text style={[styles.onlineStatus, dynamicStyles.text]}>{isOnline ? (hasCurrentLocation ? 'You are Online' : 'Getting your location…') : 'You are Offline'}</Text>
@@ -1617,7 +1423,7 @@ export default function DriverHomeScreen() {
           >
             {togglingOnline ? <ActivityIndicator color="#fff" /> : <Text style={styles.toggleBtnText}>{isOnline ? 'Go Offline' : 'Go Online'}</Text>}
           </TouchableOpacity>
-        </View>
+        </View>}
       </View>
 
       {/* Destination Modal */}
@@ -1810,6 +1616,9 @@ const styles = StyleSheet.create({
   paymentText: { fontSize: 11, fontWeight: '600' },
   rideActions: { flexDirection: 'row', gap: 8 },
   rideBtn: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  offerFareChip: { alignItems: 'center', borderRadius: 12, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', marginTop: 10, paddingHorizontal: 11, paddingVertical: 8 },
+  offerFareLabel: { color: '#8A6A00', fontSize: 10, fontWeight: '900', letterSpacing: 0.7 },
+  offerFareAmount: { color: '#A16207', fontSize: 18, fontWeight: '900' },
 
   navCard: { flexDirection: 'row', padding: 16, borderRadius: 20, borderWidth: 1, gap: 12, alignItems: 'center' },
   navStatus: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
@@ -1848,6 +1657,7 @@ const styles = StyleSheet.create({
   destFilterBar: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 16, borderWidth: 1, gap: 12 },
   destText: { flex: 1, fontSize: 14, fontWeight: '700' },
 
+  activeTripActions: { flexDirection: 'row', gap: 8 },
   actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 12 },
   actionBtnText: { color: '#FFF', fontWeight: '800', fontSize: 13 },
   unreadBadge: { position: 'absolute', top: -8, right: -8, width: 20, height: 20, borderRadius: 10, backgroundColor: RED, alignItems: 'center', justifyContent: 'center' },

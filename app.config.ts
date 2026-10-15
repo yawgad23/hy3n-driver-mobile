@@ -9,13 +9,13 @@ const nativeGoogleMaps = {
   iosApiKey: process.env.GOOGLE_MAPS_IOS_API_KEY?.trim() || "",
   androidApiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY?.trim() || "",
 };
-const nativeGoogleMapsPlugin: [string, Record<string, string>] | null =
+const nativeGoogleNavigationPlugin: [string, Record<string, string>] | null =
   nativeGoogleMaps.iosApiKey && nativeGoogleMaps.androidApiKey
     ? [
-        "react-native-maps",
+        "./plugins/with-google-navigation",
         {
-          iosGoogleMapsApiKey: nativeGoogleMaps.iosApiKey,
-          androidGoogleMapsApiKey: nativeGoogleMaps.androidApiKey,
+          iosApiKey: nativeGoogleMaps.iosApiKey,
+          androidApiKey: nativeGoogleMaps.androidApiKey,
         },
       ]
     : null;
@@ -150,6 +150,8 @@ const config: ExpoConfig = {
           minSdkVersion: 24,
         },
         ios: {
+          // Google Navigation SDK 10.13 requires iOS 16 or later.
+          deploymentTarget: "16.0",
           // With CocoaPods static frameworks, every used React Native Firebase
           // module must be forced to static linking on Expo SDK 54.
           useFrameworks: "static",
@@ -157,7 +159,7 @@ const config: ExpoConfig = {
         },
       },
     ],
-    ...(nativeGoogleMapsPlugin ? [nativeGoogleMapsPlugin] : []),
+    ...(nativeGoogleNavigationPlugin ? [nativeGoogleNavigationPlugin] : []),
   ],
   experiments: {
     typedRoutes: true,
