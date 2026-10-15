@@ -65,6 +65,13 @@ import {
 } from '@/lib/driver-offer-lifecycle';
 import { driverTripTerminalStatus } from '@/lib/driver-trip-lifecycle';
 import { activeTripDetails } from '@/lib/driver-active-trip-details';
+import { tripNavigationDestination } from '@/lib/driver-turn-navigation';
+import {
+  driverMapAppNavigationLabel,
+  driverMapAppNavigationUri,
+  driverMapAppWebFallbackUri,
+  type DriverNavigationPlatform,
+} from '@/lib/driver-navigation-fallback';
 
 const INCOMING_TRIP_ALERT = require('../../assets/audio/incoming-trip-alert.wav');
 const GOLD = '#D4AF37';
@@ -263,6 +270,28 @@ export default function DriverHomeScreen() {
     }
     Linking.openURL(`tel:${contactPhone}`).catch(() => {
       Alert.alert('Unable to call', 'This phone cannot open the mobile-network dialer.');
+    });
+  };
+  const openTripNavigation = () => {
+    if (!activeTrip) return;
+    const phase = activeTrip.status === 'in_progress' ? 'dropoff' : 'pickup';
+    const destination = tripNavigationDestination(activeTrip, phase);
+    if (!destination) {
+      Alert.alert('Navigation unavailable', 'This trip does not have a valid pickup or drop-off location yet.');
+      return;
+    }
+    const platform: DriverNavigationPlatform = Platform.OS === 'ios' ? 'ios' : 'android';
+    const mapAppUri = driverMapAppNavigationUri(destination, platform);
+    const webFallbackUri = driverMapAppWebFallbackUri(destination);
+    if (!mapAppUri) return;
+
+    // This is always available during a trip—not only after embedded guidance
+    // fails—so a Driver can choose the phone's navigation app at any time.
+    void Linking.openURL(mapAppUri).catch(() => {
+      if (!webFallbackUri) return;
+      return Linking.openURL(webFallbackUri).catch(() => {
+        Alert.alert('Unable to open navigation', 'No supported maps app could be opened on this phone.');
+      });
     });
   };
   const paymentLabel = (method?: string) => {
@@ -1393,6 +1422,15 @@ export default function DriverHomeScreen() {
         <View style={[styles.activeTripActions, activeTrip && { paddingBottom: insets.bottom + 6 }]}>
           {activeTrip && (
             <>
+              <TouchableOpacity
+                style={[styles.navigateTripBtn, { backgroundColor: '#075985' }]}
+                onPress={openTripNavigation}
+                accessibilityRole="button"
+                accessibilityLabel={driverMapAppNavigationLabel(Platform.OS === 'ios' ? 'ios' : 'android')}
+              >
+                <MaterialIcons name="navigation" size={19} color="#FFF" />
+                <Text style={styles.actionBtnText}>Navigate</Text>
+              </TouchableOpacity>
               <TouchableOpacity style={[styles.actionBtn, { backgroundColor: BLUE, flex: 1 }]} onPress={openChat}>
                 <MaterialIcons name="chat" size={18} color="#FFF" />
                 <Text style={styles.actionBtnText}>Chat</Text>
@@ -1692,7 +1730,8 @@ const styles = StyleSheet.create({
   destFilterBar: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 16, borderWidth: 1, gap: 12 },
   destText: { flex: 1, fontSize: 14, fontWeight: '700' },
 
-  activeTripActions: { flexDirection: 'row', gap: 8 },
+  activeTripActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  navigateTripBtn: { alignItems: 'center', borderRadius: 12, flexDirection: 'row', gap: 8, justifyContent: 'center', paddingVertical: 12, width: '100%' },
   actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 12 },
   actionBtnText: { color: '#FFF', fontWeight: '800', fontSize: 13 },
   unreadBadge: { position: 'absolute', top: -8, right: -8, width: 20, height: 20, borderRadius: 10, backgroundColor: RED, alignItems: 'center', justifyContent: 'center' },

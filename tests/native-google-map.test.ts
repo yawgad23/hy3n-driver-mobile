@@ -70,13 +70,14 @@ test('Driver navigation never substitutes a fake map location and exposes settin
   assert.match(screen, /hasBootstrapDriverLocation/);
 });
 
-test('Driver navigation exposes a platform maps-app fallback only when in-app routing fails', () => {
-  assert.match(component, /navigationFailed/);
-  assert.match(component, /openMapAppFallback/);
-  assert.match(component, /driverMapAppNavigationUri/);
-  assert.match(component, /driverMapAppWebFallbackUri/);
-  assert.match(component, /driverMapAppNavigationLabel/);
-  assert.match(component, /navigationFailed && hasTarget/);
+test('Driver has an always-available platform maps-app Navigate button during a trip', () => {
+  assert.match(screen, /const openTripNavigation/);
+  assert.match(screen, /tripNavigationDestination\(activeTrip, phase\)/);
+  assert.match(screen, /driverMapAppNavigationUri/);
+  assert.match(screen, /driverMapAppWebFallbackUri/);
+  assert.match(screen, /driverMapAppNavigationLabel/);
+  assert.match(screen, /This is always available during a trip/);
+  assert.match(screen, /<Text style=\{styles\.actionBtnText\}>Navigate<\/Text>/);
 });
 
 test('native build configuration persists the Navigation SDK API key and Android desugaring support', () => {
