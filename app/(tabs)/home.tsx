@@ -58,6 +58,12 @@ import {
   nextDriverOfferCountdown,
 } from '@/lib/driver-offer-lifecycle';
 import { driverTripTerminalStatus } from '@/lib/driver-trip-lifecycle';
+import {
+  googleMapsNavigationFallbackUrl,
+  googleMapsTurnByTurnUri,
+  isTurnByTurnDestination,
+  tripNavigationDestination,
+} from '@/lib/driver-turn-navigation';
 
 const INCOMING_TRIP_ALERT = require('../../assets/audio/incoming-trip-alert.wav');
 const GOLD = '#D4AF37';
@@ -229,6 +235,41 @@ export default function DriverHomeScreen() {
     if (resetPosition && Platform.OS !== 'ios') incomingTripPlayer.seekTo(0).catch(() => {});
   };
 
+  const launchGoogleMapsTurnByTurn = useCallback(async (latitude: number, longitude: number) => {
+    const destination = { latitude, longitude };
+    if (!isTurnByTurnDestination(destination)) {
+      Alert.alert('Navigation unavailable', 'This trip does not have a valid destination yet.');
+      return false;
+    }
+    const androidTurnByTurnUri = googleMapsTurnByTurnUri(destination);
+    const crossPlatformFallbackUrl = googleMapsNavigationFallbackUrl(destination);
+    try {
+      if (Platform.OS === 'android' && androidTurnByTurnUri) {
+        // This opens the installed Google Maps driving UI with its moving map,
+        // live rerouting, and spoken left/right guidance.
+        await Linking.openURL(androidTurnByTurnUri);
+        return true;
+      }
+      if (crossPlatformFallbackUrl) {
+        await Linking.openURL(crossPlatformFallbackUrl);
+        return true;
+      }
+    } catch {
+      // Android devices without the Maps app can still use the universal Maps
+      // URL, which opens Google Maps in the browser or the installed app.
+      try {
+        if (crossPlatformFallbackUrl) {
+          await Linking.openURL(crossPlatformFallbackUrl);
+          return true;
+        }
+      } catch {
+        // The user-facing message below is intentionally concise while driving.
+      }
+    }
+    Alert.alert('Google Maps unavailable', 'Install or enable Google Maps, then tap the navigation button again.');
+    return false;
+  }, []);
+
   // Navigation Switcher Logic
   const openNavigation = (lat: number, lng: number, label: string) => {
     const scheme = Platform.select({ ios: 'maps:0,0?q=', android: 'geo:0,0?q=' });
@@ -242,7 +283,7 @@ export default function DriverHomeScreen() {
       "Navigate with",
       "Choose your preferred navigation app",
       [
-        { text: "Google Maps", onPress: () => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${latLng}`) },
+        { text: "Google Maps voice navigation", onPress: () => { void launchGoogleMapsTurnByTurn(lat, lng); } },
         { text: "Waze", onPress: () => Linking.openURL(`https://waze.com/ul?ll=${latLng}&navigate=yes`) },
         { text: Platform.OS === 'ios' ? "Apple Maps" : "Cancel", onPress: () => url && Linking.openURL(url) },
         { text: "Cancel", style: "cancel" }
@@ -1012,6 +1053,13 @@ export default function DriverHomeScreen() {
       lastTripLocationRef.current = location;
       lastTripMeterPublishedAtRef.current = 0;
       setArrivedAt(null);
+      const dropoff = tripNavigationDestination(updatedRide, 'dropoff');
+      if (dropoff) {
+        // Start the same Google Maps driving experience that supplies the
+        // spoken turn prompts and visual maneuver guidance in leading driver
+        // apps. HY3N remains running underneath for live trip updates.
+        void launchGoogleMapsTurnByTurn(dropoff.latitude, dropoff.longitude);
+      }
     } catch {
       Alert.alert('Error', 'Failed to start trip');
     } finally {
