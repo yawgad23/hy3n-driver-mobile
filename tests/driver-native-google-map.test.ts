@@ -54,3 +54,15 @@ test('the trip screen stays map-first while retaining availability and destinati
   assert.match(driverHomeSource, /BOOKED FARE/);
   assert.doesNotMatch(driverHomeSource, /Active Trip Navigation Card/);
 });
+
+test('the normal online map is quiet until a ride needs the Driver’s attention', () => {
+  assert.doesNotMatch(driverHomeSource, /Earnings trends/);
+  assert.doesNotMatch(driverHomeSource, /styles\.trendsShortcut/);
+  assert.match(driverHomeSource, /Set destination filter/);
+  assert.match(driverHomeSource, /You are Online/);
+  assert.match(driverHomeSource, /Go Offline/);
+  assert.match(driverHomeSource, /triggerSOS/);
+  assert.match(driverHomeSource, /notifications-none/);
+  assert.match(driverHomeSource, /incomingRide && !activeTrip/);
+  assert.match(driverHomeSource, /activeTrip && nextRide/);
+});

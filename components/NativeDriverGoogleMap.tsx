@@ -25,7 +25,6 @@ type Props = {
   heading?: number | null;
   target?: MapTarget | null;
   tripStatus?: 'pickup' | 'dropoff' | null;
-  dark?: boolean;
 };
 
 const GOLD = '#D4AF37';
@@ -35,23 +34,10 @@ const DRIVER_VEHICLE_MARKER_ID = 'hy3n-driver-vehicle';
 // roads, route and traffic, but remove business pins, restaurant/store names,
 // transit badges and parcel labels that compete with driving instructions.
 const CLEAN_DAY_GOOGLE_STYLE = JSON.stringify([
-  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi', elementType: 'all', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', elementType: 'all', stylers: [{ visibility: 'off' }] },
   { featureType: 'administrative.land_parcel', stylers: [{ visibility: 'off' }] },
   { featureType: 'road.local', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-]);
-const CLEAN_NIGHT_GOOGLE_STYLE = JSON.stringify([
-  { elementType: 'geometry', stylers: [{ color: '#1f2933' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#d9e2ec' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#1f2933' }] },
-  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-  { featureType: 'administrative.land_parcel', stylers: [{ visibility: 'off' }] },
-  { featureType: 'road.local', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#39424e' }] },
-  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#222a33' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#5d6876' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#111827' }] },
 ]);
 // These names are installed by plugins/with-google-navigation.js. The Google
 // Navigation SDK requires native asset names here, not a Metro asset URI.
@@ -104,7 +90,7 @@ function readableNavigationFailure(status: NavigationSessionStatus | RouteStatus
  * HY3N while Google supplies the live route, maneuver banner, automatic
  * rerouting, and spoken left/right guidance.
  */
-function DriverNavigationSurface({ latitude, longitude, heading, target, tripStatus, dark = false }: Props) {
+function DriverNavigationSurface({ latitude, longitude, heading, target, tripStatus }: Props) {
   const { navigationController, removeAllListeners, setOnArrival, setOnLocationChanged } = useNavigation();
   const [mapViewController, setMapViewController] = useState<MapViewController | null>(null);
   const [navigationViewController, setNavigationViewController] = useState<NavigationViewController | null>(null);
@@ -147,8 +133,11 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
 
   const followDriver = useCallback(() => {
     if (!navigationViewController) return;
-    void navigationViewController.setFollowingPerspective(CameraPerspective.TILTED).catch(() => {});
-  }, [navigationViewController]);
+    const perspective = hasTarget
+      ? CameraPerspective.TILTED
+      : CameraPerspective.TOP_DOWN_NORTH_UP;
+    void navigationViewController.setFollowingPerspective(perspective).catch(() => {});
+  }, [hasTarget, navigationViewController]);
 
   useEffect(() => {
     setOnArrival(() => {
@@ -274,9 +263,12 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
             bearing: 0,
             tilt: 0,
           }}
-          mapColorScheme={dark ? MapColorScheme.DARK : MapColorScheme.LIGHT}
-          navigationNightMode={dark ? NavigationNightMode.FORCE_NIGHT : NavigationNightMode.FORCE_DAY}
-          mapStyle={dark ? CLEAN_NIGHT_GOOGLE_STYLE : CLEAN_DAY_GOOGLE_STYLE}
+          // Keep the road map light and quiet like the leading Driver apps.
+          // The device theme can still style HY3N's dialogs, but it must not
+          // force a dark, high-density map while the Driver is navigating.
+          mapColorScheme={MapColorScheme.LIGHT}
+          navigationNightMode={NavigationNightMode.FORCE_DAY}
+          mapStyle={CLEAN_DAY_GOOGLE_STYLE}
           // Match the familiar driving-navigation pattern: when a ride has a
           // target, Navigation SDK owns the top maneuver banner and bottom
           // live ETA/distance panel. HY3N keeps this UI off while the Driver
@@ -318,9 +310,9 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
           }}
         />
       ) : (
-        <View style={[styles.locationGate, dark && styles.locationGateDark]}>
-          <Text style={[styles.locationGateTitle, dark && styles.locationGateTextDark]}>Getting your live location</Text>
-          <Text style={[styles.locationGateText, dark && styles.locationGateTextDark]}>HY3N does not use a fallback place for Driver navigation.</Text>
+        <View style={styles.locationGate}>
+          <Text style={styles.locationGateTitle}>Getting your live location</Text>
+          <Text style={styles.locationGateText}>HY3N does not use a fallback place for Driver navigation.</Text>
           <TouchableOpacity onPress={() => Linking.openSettings()} style={styles.settingsButton} accessibilityRole="button">
             <Text style={styles.settingsButtonText}>Check Location Settings</Text>
           </TouchableOpacity>
@@ -328,7 +320,7 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
       )}
 
       {navigationMessage && hasDeviceLocation && (
-        <View style={[styles.navigationMessage, dark && styles.navigationMessageDark]} pointerEvents="box-none">
+        <View style={styles.navigationMessage} pointerEvents="box-none">
           <Text style={styles.navigationMessageText}>{navigationMessage}</Text>
         </View>
       )}
@@ -356,10 +348,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 28,
   },
-  locationGateDark: { backgroundColor: '#111827' },
   locationGateTitle: { color: '#0F172A', fontSize: 19, fontWeight: '900', textAlign: 'center' },
   locationGateText: { color: '#475569', fontSize: 14, lineHeight: 20, marginTop: 8, textAlign: 'center' },
-  locationGateTextDark: { color: '#E2E8F0' },
   settingsButton: { backgroundColor: GREEN, borderRadius: 14, marginTop: 18, paddingHorizontal: 18, paddingVertical: 12 },
   settingsButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },
   navigationMessage: {
@@ -373,6 +363,5 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 24,
   },
-  navigationMessageDark: { backgroundColor: 'rgba(2, 6, 23, 0.96)' },
   navigationMessageText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', lineHeight: 18, textAlign: 'center' },
 });

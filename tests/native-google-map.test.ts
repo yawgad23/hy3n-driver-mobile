@@ -47,10 +47,14 @@ test('Driver active navigation keeps the map clean and does not restart for each
   assert.match(component, /NavigationProvider builds its native controller/);
   assert.match(component, /termsAndConditionsDialogOptions=\{HY3N_NAVIGATION_TERMS_OPTIONS\}/);
   assert.match(component, /CLEAN_DAY_GOOGLE_STYLE/);
-  assert.match(component, /CLEAN_NIGHT_GOOGLE_STYLE/);
   assert.match(component, /featureType: 'poi'/);
   assert.match(component, /featureType: 'transit'/);
-  assert.match(component, /mapStyle=\{dark \? CLEAN_NIGHT_GOOGLE_STYLE : CLEAN_DAY_GOOGLE_STYLE\}/);
+  assert.match(component, /mapColorScheme=\{MapColorScheme\.LIGHT\}/);
+  assert.match(component, /navigationNightMode=\{NavigationNightMode\.FORCE_DAY\}/);
+  assert.match(component, /mapStyle=\{CLEAN_DAY_GOOGLE_STYLE\}/);
+  assert.doesNotMatch(component, /CLEAN_NIGHT_GOOGLE_STYLE/);
+  assert.match(component, /CameraPerspective\.TOP_DOWN_NORTH_UP/);
+  assert.match(component, /CameraPerspective\.TILTED/);
   assert.match(component, /trafficIncidentCardsEnabled=\{false\}/);
   assert.match(component, /reportIncidentButtonEnabled=\{false\}/);
   assert.match(component, /buildingsEnabled=\{false\}/);
@@ -59,7 +63,9 @@ test('Driver active navigation keeps the map clean and does not restart for each
 });
 
 test('Driver active map follows the Driver, re-routes for each pickup or drop-off, and cleans up safely', () => {
-  assert.match(component, /setFollowingPerspective\(CameraPerspective\.TILTED\)/);
+  assert.match(component, /hasTarget\s*\?\s*CameraPerspective\.TILTED/);
+  assert.match(component, /CameraPerspective\.TOP_DOWN_NORTH_UP/);
+  assert.match(component, /setFollowingPerspective\(perspective\)/);
   assert.match(component, /lastTargetKeyRef\.current === targetKey/);
   assert.match(component, /clearDestinations\(\)/);
   assert.match(component, /stopGuidance\(\)/);
