@@ -47,7 +47,7 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    buildNumber: "83",
+    buildNumber: "84",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
@@ -65,9 +65,9 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    // 57010 packages embedded Google Navigation SDK and the iPhone
-    // background-location message repair for existing internal testers.
-    versionCode: 57010,
+    // 57011 packages the embedded Navigation SDK corrections and map-app
+    // chooser for existing Internal testers.
+    versionCode: 57011,
     googleServicesFile: "./firebase/google-services.json",
     permissions: ["POST_NOTIFICATIONS", "ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_LOCATION"],
     // expo-audio merges audio recording/media-service permissions by default.
