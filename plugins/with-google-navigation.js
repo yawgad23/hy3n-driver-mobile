@@ -15,6 +15,15 @@ const DESUGARING_DEPENDENCY = "coreLibraryDesugaring('com.android.tools:desugar_
 const DRIVER_CAR_MARKER_SOURCE = path.join('assets', 'images', 'driver-map-car-marker.png');
 const ANDROID_DRIVER_CAR_MARKER = 'hy3n_driver_car_marker.png';
 const IOS_DRIVER_CAR_MARKER = 'HY3NDriverCarMarker';
+const IOS_NAVIGATION_VIEW_CONTROLLER_SOURCE = path.join(
+  'node_modules',
+  '@googlemaps',
+  'react-native-navigation-sdk',
+  'ios',
+  'react-native-navigation-sdk',
+  'NavViewController.mm',
+);
+const IOS_DISABLE_DEFAULT_LOCATION_INDICATOR_MARKER = 'HY3N_DRIVER_DISABLE_DEFAULT_LOCATION_INDICATOR';
 
 function addAndroidNavigationApiKey(config, androidApiKey) {
   return withAndroidManifest(config, (androidConfig) => {
@@ -139,12 +148,44 @@ function addDriverCarMarkerAssets(config) {
   }]);
 }
 
+/**
+ * Navigation SDK 0.16.3 creates its iOS GMSMapView before React props are
+ * applied. This leaves the SDK's blue location indicator visible beneath the
+ * branded HY3N Driver car in the normal online-map state, even though the
+ * React view passes myLocationEnabled={false}. Apply the native value before
+ * the first frame so the Driver sees one vehicle position only.
+ */
+function disableIosDefaultLocationIndicator(config) {
+  return withDangerousMod(config, ['ios', async (iosConfig) => {
+    const source = path.join(
+      iosConfig.modRequest.projectRoot,
+      IOS_NAVIGATION_VIEW_CONTROLLER_SOURCE,
+    );
+    if (!fs.existsSync(source)) {
+      throw new Error(`Google Navigation iOS source is missing: ${source}`);
+    }
+
+    let contents = fs.readFileSync(source, 'utf8');
+    if (!contents.includes(IOS_DISABLE_DEFAULT_LOCATION_INDICATOR_MARKER)) {
+      const creationLine = '  _mapView = [[GMSMapView alloc] initWithOptions:options];\n';
+      if (!contents.includes(creationLine)) {
+        throw new Error('Unable to disable the iOS Navigation SDK location indicator.');
+      }
+      const replacement = `${creationLine}  // ${IOS_DISABLE_DEFAULT_LOCATION_INDICATOR_MARKER}\n  // HY3N renders its own live, heading-aware vehicle marker instead.\n  _mapView.myLocationEnabled = NO;\n`;
+      contents = contents.replace(creationLine, replacement);
+      fs.writeFileSync(source, contents);
+    }
+    return iosConfig;
+  }]);
+}
+
 function withGoogleNavigation(config, options = {}) {
   config = addDriverCarMarkerAssets(config);
   config = addAndroidNavigationApiKey(config, String(options.androidApiKey || '').trim());
   config = enableAndroidNavigationBuildSupport(config);
   config = addIosNavigationApiKey(config, String(options.iosApiKey || '').trim());
+  config = disableIosDefaultLocationIndicator(config);
   return config;
 }
 
-module.exports = createRunOncePlugin(withGoogleNavigation, PLUGIN_NAME, '1.1.0');
+module.exports = createRunOncePlugin(withGoogleNavigation, PLUGIN_NAME, '1.2.0');
