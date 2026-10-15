@@ -60,6 +60,18 @@ const DRIVER_VEHICLE_MARKER_ASSET = Platform.select({
   ios: 'HY3NDriverCarMarker',
   default: 'hy3n_driver_car_marker.png',
 });
+// NavigationProvider builds its native controller from these options. Keep the
+// object reference stable across live GPS re-renders: a fresh object causes a
+// new controller and can dispose the active native Navigation view on iPhone.
+const HY3N_NAVIGATION_TERMS_OPTIONS = {
+  title: 'HY3N Driver Navigation',
+  companyName: 'HY3N Transport Services',
+  showOnlyDisclaimer: false,
+  uiParams: {
+    acceptButtonTextColor: GREEN,
+    cancelButtonTextColor: '#B91C1C',
+  },
+} as const;
 
 function hasPoint(latitude?: number, longitude?: number) {
   return Number.isFinite(latitude)
@@ -327,15 +339,7 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
 export default function NativeDriverGoogleMap(props: Props) {
   return (
     <NavigationProvider
-      termsAndConditionsDialogOptions={{
-        title: 'HY3N Driver Navigation',
-        companyName: 'HY3N Transport Services',
-        showOnlyDisclaimer: false,
-        uiParams: {
-          acceptButtonTextColor: GREEN,
-          cancelButtonTextColor: '#B91C1C',
-        },
-      }}
+      termsAndConditionsDialogOptions={HY3N_NAVIGATION_TERMS_OPTIONS}
       taskRemovedBehavior={TaskRemovedBehavior.CONTINUE_SERVICE}
     >
       <DriverNavigationSurface {...props} />

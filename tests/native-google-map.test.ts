@@ -41,6 +41,9 @@ test('Driver embedded navigation retains the existing HY3N car marker on both na
 });
 
 test('Driver active navigation keeps the map clean and does not restart for each live-location render', () => {
+  assert.match(component, /const HY3N_NAVIGATION_TERMS_OPTIONS = \{/);
+  assert.match(component, /NavigationProvider builds its native controller/);
+  assert.match(component, /termsAndConditionsDialogOptions=\{HY3N_NAVIGATION_TERMS_OPTIONS\}/);
   assert.match(component, /CLEAN_DAY_GOOGLE_STYLE/);
   assert.match(component, /CLEAN_NIGHT_GOOGLE_STYLE/);
   assert.match(component, /featureType: 'poi'/);
