@@ -1,4 +1,4 @@
-const CRITICAL_DRIVER_PROCEDURES = new Set([
+const CRITICAL_DRIVER_PROCEDURES = [
   'driverTrips.availableOffers',
   'driverTrips.respondToOffer',
   'driverTrips.setAvailability',
@@ -7,12 +7,12 @@ const CRITICAL_DRIVER_PROCEDURES = new Set([
   'driverTrips.verifyAndStart',
   'driverTrips.complete',
   'driverTrips.recordTripLocation',
-]);
+] as const;
 
 /**
  * These operations drive the live trip state and must never wait behind a
  * background History, Finance, or preference query in the tRPC batch queue.
  */
 export function isCriticalDriverProcedure(path: string): boolean {
-  return CRITICAL_DRIVER_PROCEDURES.has(path);
+  return CRITICAL_DRIVER_PROCEDURES.includes(path as typeof CRITICAL_DRIVER_PROCEDURES[number]);
 }

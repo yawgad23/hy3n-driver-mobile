@@ -1,13 +1,22 @@
 type DriverForegroundLocationCleanup = () => void | Promise<void>;
 
 // The Home screen owns foreground GPS subscriptions and heartbeat work, while
-// the auth provider owns Firebase sign-out. Keep a small process-local bridge
-// so foreground work can be stopped before Firebase removes the Driver tree.
-const cleanupCallbacks = new Set<DriverForegroundLocationCleanup>();
+// the auth provider owns Firebase sign-out. Keep a compact copied-array bridge
+// so a React cleanup can unregister safely while a shutdown snapshot runs.
+let cleanupCallbacks: DriverForegroundLocationCleanup[] = [];
 
 export function registerDriverForegroundLocationCleanup(cleanup: DriverForegroundLocationCleanup) {
-  cleanupCallbacks.add(cleanup);
-  return () => cleanupCallbacks.delete(cleanup);
+  cleanupCallbacks = [...cleanupCallbacks, cleanup];
+  let active = true;
+
+  return () => {
+    if (!active) return;
+    active = false;
+    const index = cleanupCallbacks.indexOf(cleanup);
+    if (index >= 0) {
+      cleanupCallbacks = [...cleanupCallbacks.slice(0, index), ...cleanupCallbacks.slice(index + 1)];
+    }
+  };
 }
 
 /**
@@ -16,7 +25,7 @@ export function registerDriverForegroundLocationCleanup(cleanup: DriverForegroun
  * normal React effect cleanup may run afterwards as the tab tree unmounts.
  */
 export async function stopDriverForegroundLocationWork(): Promise<void> {
-  const callbacks = Array.from(cleanupCallbacks);
-  cleanupCallbacks.clear();
+  const callbacks = cleanupCallbacks;
+  cleanupCallbacks = [];
   await Promise.allSettled(callbacks.map((cleanup) => Promise.resolve().then(cleanup)));
 }

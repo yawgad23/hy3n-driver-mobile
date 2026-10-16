@@ -10,7 +10,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Notifications from 'expo-notifications';
-import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { trpc } from '@/lib/trpc';
@@ -52,10 +51,6 @@ import {
   hasUsableDriverLocation,
   shouldReplaceDriverLocation,
 } from '@/lib/driver-location-readiness';
-import {
-  INCOMING_TRIP_ALERT_PLAYBACK,
-  shouldPlayIncomingTripAlert,
-} from '@/lib/incoming-trip-alert';
 import { deliveryContactForDriver, isDeliveryRide } from '@/lib/delivery-contact';
 import {
   DRIVER_ACCEPT_RECONCILIATION_DELAYS_MS,
@@ -64,6 +59,7 @@ import {
   driverOfferAcceptedByServer,
   nextDriverOfferCountdown,
 } from '@/lib/driver-offer-lifecycle';
+import { createSingleFlightDriverOfferRefresher } from '@/lib/driver-offer-refresh';
 import { driverTripTerminalStatus } from '@/lib/driver-trip-lifecycle';
 import { activeTripDetails } from '@/lib/driver-active-trip-details';
 import { tripNavigationDestination } from '@/lib/driver-turn-navigation';
@@ -75,7 +71,6 @@ import {
   type DriverNavigationPlatform,
 } from '@/lib/driver-navigation-fallback';
 
-const INCOMING_TRIP_ALERT = require('../../assets/audio/incoming-trip-alert.wav');
 const GOLD = '#D4AF37';
 const GREEN = '#22C55E';
 const RED = '#EF4444';
@@ -93,7 +88,7 @@ const { height } = Dimensions.get('window');
 
 // These service cues describe the category the Rider actually booked. They
 // do not change matching, fare, or eligibility; those remain server-owned.
-const AC_INCLUDED_CATEGORIES = new Set(['comfort', 'kantanka', 'executive']);
+const AC_INCLUDED_CATEGORIES = ['comfort', 'kantanka', 'executive'];
 
 function rideCategoryName(category: unknown) {
   const id = String(category || '').trim().toLowerCase();
@@ -102,7 +97,7 @@ function rideCategoryName(category: unknown) {
 }
 
 function hasIncludedAirConditioning(category: unknown) {
-  return AC_INCLUDED_CATEGORIES.has(String(category || '').trim().toLowerCase());
+  return AC_INCLUDED_CATEGORIES.includes(String(category || '').trim().toLowerCase());
 }
 
 function airConditioningReminder(category: unknown, phase: 'pickup' | 'trip') {
@@ -121,10 +116,6 @@ export default function DriverHomeScreen() {
 
   const { user, driverProfile } = useDriverAuth();
   const { prefs, toggle: togglePref, setPrefs } = useDriverPreferences();
-  const incomingTripPlayer = useAudioPlayer(INCOMING_TRIP_ALERT, {
-    downloadFirst: true,
-    keepAudioSessionActive: true,
-  });
   const setAvailability = trpc.driverOperations.setAvailability.useMutation();
   const respondToOffer = trpc.driverTrips.respondToOffer.useMutation();
   const arriveAtPickup = trpc.driverTrips.arrive.useMutation();
@@ -178,9 +169,7 @@ export default function DriverHomeScreen() {
   const lastSpeedRef = useRef<number | null>(null);
   const lastSafetyEventAtRef = useRef(0);
   const offerSwipeX = useRef(new Animated.Value(0)).current;
-  const incomingAlertRunRef = useRef(0);
-  const playedOfferAlertIdsRef = useRef<Set<string>>(new Set());
-  const seenChatMessageIdsRef = useRef<Set<string> | null>(null);
+  const offerRefresherRef = useRef(createSingleFlightDriverOfferRefresher());
   const tripActionInFlightRef = useRef(false);
   const ratingSubmitInFlightRef = useRef(false);
   const backgroundLocationDisclosureDecisionRef = useRef<DriverBackgroundLocationDisclosureDecision>('unseen');
@@ -208,18 +197,10 @@ export default function DriverHomeScreen() {
     return true;
   }, []);
 
-  const stopIncomingTripAlert = (resetPosition = true, skipNativeCommand = false) => {
-    // Invalidate any pending seek/play chain before pausing. Without this,
-    // an async seek can finish after acceptance and restart the alert.
-    incomingAlertRunRef.current += 1;
-    // `useAudioPlayer` releases its native SharedObject when this screen
-    // unmounts. Do not issue a pause/seek after that release has started: on
-    // iOS this turns the released native-object error into a Hermes crash.
-    if (skipNativeCommand) return;
-    incomingTripPlayer.pause();
-    // Expo SDK 54's iOS AudioPlayer seek path has a native AVPlayer lifetime
-    // race. The looped alert does not need a seek on iOS; pause/play is enough.
-    if (resetPosition && Platform.OS !== 'ios') incomingTripPlayer.seekTo(0).catch(() => {});
+  const stopIncomingTripAlert = () => {
+    // The protected server push is the one incoming-offer alert on iPhone.
+    // Do not create, pause, or release an extra Expo Audio player while the
+    // offer card is mounting in this Hermes/React Native runtime.
   };
 
   // The previous demand-zone circles obscured the map and were not real cars.
@@ -252,9 +233,9 @@ export default function DriverHomeScreen() {
     { driverId: user?.uid || '' },
     {
       enabled: Boolean(user?.uid && isOnline && hasCurrentLocation),
-      refetchInterval: DRIVER_OFFER_POLL_INTERVAL_MS,
+      refetchInterval: false,
       refetchOnMount: 'always',
-      refetchOnWindowFocus: true,
+      refetchOnWindowFocus: false,
     },
   );
 
@@ -278,8 +259,18 @@ export default function DriverHomeScreen() {
   };
   const refreshAvailableOffers = useCallback(() => {
     const inputs = offerRefreshInputsRef.current;
-    if (inputs.authenticated && inputs.online && inputs.hasCurrentLocation) void inputs.refetch();
+    if (inputs.authenticated && inputs.online && inputs.hasCurrentLocation) {
+      offerRefresherRef.current.refresh(inputs.refetch);
+      return;
+    }
+    offerRefresherRef.current.clearPending();
   }, []);
+
+  useEffect(() => {
+    if (!user?.uid || !isOnline || !hasCurrentLocation) return;
+    const interval = setInterval(refreshAvailableOffers, DRIVER_OFFER_POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [hasCurrentLocation, isOnline, refreshAvailableOffers, user?.uid]);
 
   useEffect(() => subscribeDriverRideOffer(refreshAvailableOffers), [refreshAvailableOffers]);
 
@@ -373,58 +364,6 @@ export default function DriverHomeScreen() {
       pulseAnim.setValue(1);
     }
   }, [isOnline]);
-
-  // Incoming-ride alert: retain HY3N's existing local tone, but play it once
-  // per outstanding offer rather than repeating it until the offer ends.
-  useEffect(() => {
-    setAudioModeAsync({
-      playsInSilentMode: true,
-      interruptionMode: 'duckOthers',
-      allowsRecording: false,
-      shouldPlayInBackground: false,
-      shouldRouteThroughEarpiece: false,
-    }).catch(() => {});
-
-    return () => {
-      stopIncomingTripAlert(false, true);
-    };
-  }, [incomingTripPlayer]);
-
-  useEffect(() => {
-    const shouldAlert = shouldPlayIncomingTripAlert({
-      isOnline,
-      incomingRideId: incomingRide?.id,
-      activeTripId: activeTrip?.id,
-      soundAlerts: prefs.soundAlerts,
-    });
-    if (!shouldAlert) {
-      stopIncomingTripAlert();
-      return;
-    }
-
-    // A polling refetch, foreground offer push, and Firestore reconciliation
-    // can all deliver the same offer while it is pending. The branded sound
-    // must run once for that ride ID, never once per refresh.
-    const offerId = String(incomingRide?.id || '');
-    if (!offerId || playedOfferAlertIdsRef.current.has(offerId)) return;
-    if (playedOfferAlertIdsRef.current.size >= 100) playedOfferAlertIdsRef.current.clear();
-    playedOfferAlertIdsRef.current.add(offerId);
-
-    const alertRun = ++incomingAlertRunRef.current;
-    incomingTripPlayer.loop = INCOMING_TRIP_ALERT_PLAYBACK.loop;
-    incomingTripPlayer.volume = INCOMING_TRIP_ALERT_PLAYBACK.volume;
-    if (Platform.OS === 'ios') {
-      incomingTripPlayer.play();
-    } else {
-      incomingTripPlayer.seekTo(0).then(() => {
-        if (incomingAlertRunRef.current === alertRun) incomingTripPlayer.play();
-      }).catch(() => {});
-    }
-
-    return () => {
-      if (incomingAlertRunRef.current === alertRun) stopIncomingTripAlert(true, true);
-    };
-  }, [incomingRide?.id, activeTrip?.id, isOnline, prefs.soundAlerts, incomingTripPlayer]);
 
   // Waiting time counter
   useEffect(() => {
@@ -698,11 +637,8 @@ export default function DriverHomeScreen() {
   useEffect(() => {
     if (!activeTrip?.id || !user?.uid) {
       setUnreadCount(0);
-      seenChatMessageIdsRef.current = null;
       return;
     }
-
-    seenChatMessageIdsRef.current = null;
 
     // firestoreDB.subscribe returns message documents, not Firestore
     // document-change objects. Count unread rider messages so the in-app
@@ -719,7 +655,6 @@ export default function DriverHomeScreen() {
         // The backend Firestore trigger now sends one remote notification to
         // every registered Driver device. A local scheduled alert here would
         // duplicate that notification while the app is foregrounded.
-        seenChatMessageIdsRef.current = new Set(messages.map((message) => String(message.id)));
         const unread = messages.filter((message) =>
           message.sender_id !== user.uid &&
           message.sender_role === 'rider' &&

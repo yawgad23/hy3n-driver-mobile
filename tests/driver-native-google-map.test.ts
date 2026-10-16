@@ -18,11 +18,13 @@ test('Driver native navigation keeps route, traffic, voice, and branded map cont
   assert.match(nativeMapSource, /mapViewController\.addPolyline/);
 });
 
-test('Driver Home retains one branded request sound per ride ID', () => {
-  assert.match(driverHomeSource, /const playedOfferAlertIdsRef = useRef<Set<string>>\(new Set\(\)\)/);
-  assert.match(driverHomeSource, /playedOfferAlertIdsRef\.current\.has\(offerId\)/);
-  assert.match(driverHomeSource, /playedOfferAlertIdsRef\.current\.add\(offerId\)/);
-  assert.doesNotMatch(driverHomeSource, /const notifiedOfferIds = useRef/);
+test('Driver Home uses one server push alert and serializes incoming-offer refreshes', () => {
+  assert.match(driverHomeSource, /createSingleFlightDriverOfferRefresher/);
+  assert.match(driverHomeSource, /offerRefresherRef\.current\.refresh\(inputs\.refetch\)/);
+  assert.match(driverHomeSource, /refetchInterval: false/);
+  assert.match(driverHomeSource, /const interval = setInterval\(refreshAvailableOffers, DRIVER_OFFER_POLL_INTERVAL_MS\)/);
+  assert.doesNotMatch(driverHomeSource, /useAudioPlayer/);
+  assert.doesNotMatch(driverHomeSource, /new Set/);
 });
 
 test('Driver Home shows a prominent Android location disclosure before requesting background tracking', () => {
