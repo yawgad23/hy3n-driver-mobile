@@ -193,12 +193,26 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
     return clearVehicleMotion;
   }, [applyVehiclePosition, clearVehicleMotion, hasDeviceLocation, hasTarget, heading, latitude, longitude, mapViewController]);
 
-  const clearRoute = useCallback(() => {
+  const clearRouteLines = useCallback(async () => {
     if (!mapViewController) return;
-    mapViewController.removePolyline(DRIVER_ROUTE_OUTLINE_ID);
-    mapViewController.removePolyline(DRIVER_ROUTE_ID);
-    mapViewController.removeMarker(DRIVER_TARGET_MARKER_ID);
+
+    // Unlike the native navigation engine, these two branded polylines are
+    // HY3N-owned overlays. Remove them as one awaited operation before drawing
+    // replacement geometry, otherwise an off-route Driver can see the road
+    // they have already left until the map's asynchronous bridge catches up.
+    await Promise.allSettled([
+      Promise.resolve(mapViewController.removePolyline(DRIVER_ROUTE_OUTLINE_ID)),
+      Promise.resolve(mapViewController.removePolyline(DRIVER_ROUTE_ID)),
+    ]);
   }, [mapViewController]);
+
+  const clearRoute = useCallback(async () => {
+    await clearRouteLines();
+    if (!mapViewController) return;
+    await Promise.allSettled([
+      Promise.resolve(mapViewController.removeMarker(DRIVER_TARGET_MARKER_ID)),
+    ]);
+  }, [clearRouteLines, mapViewController]);
 
   const drawNavigationRoute = useCallback(async () => {
     if (!mapViewController || !hasTarget) return false;
@@ -206,6 +220,7 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
       const segments = await navigationController.getRouteSegments();
       const points = routePointsForMap(segments);
       if (points.length < 2) return false;
+
       await mapViewController.addPolyline({
         id: DRIVER_ROUTE_OUTLINE_ID,
         points,
@@ -250,26 +265,42 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
 
     const redraw = (attempt: number) => {
       if (routeRefreshRunRef.current !== run) return;
-      void drawNavigationRoute().finally(() => {
+
+      const drawReplacement = () => {
         if (routeRefreshRunRef.current !== run) return;
-        const nextDelay = DRIVER_REROUTE_ROUTE_REDRAW_DELAYS_MS[attempt + 1];
-        if (nextDelay !== undefined) {
-          routeRefreshTimerRef.current = setTimeout(() => redraw(attempt + 1), nextDelay);
-          return;
-        }
-        routeRefreshTimerRef.current = null;
-        if (offRoute) {
-          rerouteMessageTimerRef.current = setTimeout(() => {
-            if (routeRefreshRunRef.current === run) {
-              setNavigationMessage((message) => message === 'Re-routing from your current road…' ? null : message);
-            }
-          }, 900);
-        }
-      });
+        void drawNavigationRoute().finally(() => {
+          if (routeRefreshRunRef.current !== run) return;
+          const nextDelay = DRIVER_REROUTE_ROUTE_REDRAW_DELAYS_MS[attempt + 1];
+          if (nextDelay !== undefined) {
+            routeRefreshTimerRef.current = setTimeout(() => redraw(attempt + 1), nextDelay);
+            return;
+          }
+          routeRefreshTimerRef.current = null;
+          if (offRoute) {
+            rerouteMessageTimerRef.current = setTimeout(() => {
+              if (routeRefreshRunRef.current === run) {
+                setNavigationMessage((message) => message === 'Re-routing from your current road…' ? null : message);
+              }
+            }, 900);
+          }
+        });
+      };
+
+      // On iOS the bridge reliably forwards route-changed, but does not
+      // currently forward a separate off-route-requested callback. Clear the
+      // old HY3N line before the first geometry read, then redraw from the new
+      // route. This removes the green road already passed even if the native
+      // SDK needs a moment before its replacement geometry becomes readable.
+      if (attempt === 0) {
+        void clearRouteLines().finally(drawReplacement);
+        return;
+      }
+
+      drawReplacement();
     };
 
     redraw(0);
-  }, [clearRouteRefresh, drawNavigationRoute]);
+  }, [clearRouteLines, clearRouteRefresh, drawNavigationRoute]);
 
   useEffect(() => {
     setOnArrival(() => {

@@ -66,6 +66,11 @@ test('Driver active map re-routes for each pickup or drop-off and cleans up safe
   assert.match(component, /setOnReroutingRequestedByOffRoute/);
   assert.match(component, /Re-routing from your current road/);
   assert.match(component, /refreshBrandedRouteAfterNativeChange/);
+  assert.match(component, /const clearRouteLines = useCallback\(async/);
+  assert.match(component, /Promise\.allSettled\(\[/);
+  assert.match(component, /await clearRouteLines\(\)/);
+  assert.match(component, /clearRouteLines\(\)\.finally\(drawReplacement\)/);
+  assert.match(component, /if \(attempt === 0\)/);
   assert.match(component, /clearDestinations\(\)/);
   assert.match(component, /stopGuidance\(\)/);
   assert.match(component, /navigationController\.cleanup\(\)/);
