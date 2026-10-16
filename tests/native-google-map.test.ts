@@ -26,11 +26,16 @@ test('Driver active map uses embedded Google Navigation instead of leaving HY3N'
 
 test('Driver embedded navigation retains the existing HY3N car marker on both native maps', () => {
   assert.match(component, /DRIVER_VEHICLE_MARKER_ID = 'hy3n-driver-vehicle'/);
-  assert.match(component, /Show one Driver position only/);
+  assert.match(component, /regular Google map rather/);
+  assert.match(component, /one heading-aware HY3N car/);
   assert.match(component, /mapViewController\.addMarker/);
   assert.match(component, /imgPath: DRIVER_VEHICLE_MARKER_ASSET/);
   assert.match(component, /rotation: Number\(heading\) \|\| 0/);
   assert.match(component, /flat: true/);
+  assert.match(component, /if \(!mapViewController \|\| !hasDeviceLocation \|\| hasTarget\) return/);
+  assert.match(component, /<MapView/);
+  assert.match(component, /hasDeviceLocation && hasTarget \? \(/);
+  assert.match(component, /: hasDeviceLocation \? \(/);
   assert.match(component, /onMapViewControllerCreated=\{setMapViewController\}/);
   assert.match(component, /removeMarker\(DRIVER_VEHICLE_MARKER_ID\)/);
   assert.match(component, /myLocationEnabled=\{false\}/);
@@ -55,6 +60,8 @@ test('Driver active navigation keeps the map clean and does not restart for each
   assert.doesNotMatch(component, /CLEAN_NIGHT_GOOGLE_STYLE/);
   assert.match(component, /CameraPerspective\.TOP_DOWN_NORTH_UP/);
   assert.match(component, /CameraPerspective\.TILTED/);
+  assert.match(component, /NavigationView is reserved for an accepted trip/);
+  assert.match(component, /The online map deliberately has no Navigation SDK guidance UI/);
   assert.match(component, /trafficIncidentCardsEnabled=\{false\}/);
   assert.match(component, /reportIncidentButtonEnabled=\{false\}/);
   assert.match(component, /buildingsEnabled=\{false\}/);

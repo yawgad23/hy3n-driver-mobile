@@ -4,6 +4,7 @@ import {
   AudioGuidance,
   CameraPerspective,
   MapColorScheme,
+  MapView,
   NavigationNightMode,
   NavigationProvider,
   NavigationSessionStatus,
@@ -103,15 +104,18 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
   const targetLongitude = Number(target?.longitude);
   const targetLabel = target?.label?.trim() || (tripStatus === 'dropoff' ? 'Drop-off' : 'Pickup');
   const hasTarget = hasPoint(targetLatitude, targetLongitude);
+  const mapMode = hasTarget ? 'navigation' : 'online';
   const targetKey = hasTarget
     ? `${tripStatus || 'target'}:${targetLatitude.toFixed(6)}:${targetLongitude.toFixed(6)}:${targetLabel}`
     : null;
 
-  // Show one Driver position only: the existing HY3N car image. The Navigation
-  // SDK's default blue location arrow/puck is disabled below so it cannot sit
-  // underneath or beside the branded, heading-aware vehicle marker.
+  // The normal online screen deliberately uses a regular Google map rather
+  // than a NavigationView. This keeps it as simple as the Driver reference:
+  // one heading-aware HY3N car, not the Navigation SDK's blue guidance arrow.
+  // NavigationView is reserved for an accepted trip, where Google owns the
+  // route, turn banner, live ETA and spoken guidance.
   useEffect(() => {
-    if (!mapViewController || !hasDeviceLocation) return;
+    if (!mapViewController || !hasDeviceLocation || hasTarget) return;
     void mapViewController.addMarker({
       id: DRIVER_VEHICLE_MARKER_ID,
       position: { lat: Number(latitude), lng: Number(longitude) },
@@ -125,11 +129,15 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
       // Guidance remains usable if the optional branded marker cannot load.
       // Native-project validation verifies the asset on both platforms.
     });
-  }, [hasDeviceLocation, heading, latitude, longitude, mapViewController]);
+  }, [hasDeviceLocation, hasTarget, heading, latitude, longitude, mapViewController]);
 
   useEffect(() => () => {
     mapViewController?.removeMarker(DRIVER_VEHICLE_MARKER_ID);
   }, [mapViewController]);
+
+  useEffect(() => {
+    if (hasTarget) mapViewController?.removeMarker(DRIVER_VEHICLE_MARKER_ID);
+  }, [hasTarget, mapViewController]);
 
   const followDriver = useCallback(() => {
     if (!navigationViewController) return;
@@ -254,8 +262,9 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
 
   return (
     <View style={styles.container}>
-      {hasDeviceLocation ? (
+      {hasDeviceLocation && hasTarget ? (
         <NavigationView
+          key={mapMode}
           style={StyleSheet.absoluteFill}
           initialCameraPosition={{
             target: { lat: Number(latitude), lng: Number(longitude) },
@@ -308,6 +317,31 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
             navigationHeaderPrimaryBackgroundColorNightMode: '#111111',
             navigationHeaderSecondaryBackgroundColorNightMode: '#1D2939',
           }}
+        />
+      ) : hasDeviceLocation ? (
+        <MapView
+          key={mapMode}
+          style={StyleSheet.absoluteFill}
+          initialCameraPosition={{
+            target: { lat: Number(latitude), lng: Number(longitude) },
+            zoom: 16,
+            bearing: Number(heading) || 0,
+            tilt: 0,
+          }}
+          // The online map deliberately has no Navigation SDK guidance UI and
+          // no Google current-location layer. The custom HY3N car marker above
+          // is therefore the only moving Driver position on screen.
+          mapColorScheme={MapColorScheme.LIGHT}
+          mapStyle={CLEAN_DAY_GOOGLE_STYLE}
+          trafficEnabled
+          myLocationEnabled={false}
+          myLocationButtonEnabled={false}
+          compassEnabled
+          indoorEnabled={false}
+          indoorLevelPickerEnabled={false}
+          buildingsEnabled={false}
+          mapToolbarEnabled={false}
+          onMapViewControllerCreated={setMapViewController}
         />
       ) : (
         <View style={styles.locationGate}>
