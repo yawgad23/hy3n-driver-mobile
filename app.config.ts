@@ -54,10 +54,10 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 86 delivers the simplified light Driver map, single branded vehicle
-    // marker, and native navigation safety corrections to TestFlight internal
-    // testers. Android remains at its published 57011.
-    buildNumber: "86",
+    // Build 87 delivers the locally validated map separation, compact external
+    // navigation chooser, removed progress rail, and system-theme map behavior
+    // to TestFlight internal testers. Android remains at its published 57011.
+    buildNumber: "87",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
