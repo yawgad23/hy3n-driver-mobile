@@ -1280,6 +1280,7 @@ export default function DriverHomeScreen() {
           latitude={location?.coords.latitude}
           longitude={location?.coords.longitude}
           locationTimestamp={location?.timestamp ?? null}
+          locationAccuracy={location?.coords.accuracy ?? null}
           heading={location?.coords.heading}
           target={activeNavigationTarget}
           tripStatus={activeTrip ? (activeTrip.status === 'in_progress' ? 'dropoff' : 'pickup') : null}

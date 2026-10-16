@@ -61,6 +61,9 @@ test('Driver active navigation keeps the map clean and stable during live moveme
 test('Driver active map re-routes for each pickup or drop-off and cleans up safely', () => {
   assert.match(component, /driverMapMotionFrames/);
   assert.match(component, /DRIVER_REROUTE_ROUTE_REDRAW_DELAYS_MS/);
+  assert.match(component, /assessDriverOffRoute/);
+  assert.match(component, /routePointsRef/);
+  assert.match(component, /forcedRerouteInFlightRef/);
   assert.match(component, /mapViewController\.moveCamera/);
   assert.match(component, /lastTargetKeyRef\.current === targetKey/);
   assert.match(component, /setOnReroutingRequestedByOffRoute/);
@@ -74,6 +77,7 @@ test('Driver active map re-routes for each pickup or drop-off and cleans up safe
   assert.match(component, /clearDestinations\(\)/);
   assert.match(component, /stopGuidance\(\)/);
   assert.match(component, /navigationController\.cleanup\(\)/);
+  assert.match(screen, /locationAccuracy=\{location\?\.coords\.accuracy \?\? null\}/);
   assert.match(screen, /DRIVER_ACCEPT_RECONCILIATION_DELAYS_MS/);
   assert.match(screen, /firestoreDB\.get\(COLLECTIONS\.RIDES, rideId\)/);
   assert.match(screen, /driverOfferAcceptedByServer/);

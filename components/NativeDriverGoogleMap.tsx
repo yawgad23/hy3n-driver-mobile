@@ -18,12 +18,18 @@ import {
   routePointsForMap,
   type DriverMapPosition,
 } from '@/lib/driver-map-motion';
+import {
+  assessDriverOffRoute,
+  EMPTY_DRIVER_OFF_ROUTE_MONITOR,
+  type DriverRoutePoint,
+} from '@/lib/driver-off-route-reroute';
 
 type MapTarget = { latitude: number; longitude: number; label: string };
 type Props = {
   latitude?: number;
   longitude?: number;
   locationTimestamp?: number | null;
+  locationAccuracy?: number | null;
   heading?: number | null;
   target?: MapTarget | null;
   tripStatus?: 'pickup' | 'dropoff' | null;
@@ -95,7 +101,15 @@ function readableNavigationFailure(status: NavigationSessionStatus | RouteStatus
  * vehicle marker, map camera, and route line. This deliberately avoids the
  * NavigationView blue current-location arrow after a ride is accepted.
  */
-function DriverNavigationSurface({ latitude, longitude, heading, target, tripStatus }: Props) {
+function DriverNavigationSurface({
+  latitude,
+  longitude,
+  locationTimestamp,
+  locationAccuracy,
+  heading,
+  target,
+  tripStatus,
+}: Props) {
   const {
     navigationController,
     removeAllListeners,
@@ -114,6 +128,9 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
   const routeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const routeRefreshRunRef = useRef(0);
   const rerouteMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const routePointsRef = useRef<DriverRoutePoint[]>([]);
+  const offRouteMonitorRef = useRef(EMPTY_DRIVER_OFF_ROUTE_MONITOR);
+  const forcedRerouteInFlightRef = useRef(false);
   const hasDeviceLocation = hasPoint(latitude, longitude);
   const targetLatitude = Number(target?.latitude);
   const targetLongitude = Number(target?.longitude);
@@ -204,6 +221,7 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
       Promise.resolve(mapViewController.removePolyline(DRIVER_ROUTE_OUTLINE_ID)),
       Promise.resolve(mapViewController.removePolyline(DRIVER_ROUTE_ID)),
     ]);
+    routePointsRef.current = [];
   }, [mapViewController]);
 
   const clearRoute = useCallback(async () => {
@@ -220,6 +238,9 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
       const segments = await navigationController.getRouteSegments();
       const points = routePointsForMap(segments);
       if (points.length < 2) return false;
+
+      routePointsRef.current = points;
+      offRouteMonitorRef.current = EMPTY_DRIVER_OFF_ROUTE_MONITOR;
 
       await mapViewController.addPolyline({
         id: DRIVER_ROUTE_OUTLINE_ID,
@@ -302,6 +323,65 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
     redraw(0);
   }, [clearRouteLines, clearRouteRefresh, drawNavigationRoute]);
 
+  /**
+   * The iOS bridge forwards route-change events, but a real road test showed
+   * that it can miss the separate off-route request. Protect Drivers from a
+   * frozen line by checking their actual navigation-grade GPS point against
+   * the route we drew. Two distinct off-route samples are required before this
+   * asks Google to calculate a replacement to the unchanged destination.
+   */
+  const requestGpsFallbackReroute = useCallback(() => {
+    if (
+      forcedRerouteInFlightRef.current
+      || !initializedRef.current
+      || !hasTarget
+      || !targetKey
+      || lastTargetKeyRef.current !== targetKey
+    ) return;
+
+    forcedRerouteInFlightRef.current = true;
+    setNavigationMessage('Re-routing from your current road…');
+    void (async () => {
+      try {
+        // Keep the destination server-owned. This only asks Google Navigation
+        // to replace its route from the Driver's verified current GPS position.
+        const routeStatus = await navigationController.setDestination(
+          {
+            title: targetLabel,
+            position: { lat: targetLatitude, lng: targetLongitude },
+            preferSameSideOfRoad: true,
+          },
+          {
+            routingOptions: { travelMode: TravelMode.DRIVING },
+            displayOptions: {
+              showDestinationMarkers: false,
+              showStopSigns: true,
+              showTrafficLights: true,
+            },
+          },
+        );
+        if (routeStatus !== RouteStatus.OK) {
+          setNavigationMessage(readableNavigationFailure(routeStatus));
+          return;
+        }
+        await navigationController.startGuidance();
+        refreshBrandedRouteAfterNativeChange(true);
+      } catch {
+        setNavigationMessage('Navigation could not re-route. Please check location and connection.');
+      } finally {
+        forcedRerouteInFlightRef.current = false;
+      }
+    })();
+  }, [
+    hasTarget,
+    navigationController,
+    refreshBrandedRouteAfterNativeChange,
+    targetKey,
+    targetLabel,
+    targetLatitude,
+    targetLongitude,
+  ]);
+
   useEffect(() => {
     setOnArrival(() => {
       setNavigationMessage('You have reached this stop. Confirm your HY3N trip action below.');
@@ -314,10 +394,50 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
     };
   }, [clearRouteRefresh, refreshBrandedRouteAfterNativeChange, removeAllListeners, setOnArrival, setOnRouteChanged, setOnReroutingRequestedByOffRoute]);
 
+  useEffect(() => {
+    if (
+      !hasDeviceLocation
+      || !hasTarget
+      || !targetKey
+      || !initializedRef.current
+      || lastTargetKeyRef.current !== targetKey
+      || routePointsRef.current.length < 2
+    ) return;
+
+    const sampleKey = Number.isFinite(Number(locationTimestamp))
+      ? `timestamp:${Number(locationTimestamp)}`
+      : `coordinate:${Number(latitude).toFixed(6)}:${Number(longitude).toFixed(6)}`;
+    const assessment = assessDriverOffRoute(
+      offRouteMonitorRef.current,
+      {
+        latitude: Number(latitude),
+        longitude: Number(longitude),
+        accuracyMeters: locationAccuracy,
+      },
+      routePointsRef.current,
+      sampleKey,
+      Date.now(),
+    );
+    offRouteMonitorRef.current = assessment.next;
+    if (assessment.shouldReroute) requestGpsFallbackReroute();
+  }, [
+    hasDeviceLocation,
+    hasTarget,
+    latitude,
+    locationAccuracy,
+    locationTimestamp,
+    longitude,
+    requestGpsFallbackReroute,
+    targetKey,
+  ]);
+
   useEffect(() => () => {
     clearVehicleMotion();
     clearRouteRefresh();
     navigationRequestRef.current += 1;
+    routePointsRef.current = [];
+    offRouteMonitorRef.current = EMPTY_DRIVER_OFF_ROUTE_MONITOR;
+    forcedRerouteInFlightRef.current = false;
     if (initializedRef.current) void navigationController.cleanup().catch(() => {});
   }, [clearRouteRefresh, clearVehicleMotion, navigationController]);
 
@@ -326,6 +446,8 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
 
     if (!hasTarget || !targetKey) {
       lastTargetKeyRef.current = null;
+      routePointsRef.current = [];
+      offRouteMonitorRef.current = EMPTY_DRIVER_OFF_ROUTE_MONITOR;
       clearRouteRefresh();
       clearRoute();
       if (initializedRef.current) {
