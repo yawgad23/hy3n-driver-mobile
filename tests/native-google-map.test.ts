@@ -45,6 +45,9 @@ test('Driver embedded navigation retains the existing HY3N car marker on both na
   assert.match(configPlugin, /\$\{IOS_DRIVER_CAR_MARKER\}\.imageset/);
   assert.match(configPlugin, /HY3N_DRIVER_DISABLE_DEFAULT_LOCATION_INDICATOR/);
   assert.match(configPlugin, /_mapView\.myLocationEnabled = NO/);
+  assert.match(configPlugin, /HY3N_DRIVER_DISABLE_NAVIGATION_LOCATION_INDICATOR/);
+  assert.match(configPlugin, /Navigation SDK can restore the blue current-location arrow while attaching/);
+  assert.match(configPlugin, /Unable to suppress the iOS Navigation SDK location indicator after session attachment/);
 });
 
 test('Driver active navigation keeps the map clean, follows the system theme, and does not restart for each live-location render', () => {

@@ -24,6 +24,7 @@ const IOS_NAVIGATION_VIEW_CONTROLLER_SOURCE = path.join(
   'NavViewController.mm',
 );
 const IOS_DISABLE_DEFAULT_LOCATION_INDICATOR_MARKER = 'HY3N_DRIVER_DISABLE_DEFAULT_LOCATION_INDICATOR';
+const IOS_DISABLE_NAVIGATION_LOCATION_INDICATOR_MARKER = 'HY3N_DRIVER_DISABLE_NAVIGATION_LOCATION_INDICATOR';
 
 function addAndroidNavigationApiKey(config, androidApiKey) {
   return withAndroidManifest(config, (androidConfig) => {
@@ -149,11 +150,10 @@ function addDriverCarMarkerAssets(config) {
 }
 
 /**
- * Navigation SDK 0.16.3 creates its iOS GMSMapView before React props are
- * applied. This leaves the SDK's blue location indicator visible beneath the
- * branded HY3N Driver car in the normal online-map state, even though the
- * React view passes myLocationEnabled={false}. Apply the native value before
- * the first frame so the Driver sees one vehicle position only.
+ * Navigation SDK creates its iOS GMSMapView before React props are applied and
+ * can re-enable its current-location indicator when a navigation session is
+ * attached. Apply the native value at both lifecycle points so the branded
+ * HY3N Driver car is the sole live-vehicle marker.
  */
 function disableIosDefaultLocationIndicator(config) {
   return withDangerousMod(config, ['ios', async (iosConfig) => {
@@ -173,8 +173,18 @@ function disableIosDefaultLocationIndicator(config) {
       }
       const replacement = `${creationLine}  // ${IOS_DISABLE_DEFAULT_LOCATION_INDICATOR_MARKER}\n  // HY3N renders its own live, heading-aware vehicle marker instead.\n  _mapView.myLocationEnabled = NO;\n`;
       contents = contents.replace(creationLine, replacement);
-      fs.writeFileSync(source, contents);
     }
+
+    if (!contents.includes(IOS_DISABLE_NAVIGATION_LOCATION_INDICATOR_MARKER)) {
+      const attachmentLine = '  if (result) {\n    _isSessionAttached = YES;\n';
+      if (!contents.includes(attachmentLine)) {
+        throw new Error('Unable to suppress the iOS Navigation SDK location indicator after session attachment.');
+      }
+      const replacement = `  if (result) {\n    // ${IOS_DISABLE_NAVIGATION_LOCATION_INDICATOR_MARKER}\n    // Navigation SDK can restore the blue current-location arrow while attaching.\n    // Keep the native location service active for guidance but hide its visual indicator.\n    _mapView.myLocationEnabled = NO;\n    _isSessionAttached = YES;\n`;
+      contents = contents.replace(attachmentLine, replacement);
+    }
+
+    fs.writeFileSync(source, contents);
     return iosConfig;
   }]);
 }
