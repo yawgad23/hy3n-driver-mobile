@@ -37,9 +37,9 @@ export default function MoMoSettingsScreen() {
         <View style={styles.infoCard}>
           <MaterialIcons name="event-repeat" size={24} color={GOLD} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.infoTitle}>Daily platform fee</Text>
+            <Text style={styles.infoTitle}>Platform fee · 24 hours</Text>
             <Text style={styles.infoText}>
-              The GH₵50 daily platform fee is handled separately through the Driver’s verified MoMo account. It is not deducted from a cash trip fare.
+              The GH₵50 platform fee is handled separately through the Driver’s verified MoMo account. It is valid for 24 hours from confirmed payment and is not deducted from a cash trip fare.
             </Text>
           </View>
         </View>

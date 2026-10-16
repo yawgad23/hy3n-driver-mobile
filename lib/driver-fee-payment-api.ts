@@ -16,8 +16,10 @@ export type DriverFeeResult = {
   status?: string;
   message?: string;
   transactionId?: string | null;
-  clientReference?: string;
-  commissionRecord?: unknown;
+  clientReference?: string | null;
+  confirmedPaidAt?: string | null;
+  accessExpiresAt?: string | null;
+  commissionRecord?: Record<string, any> | null;
 };
 
 type TrpcEnvelope = {

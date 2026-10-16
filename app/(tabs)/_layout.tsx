@@ -80,6 +80,12 @@ function providerMessageFromCheck(result: any): string {
   return String(data.description || data.Description || data.message || data.Message || result?.message || result?.Message || '');
 }
 
+function localFeeExpiry(record: any): string | null {
+  const value = record?.access_expires_at || record?.accessExpiresAt || null;
+  if (!value || Number.isNaN(new Date(value).getTime())) return null;
+  return new Date(value).toLocaleString();
+}
+
 function CommissionGate({ driver, user, onConfirmed }: { driver: any; user: { getIdToken(forceRefresh?: boolean): Promise<string> }; onConfirmed: () => void }) {
   const colors = useColors();
   const isDark = useColorScheme() === 'dark';
@@ -122,6 +128,23 @@ function CommissionGate({ driver, user, onConfirmed }: { driver: any; user: { ge
   const networkLabel = networkLabels[selectedNetwork] || 'MoMo';
   const momoNumber = phoneInput;
 
+  const showConfirmedPayment = async () => {
+    try {
+      const driverId = driver.user_id || driver.id;
+      const access = await trpcContext.client.commission.checkPaidToday.query({ driverId });
+      const currentAccess = access as any;
+      setCommissionRecord((current: any) => ({
+        ...(current || {}),
+        confirmed_paid_at: currentAccess.confirmedPaidAt || current?.confirmed_paid_at || null,
+        access_expires_at: currentAccess.accessExpiresAt || current?.access_expires_at || null,
+      }));
+    } catch {
+      // The normal gate query will refresh again from the server authority.
+    }
+    setCommissionStatus('paid');
+    onConfirmed();
+  };
+
   const handleSaveDetails = async () => {
     if (!phoneInput) {
       setError('Please enter a valid phone number');
@@ -154,8 +177,8 @@ function CommissionGate({ driver, user, onConfirmed }: { driver: any; user: { ge
       try {
         const result = await trpcContext.client.transactionStatus.check.query({ clientReference: reference });
         const status = providerStatusFromCheck(result);
-        if (status === 'paid') {
-          setCommissionStatus('paid');
+        if (['paid', 'success', 'successful', 'completed', 'complete'].includes(status)) {
+          await showConfirmedPayment();
           clearInterval(poll);
         } else if (['failed', 'expired', 'cancelled', 'canceled', 'declined', 'rejected', 'reversed'].includes(status)) {
           setError(providerMessageFromCheck(result) || 'The Hubtel payment was not completed.');
@@ -193,8 +216,17 @@ function CommissionGate({ driver, user, onConfirmed }: { driver: any; user: { ge
       }, getApiBaseUrl());
 
       if (result.success) {
-        setCommissionRecord(result.commissionRecord);
-        setCommissionStatus('ussd_sent');
+        setCommissionRecord({
+          ...(result.commissionRecord || {}),
+          confirmed_paid_at: result.confirmedPaidAt || result.commissionRecord?.confirmed_paid_at || null,
+          access_expires_at: result.accessExpiresAt || result.commissionRecord?.access_expires_at || null,
+        });
+        if (result.status === 'paid') {
+          setCommissionStatus('paid');
+          onConfirmed();
+        } else {
+          setCommissionStatus('ussd_sent');
+        }
       } else {
         // Hubtel charge failed — fall back to showing error with retry
         setError(result.message || 'Payment initiation failed. Please try again.');
@@ -248,7 +280,7 @@ function CommissionGate({ driver, user, onConfirmed }: { driver: any; user: { ge
           const status = providerStatusFromCheck(res);
           if (['paid', 'success', 'successful', 'completed', 'complete'].includes(status)) {
             clearInterval(countdownInterval);
-            setCommissionStatus('paid');
+            await showConfirmedPayment();
             return true;
           } else if (['failed', 'expired', 'cancelled', 'canceled', 'declined', 'rejected', 'reversed'].includes(status)) {
             clearInterval(countdownInterval);
@@ -394,11 +426,14 @@ function CommissionGate({ driver, user, onConfirmed }: { driver: any; user: { ge
               </Text>
             </View>
             <View style={styles.receiptRow}>
-              <Text style={{ color: colors.muted, fontSize: 13 }}>Date</Text>
+              <Text style={{ color: colors.muted, fontSize: 13 }}>Valid until</Text>
               <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: '600' }}>
-                {new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString()}
+                {localFeeExpiry(commissionRecord) || 'Refreshing confirmed payment time…'}
               </Text>
             </View>
+            <Text style={{ color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 4 }}>
+              Your payment is valid for 24 hours from Hubtel confirmation.
+            </Text>
           </View>
         </View>
 
@@ -583,7 +618,7 @@ function CommissionGate({ driver, user, onConfirmed }: { driver: any; user: { ge
         {driver.full_name?.split(' ')[0]}!
       </Text>
       <Text style={[styles.gateSubtitle, { color: colors.muted }]}>
-        Pay your daily platform fee to start receiving rides today.
+        Pay the platform fee to receive rides for 24 hours from Hubtel confirmation.
       </Text>
 
       {isEditing ? (
@@ -676,7 +711,7 @@ function CommissionGate({ driver, user, onConfirmed }: { driver: any; user: { ge
         </View>
       ) : (
         <View style={[styles.commissionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.commissionLabel, { color: colors.muted }]}>Daily Platform Fee</Text>
+          <Text style={[styles.commissionLabel, { color: colors.muted }]}>Platform Fee · 24 Hours</Text>
           <Text style={[styles.commissionAmount, { color: GOLD }]}>GH₵ {feeLabel}</Text>
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           
@@ -694,6 +729,9 @@ function CommissionGate({ driver, user, onConfirmed }: { driver: any; user: { ge
                 No MoMo number on file.
               </Text>
             )}
+            <Text style={[styles.commissionMomo, { color: colors.muted, textAlign: 'center', marginTop: 8 }]}>
+              Valid for 24 hours from confirmed payment.
+            </Text>
 
             <TouchableOpacity 
               onPress={() => setIsEditing(true)}
