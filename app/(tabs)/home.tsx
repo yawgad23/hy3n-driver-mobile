@@ -10,6 +10,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Notifications from 'expo-notifications';
+import { useAudioPlayer } from 'expo-audio';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { trpc } from '@/lib/trpc';
@@ -70,6 +71,7 @@ import {
   driverOtherAndroidMapsUri,
   type DriverNavigationPlatform,
 } from '@/lib/driver-navigation-fallback';
+import { shouldPlayIncomingTripAlert } from '@/lib/incoming-trip-alert';
 
 const GOLD = '#D4AF37';
 const GREEN = '#22C55E';
@@ -164,6 +166,13 @@ export default function DriverHomeScreen() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [tripDistanceKm, setTripDistanceKm] = useState(0);
   const [tripStartedAt, setTripStartedAt] = useState<string | null>(null);
+  // One player is retained for the whole Home-screen lifetime. It plays the
+  // bundled request tone only for a new foreground offer, rather than creating
+  // a player during rendering or relying on a provider notification tone.
+  const incomingTripAlertPlayer = useAudioPlayer(
+    require('@/assets/audio/incoming-trip-alert.wav'),
+    { keepAudioSessionActive: false },
+  );
   const lastTripLocationRef = useRef<ExpoLocation.LocationObject | null>(null);
   const lastTripMeterPublishedAtRef = useRef(0);
   const lastSpeedRef = useRef<number | null>(null);
@@ -172,6 +181,7 @@ export default function DriverHomeScreen() {
   const offerRefresherRef = useRef(createSingleFlightDriverOfferRefresher());
   const tripActionInFlightRef = useRef(false);
   const ratingSubmitInFlightRef = useRef(false);
+  const incomingTripAlertedRideIdRef = useRef<string | null>(null);
   const backgroundLocationDisclosureDecisionRef = useRef<DriverBackgroundLocationDisclosureDecision>('unseen');
   const backgroundLocationRequestStateRef = useRef<DriverBackgroundLocationRequestState>('ready');
   const backgroundLocationWarningShownRef = useRef(false);
@@ -197,11 +207,21 @@ export default function DriverHomeScreen() {
     return true;
   }, []);
 
-  const stopIncomingTripAlert = () => {
-    // The protected server push is the one incoming-offer alert. Do not create,
-    // pause, or release an additional Expo Audio player while the offer card is
-    // mounting in this Hermes/React Native runtime.
-  };
+  const stopIncomingTripAlert = useCallback(() => {
+    incomingTripAlertPlayer.pause();
+    void incomingTripAlertPlayer.seekTo(0).catch(() => {});
+  }, [incomingTripAlertPlayer]);
+
+  const playIncomingTripAlert = useCallback((rideId: string) => {
+    if (incomingTripAlertedRideIdRef.current === rideId) return;
+    incomingTripAlertedRideIdRef.current = rideId;
+    incomingTripAlertPlayer.pause();
+    // A prior offer may have ended mid-tone. Always rewind before the one-shot
+    // playback so the next Driver request is immediately audible.
+    void incomingTripAlertPlayer.seekTo(0)
+      .catch(() => {})
+      .finally(() => incomingTripAlertPlayer.play());
+  }, [incomingTripAlertPlayer]);
 
   // The previous demand-zone circles obscured the map and were not real cars.
   // Keep the control state only for backwards-compatible layout, but do not
@@ -578,12 +598,21 @@ export default function DriverHomeScreen() {
 
     if (incomingRide?.id !== offeredRide.id) {
       setRideOfferSeconds(DRIVER_OFFER_REVIEW_SECONDS);
-      // The server push has already produced the one system sound. The
-      // authenticated offer card must not schedule a second local notification
-      // or instantiate a separate audio player in this crash-sensitive window.
       setIncomingRide(offeredRide);
     }
   }, [user?.uid, isOnline, hasCurrentLocation, activeTrip, incomingRide, availableOffers.data?.offers, prefs.longTripsOnly, prefs.preferHighRated]);
+
+  useEffect(() => {
+    const incomingRideId = incomingRide?.id ? String(incomingRide.id) : null;
+    if (!incomingRideId) return;
+    if (!shouldPlayIncomingTripAlert({
+      isOnline,
+      incomingRideId,
+      activeTripId: activeTrip?.id || null,
+      soundAlerts: prefs.soundAlerts,
+    })) return;
+    playIncomingTripAlert(incomingRideId);
+  }, [activeTrip?.id, incomingRide?.id, isOnline, playIncomingTripAlert, prefs.soundAlerts]);
 
   // Recover a trip if the app is reopened while the driver is already assigned.
   useEffect(() => {

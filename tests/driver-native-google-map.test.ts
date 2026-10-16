@@ -23,7 +23,10 @@ test('Driver Home uses one server push alert and serializes incoming-offer refre
   assert.match(driverHomeSource, /offerRefresherRef\.current\.refresh\(inputs\.refetch\)/);
   assert.match(driverHomeSource, /refetchInterval: false/);
   assert.match(driverHomeSource, /const interval = setInterval\(refreshAvailableOffers, DRIVER_OFFER_POLL_INTERVAL_MS\)/);
-  assert.doesNotMatch(driverHomeSource, /useAudioPlayer/);
+  assert.match(driverHomeSource, /useAudioPlayer\(/);
+  assert.match(driverHomeSource, /incoming-trip-alert\.wav/);
+  assert.match(driverHomeSource, /shouldPlayIncomingTripAlert/);
+  assert.match(driverHomeSource, /incomingTripAlertedRideIdRef/);
   assert.doesNotMatch(driverHomeSource, /new Set/);
 });
 

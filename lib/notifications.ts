@@ -2,15 +2,17 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import { isDriverRideOfferNotification } from './incoming-trip-alert';
 
 // ── Foreground handler ───────────────────────────────────────────────────────
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
+  handleNotification: async (notification) => ({
     shouldShowAlert: true,
-    // The trusted server sends exactly one ride-offer push with the platform's
-    // default sound. Let iOS and Android play that same one alert in foreground
-    // and background; there is no local duplicate or Expo Audio player.
-    shouldPlaySound: true,
+    // A foreground Driver offer is played by Home from the bundled one-shot
+    // audio asset after the authenticated offer is available. Keep the server
+    // push silent in that foreground path so it cannot double-ring. When HY3N
+    // is backgrounded, iOS/Android use the server push's default sound.
+    shouldPlaySound: !isDriverRideOfferNotification(notification.request.content.data),
     shouldSetBadge: true,
     shouldShowBanner: true,
     shouldShowList: true,

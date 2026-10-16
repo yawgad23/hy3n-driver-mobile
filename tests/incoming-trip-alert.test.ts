@@ -34,7 +34,7 @@ test('only a Driver ride-offer remote notification is treated as a request alert
   assert.equal(isDriverRideOfferNotification(null), false);
 });
 
-test('foreground Driver ride-offer pushes retain their one system sound', () => {
-  assert.match(notificationsSource, /shouldPlaySound:\s*true/);
-  assert.doesNotMatch(notificationsSource, /shouldPlaySound:\s*!isForegroundRideOffer/);
+test('foreground Driver ride-offer pushes defer sound to the bundled offer player', () => {
+  assert.match(notificationsSource, /isDriverRideOfferNotification\(notification\.request\.content\.data\)/);
+  assert.match(notificationsSource, /shouldPlaySound:\s*!isDriverRideOfferNotification/);
 });
