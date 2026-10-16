@@ -136,6 +136,8 @@ export default function DriverHomeScreen() {
   const startTrip = (trpc.driverTrips.start as any).useMutation();
   const recordTripLocation = (trpc.driverTrips as any).recordTripLocation.useMutation();
   const completeTrip = trpc.driverTrips.complete.useMutation();
+  const reviewRouteChange = (trpc.driverTrips as any).reviewRouteChange.useMutation();
+  const completeRouteStop = (trpc.driverTrips as any).completeRouteStop.useMutation();
   const rateRider = (trpc.driverTrips as any).rateRider.useMutation();
   const cancelTrip = trpc.driverTrips.cancel.useMutation();
   const activateQueuedTrip = trpc.driverTrips.activateQueued.useMutation();
@@ -973,6 +975,44 @@ export default function DriverHomeScreen() {
     }
   };
 
+  const handleRouteChangeDecision = async (decision: 'accept' | 'decline') => {
+    if (!activeTrip || !user?.uid || tripActionInFlightRef.current) return;
+    tripActionInFlightRef.current = true;
+    setTripActionPending(true);
+    try {
+      const result = await reviewRouteChange.mutateAsync({
+        driverId: user.uid,
+        rideId: activeTrip.id,
+        decision,
+      });
+      setActiveTrip((result as any).ride);
+      if (decision === 'accept') {
+        Alert.alert('Route updated', 'The confirmed route is now updating on both HY3N maps.');
+      }
+    } catch (error: any) {
+      Alert.alert('Unable to review route change', error?.message || 'Please check your connection and try again.');
+    } finally {
+      tripActionInFlightRef.current = false;
+      setTripActionPending(false);
+    }
+  };
+
+  const handleCompleteRouteStop = async () => {
+    if (!activeTrip || !user?.uid || tripActionInFlightRef.current) return;
+    tripActionInFlightRef.current = true;
+    setTripActionPending(true);
+    try {
+      const result = await completeRouteStop.mutateAsync({ driverId: user.uid, rideId: activeTrip.id });
+      setActiveTrip((result as any).ride);
+      Alert.alert('Stop completed', 'Navigation is now guiding you to the next stop or final destination.');
+    } catch (error: any) {
+      Alert.alert('Unable to complete stop', error?.message || 'Please try again.');
+    } finally {
+      tripActionInFlightRef.current = false;
+      setTripActionPending(false);
+    }
+  };
+
   const triggerSOS = () => {
     Alert.alert('Send emergency alert?', 'Your current location and active trip details will be recorded for HY3N Safety. You can also open WhatsApp to alert support immediately.', [
       { text: 'Not now', style: 'cancel' },
@@ -1278,7 +1318,7 @@ export default function DriverHomeScreen() {
   };
 
   const activeNavigationRawTarget = activeTrip
-    ? (activeTrip.status === 'in_progress' ? activeTrip.destination : activeTrip.pickup)
+    ? (activeTrip.status === 'in_progress' ? (activeTrip.route_target?.location || activeTrip.destination) : activeTrip.pickup)
     : null;
   const activeNavigationLatitude = Number(activeNavigationRawTarget?.lat ?? activeNavigationRawTarget?.latitude ?? (activeTrip?.status === 'in_progress' ? activeTrip?.destination_lat : activeTrip?.pickup_lat));
   const activeNavigationLongitude = Number(activeNavigationRawTarget?.lng ?? activeNavigationRawTarget?.longitude ?? (activeTrip?.status === 'in_progress' ? activeTrip?.destination_lng : activeTrip?.pickup_lng));
@@ -1286,7 +1326,11 @@ export default function DriverHomeScreen() {
     ? {
         latitude: activeNavigationLatitude,
         longitude: activeNavigationLongitude,
-        label: activeTrip.status === 'in_progress' ? (activeTrip.destination_address || 'Drop-off') : (activeTrip.pickup_address || 'Pickup'),
+        label: activeTrip.status === 'in_progress'
+          ? (activeTrip.route_target?.kind === 'stop'
+            ? (activeTrip.route_target?.location?.address || activeTrip.route_target?.location?.name || 'Next stop')
+            : (activeTrip.destination_address || 'Drop-off'))
+          : (activeTrip.pickup_address || 'Pickup'),
       }
     : null;
 
@@ -1428,6 +1472,54 @@ export default function DriverHomeScreen() {
             <TouchableOpacity style={styles.queueButton} onPress={handleAcceptQueuedRide} accessibilityLabel="Accept next ride">
               <Text style={styles.queueButtonText}>Accept</Text>
             </TouchableOpacity>
+          </View>
+        )}
+
+        {activeTrip?.status === 'in_progress' && activeTrip?.route_change_request?.status === 'pending' && (
+          <View style={[styles.routeChangeCard, dynamicStyles.card]}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+              <View style={styles.routeChangeIcon}>
+                <MaterialIcons name={activeTrip.route_change_request.kind === 'add_stop' ? 'add-location-alt' : 'edit-location-alt'} size={21} color={GOLD} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.routeChangeTitle, dynamicStyles.text]}>Rider route update</Text>
+                <Text style={[styles.routeChangeText, dynamicStyles.muted]}>
+                  {activeTrip.route_change_request.kind === 'add_stop' ? 'Add stop' : 'Change destination'}: {activeTrip.route_change_request.location?.name || activeTrip.route_change_request.location?.address || 'New location'}
+                </Text>
+                <Text style={[styles.routeChangeHint, dynamicStyles.muted]}>Confirm before HY3N changes the route on either map.</Text>
+              </View>
+            </View>
+            <View style={styles.routeChangeActions}>
+              <TouchableOpacity
+                style={[styles.routeChangeButton, { backgroundColor: '#3F1D24' }]}
+                onPress={() => handleRouteChangeDecision('decline')}
+                disabled={tripActionPending}
+              >
+                <Text style={styles.routeChangeDeclineText}>Decline</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.routeChangeButton, { backgroundColor: GREEN }]}
+                onPress={() => handleRouteChangeDecision('accept')}
+                disabled={tripActionPending}
+              >
+                {tripActionPending ? <ActivityIndicator size="small" color="#FFF" /> : <><MaterialIcons name="check" size={17} color="#FFF" /><Text style={styles.routeChangeAcceptText}>Accept route</Text></>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {activeTrip?.status === 'in_progress' && activeTrip?.route_target?.kind === 'stop' && activeTrip?.route_change_request?.status !== 'pending' && (
+          <View style={[styles.routeChangeCard, dynamicStyles.card]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={styles.routeChangeIcon}><MaterialIcons name="location-on" size={21} color={GOLD} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.routeChangeTitle, dynamicStyles.text]}>Next stop</Text>
+                <Text style={[styles.routeChangeText, dynamicStyles.muted]} numberOfLines={1}>{activeTrip.route_target.location?.name || activeTrip.route_target.location?.address || 'Approved stop'}</Text>
+              </View>
+              <TouchableOpacity style={[styles.stopCompleteButton, { backgroundColor: GREEN }]} onPress={handleCompleteRouteStop} disabled={tripActionPending}>
+                {tripActionPending ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={styles.stopCompleteText}>Reached stop</Text>}
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
@@ -1788,6 +1880,18 @@ const styles = StyleSheet.create({
 
   destFilterBar: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 16, borderWidth: 1, gap: 12 },
   destText: { flex: 1, fontSize: 14, fontWeight: '700' },
+
+  routeChangeCard: { borderRadius: 16, borderWidth: 1, borderColor: `${GOLD}66`, marginBottom: 10, padding: 13 },
+  routeChangeIcon: { alignItems: 'center', backgroundColor: `${GOLD}20`, borderRadius: 12, height: 42, justifyContent: 'center', width: 42 },
+  routeChangeTitle: { fontSize: 14, fontWeight: '900' },
+  routeChangeText: { fontSize: 12, fontWeight: '700', lineHeight: 17, marginTop: 2 },
+  routeChangeHint: { fontSize: 10, lineHeight: 14, marginTop: 5 },
+  routeChangeActions: { flexDirection: 'row', gap: 9, marginTop: 12 },
+  routeChangeButton: { alignItems: 'center', borderRadius: 10, flex: 1, flexDirection: 'row', gap: 6, justifyContent: 'center', minHeight: 42, paddingHorizontal: 10 },
+  routeChangeDeclineText: { color: '#FCA5A5', fontSize: 12, fontWeight: '900' },
+  routeChangeAcceptText: { color: '#FFF', fontSize: 12, fontWeight: '900' },
+  stopCompleteButton: { alignItems: 'center', borderRadius: 10, justifyContent: 'center', minHeight: 38, paddingHorizontal: 10 },
+  stopCompleteText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
 
   activeTripActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   // A compact icon keeps the optional external-map chooser available without

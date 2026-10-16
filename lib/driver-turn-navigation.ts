@@ -36,7 +36,12 @@ export function googleMapsNavigationFallbackUrl(destination: TurnByTurnDestinati
 }
 
 export function tripNavigationDestination(ride: any, phase: 'pickup' | 'dropoff'): TurnByTurnDestination | null {
-  const target = phase === 'dropoff' ? ride?.destination : ride?.pickup;
+  // During an active trip the server may temporarily target a Driver-approved
+  // stop. It is deliberately preferred only for drop-off navigation; pickup
+  // guidance remains fixed until the trip has started.
+  const target = phase === 'dropoff'
+    ? (ride?.route_target?.location || ride?.destination)
+    : ride?.pickup;
   const latitude = Number(target?.lat ?? target?.latitude ?? (phase === 'dropoff' ? ride?.destination_lat : ride?.pickup_lat));
   const longitude = Number(target?.lng ?? target?.longitude ?? (phase === 'dropoff' ? ride?.destination_lng : ride?.pickup_lng));
   const destination = { latitude, longitude };

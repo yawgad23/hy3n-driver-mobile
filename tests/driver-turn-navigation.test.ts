@@ -27,3 +27,13 @@ test('uses the server ride coordinates and rejects malformed destinations', () =
   );
   assert.equal(tripNavigationDestination({ destination_lat: 99, destination_lng: 0 }, 'dropoff'), null);
 });
+
+test('uses the Driver-approved active stop before the final destination', () => {
+  assert.deepEqual(
+    tripNavigationDestination({
+      destination: { lat: 5.6037, lng: -0.187 },
+      route_target: { kind: 'stop', location: { lat: 5.618, lng: -0.15 } },
+    }, 'dropoff'),
+    { latitude: 5.618, longitude: -0.15 },
+  );
+});
