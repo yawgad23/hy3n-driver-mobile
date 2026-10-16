@@ -2,21 +2,21 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
   AudioGuidance,
-  CameraPerspective,
   MapColorScheme,
   MapView,
-  NavigationNightMode,
   NavigationProvider,
   NavigationSessionStatus,
-  NavigationUIEnabledPreference,
-  NavigationView,
   RouteStatus,
   TaskRemovedBehavior,
   TravelMode,
   useNavigation,
   type MapViewController,
-  type NavigationViewController,
 } from '@googlemaps/react-native-navigation-sdk';
+import {
+  driverMapMotionFrames,
+  routePointsForMap,
+  type DriverMapPosition,
+} from '@/lib/driver-map-motion';
 
 type MapTarget = { latitude: number; longitude: number; label: string };
 type Props = {
@@ -28,12 +28,14 @@ type Props = {
   tripStatus?: 'pickup' | 'dropoff' | null;
 };
 
-const GOLD = '#D4AF37';
-const GREEN = '#22C55E';
+const GREEN = '#008C5A';
+const ROUTE_OUTLINE = '#FFFFFF';
 const DRIVER_VEHICLE_MARKER_ID = 'hy3n-driver-vehicle';
+const DRIVER_ROUTE_OUTLINE_ID = 'hy3n-driver-route-outline';
+const DRIVER_ROUTE_ID = 'hy3n-driver-route';
+const DRIVER_TARGET_MARKER_ID = 'hy3n-driver-target';
 // “Clean” applies only to clutter. It does not force a colour theme: the map
-// must mirror the phone’s own light/dark setting just like the rest of HY3N.
-// Keep roads, route and traffic while hiding distracting place/transit labels.
+// mirrors the phone’s own light/dark setting just like the rest of HY3N.
 const CLEAN_GOOGLE_STYLE = JSON.stringify([
   { featureType: 'poi', elementType: 'all', stylers: [{ visibility: 'off' }] },
   { featureType: 'transit', elementType: 'all', stylers: [{ visibility: 'off' }] },
@@ -47,9 +49,9 @@ const DRIVER_VEHICLE_MARKER_ASSET = Platform.select({
   ios: 'HY3NDriverCarMarker',
   default: 'hy3n_driver_car_marker.png',
 });
-// NavigationProvider builds its native controller from these options. Keep the
-// object reference stable across live GPS re-renders: a fresh object causes a
-// new controller and can dispose the active native Navigation view on iPhone.
+// NavigationProvider builds the native routing engine from these options. Keep
+// the reference stable across GPS renders so an iPhone never rebuilds a route
+// session just because the Driver vehicle moved.
 const HY3N_NAVIGATION_TERMS_OPTIONS = {
   title: 'HY3N Driver Navigation',
   companyName: 'HY3N Transport Services',
@@ -87,97 +89,164 @@ function readableNavigationFailure(status: NavigationSessionStatus | RouteStatus
 }
 
 /**
- * The Driver map is an embedded Google Navigation SDK surface. It stays inside
- * HY3N while Google supplies the live route, maneuver banner, automatic
- * rerouting, and spoken left/right guidance.
+ * A branded map stays visible for the complete Driver journey. Google
+ * Navigation runs as the route and voice engine, while HY3N owns the visual
+ * vehicle marker, map camera, and route line. This deliberately avoids the
+ * NavigationView blue current-location arrow after a ride is accepted.
  */
 function DriverNavigationSurface({ latitude, longitude, heading, target, tripStatus }: Props) {
-  const { navigationController, removeAllListeners, setOnArrival, setOnLocationChanged } = useNavigation();
+  const {
+    navigationController,
+    removeAllListeners,
+    setOnArrival,
+    setOnRouteChanged,
+  } = useNavigation();
   const [mapViewController, setMapViewController] = useState<MapViewController | null>(null);
-  const [navigationViewController, setNavigationViewController] = useState<NavigationViewController | null>(null);
   const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
   const initializedRef = useRef(false);
   const navigationRequestRef = useRef(0);
   const lastTargetKeyRef = useRef<string | null>(null);
+  const vehiclePositionRef = useRef<DriverMapPosition | null>(null);
+  const vehicleMotionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const vehicleMotionRunRef = useRef(0);
   const hasDeviceLocation = hasPoint(latitude, longitude);
   const targetLatitude = Number(target?.latitude);
   const targetLongitude = Number(target?.longitude);
   const targetLabel = target?.label?.trim() || (tripStatus === 'dropoff' ? 'Drop-off' : 'Pickup');
   const hasTarget = hasPoint(targetLatitude, targetLongitude);
-  const mapMode = hasTarget ? 'navigation' : 'online';
   const targetKey = hasTarget
     ? `${tripStatus || 'target'}:${targetLatitude.toFixed(6)}:${targetLongitude.toFixed(6)}:${targetLabel}`
     : null;
 
-  // The normal online screen deliberately uses a regular Google map rather
-  // than a NavigationView. This keeps it as simple as the Driver reference:
-  // one heading-aware HY3N car, not the Navigation SDK's blue guidance arrow.
-  // NavigationView is reserved for an accepted trip, where Google owns the
-  // route, turn banner, live ETA and spoken guidance.
-  useEffect(() => {
-    if (!mapViewController || !hasDeviceLocation || hasTarget) return;
+  const clearVehicleMotion = useCallback(() => {
+    vehicleMotionRunRef.current += 1;
+    if (vehicleMotionTimerRef.current) clearTimeout(vehicleMotionTimerRef.current);
+    vehicleMotionTimerRef.current = null;
+  }, []);
+
+  const applyVehiclePosition = useCallback((position: DriverMapPosition, followTrip: boolean) => {
+    if (!mapViewController) return;
     void mapViewController.addMarker({
       id: DRIVER_VEHICLE_MARKER_ID,
-      position: { lat: Number(latitude), lng: Number(longitude) },
+      position: { lat: position.latitude, lng: position.longitude },
       imgPath: DRIVER_VEHICLE_MARKER_ASSET,
       title: 'Your HY3N vehicle',
-      rotation: Number(heading) || 0,
+      rotation: position.heading,
       flat: true,
       anchor: { u: 0.5, v: 0.5 },
       visible: true,
     }).catch(() => {
-      // Guidance remains usable if the optional branded marker cannot load.
-      // Native-project validation verifies the asset on both platforms.
+      // A route remains usable even if a device cannot load the optional art.
     });
-  }, [hasDeviceLocation, hasTarget, heading, latitude, longitude, mapViewController]);
-
-  useEffect(() => () => {
-    mapViewController?.removeMarker(DRIVER_VEHICLE_MARKER_ID);
+    // The native SDK animates this camera update; keeping its target aligned
+    // with each interpolated vehicle point makes the car follow the road rather
+    // than jump to a stale screen position.
+    mapViewController.moveCamera({
+      target: { lat: position.latitude, lng: position.longitude },
+      bearing: followTrip ? position.heading : 0,
+      tilt: followTrip ? 42 : 0,
+      zoom: followTrip ? 17 : 16,
+    });
   }, [mapViewController]);
 
+  // Interpolate each real GPS observation into small native-map updates. The
+  // car uses the device heading where available and only follows positions the
+  // Driver app has received; this display layer has no effect on fare or meter.
   useEffect(() => {
-    if (hasTarget) mapViewController?.removeMarker(DRIVER_VEHICLE_MARKER_ID);
-  }, [hasTarget, mapViewController]);
+    if (!mapViewController || !hasDeviceLocation) return;
+    const next = {
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+      // Expo reports an unavailable compass heading as null. Preserve that
+      // absence so the motion helper can derive direction from movement rather
+      // than incorrectly turning the HY3N car to north.
+      heading: heading === null || heading === undefined ? Number.NaN : Number(heading),
+    };
+    const frames = driverMapMotionFrames(vehiclePositionRef.current, next);
+    const run = vehicleMotionRunRef.current + 1;
+    clearVehicleMotion();
+    vehicleMotionRunRef.current = run;
+    let index = 0;
 
-  const followDriver = useCallback(() => {
-    if (!navigationViewController) return;
-    const perspective = hasTarget
-      ? CameraPerspective.TILTED
-      : CameraPerspective.TOP_DOWN_NORTH_UP;
-    void navigationViewController.setFollowingPerspective(perspective).catch(() => {});
-  }, [hasTarget, navigationViewController]);
+    const showFrame = () => {
+      if (vehicleMotionRunRef.current !== run) return;
+      const frame = frames[index++];
+      if (!frame) return;
+      vehiclePositionRef.current = frame;
+      applyVehiclePosition(frame, hasTarget);
+      if (index < frames.length) vehicleMotionTimerRef.current = setTimeout(showFrame, 110);
+    };
+    showFrame();
+    return clearVehicleMotion;
+  }, [applyVehiclePosition, clearVehicleMotion, hasDeviceLocation, hasTarget, heading, latitude, longitude, mapViewController]);
+
+  const clearRoute = useCallback(() => {
+    if (!mapViewController) return;
+    mapViewController.removePolyline(DRIVER_ROUTE_OUTLINE_ID);
+    mapViewController.removePolyline(DRIVER_ROUTE_ID);
+    mapViewController.removeMarker(DRIVER_TARGET_MARKER_ID);
+  }, [mapViewController]);
+
+  const drawNavigationRoute = useCallback(async () => {
+    if (!mapViewController || !hasTarget) return;
+    try {
+      const segments = await navigationController.getRouteSegments();
+      const points = routePointsForMap(segments);
+      if (points.length < 2) return;
+      await mapViewController.addPolyline({
+        id: DRIVER_ROUTE_OUTLINE_ID,
+        points,
+        color: ROUTE_OUTLINE,
+        width: 14,
+        visible: true,
+      });
+      await mapViewController.addPolyline({
+        id: DRIVER_ROUTE_ID,
+        points,
+        color: GREEN,
+        width: 8,
+        visible: true,
+      });
+      await mapViewController.addMarker({
+        id: DRIVER_TARGET_MARKER_ID,
+        position: { lat: targetLatitude, lng: targetLongitude },
+        title: targetLabel,
+        anchor: { u: 0.5, v: 1 },
+        visible: true,
+      });
+    } catch {
+      // Navigation voice guidance continues if native route geometry is
+      // temporarily unavailable. A later route-change event retries drawing.
+    }
+  }, [hasTarget, mapViewController, navigationController, targetLabel, targetLatitude, targetLongitude]);
 
   useEffect(() => {
     setOnArrival(() => {
       setNavigationMessage('You have reached this stop. Confirm your HY3N trip action below.');
     });
-    // Location updates make the camera return to its road-snapped Driver view.
-    // Do not wait for this callback before setting the route: on iOS the
-    // Navigation SDK can emit its first callback only after guidance starts.
-    setOnLocationChanged(followDriver);
+    setOnRouteChanged(() => { void drawNavigationRoute(); });
     return () => removeAllListeners();
-  }, [followDriver, removeAllListeners, setOnArrival, setOnLocationChanged]);
+  }, [drawNavigationRoute, removeAllListeners, setOnArrival, setOnRouteChanged]);
 
   useEffect(() => () => {
+    clearVehicleMotion();
     navigationRequestRef.current += 1;
-    // Navigation sessions are heavyweight. Release the native guidance engine
-    // when the Driver goes offline or leaves this screen.
     if (initializedRef.current) void navigationController.cleanup().catch(() => {});
-  }, [navigationController]);
+  }, [clearVehicleMotion, navigationController]);
 
   useEffect(() => {
     const request = ++navigationRequestRef.current;
 
     if (!hasTarget || !targetKey) {
       lastTargetKeyRef.current = null;
+      clearRoute();
       if (initializedRef.current) {
         void (async () => {
           try {
             await navigationController.stopGuidance();
             await navigationController.clearDestinations();
-            await navigationViewController?.setNavigationUIEnabled(false);
           } catch {
-            // The session may already have been released while a trip changed.
+            // The routing session may already have been released.
           }
         })();
       }
@@ -193,7 +262,7 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
     if (lastTargetKeyRef.current === targetKey) return;
 
     let cancelled = false;
-    setNavigationMessage('Preparing in-app navigation…');
+    setNavigationMessage('Preparing HY3N navigation…');
 
     void (async () => {
       try {
@@ -218,9 +287,6 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
           navigationController.startUpdatingLocation();
         }
 
-        // The supplied device coordinate has already passed validation above.
-        // Set the destination immediately, then let Navigation SDK road-snap
-        // subsequent GPS updates while live guidance is running.
         const routeStatus = await navigationController.setDestination(
           {
             title: targetLabel,
@@ -230,7 +296,7 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
           {
             routingOptions: { travelMode: TravelMode.DRIVING },
             displayOptions: {
-              showDestinationMarkers: true,
+              showDestinationMarkers: false,
               showStopSigns: true,
               showTrafficLights: true,
             },
@@ -244,8 +310,7 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
 
         await navigationController.startGuidance();
         if (cancelled || navigationRequestRef.current !== request) return;
-        await navigationViewController?.setNavigationUIEnabled(true);
-        followDriver();
+        await drawNavigationRoute();
         lastTargetKeyRef.current = targetKey;
         setNavigationMessage(null);
       } catch {
@@ -255,82 +320,23 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
       }
     })();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [followDriver, hasDeviceLocation, hasTarget, navigationController, navigationViewController, targetKey, targetLabel, targetLatitude, targetLongitude]);
+    return () => { cancelled = true; };
+  }, [clearRoute, drawNavigationRoute, hasDeviceLocation, hasTarget, navigationController, targetKey, targetLabel, targetLatitude, targetLongitude]);
 
   return (
     <View style={styles.container}>
-      {hasDeviceLocation && hasTarget ? (
-        <NavigationView
-          key={mapMode}
-          style={StyleSheet.absoluteFill}
-          initialCameraPosition={{
-            target: { lat: Number(latitude), lng: Number(longitude) },
-            zoom: 16,
-            bearing: 0,
-            tilt: 0,
-          }}
-          // Follow the phone's system theme. The clean style only suppresses
-          // clutter; it never forces a light map on Drivers using dark mode.
-          mapColorScheme={MapColorScheme.FOLLOW_SYSTEM}
-          navigationNightMode={NavigationNightMode.AUTO}
-          mapStyle={CLEAN_GOOGLE_STYLE}
-          // Match the familiar driving-navigation pattern: when a ride has a
-          // target, Navigation SDK owns the top maneuver banner and bottom
-          // live ETA/distance panel. The separate vertical trip-progress rail
-          // is intentionally off because it adds an unexplained blue line to
-          // the left side of the driving map.
-          navigationUIEnabledPreference={hasTarget
-            ? NavigationUIEnabledPreference.AUTOMATIC
-            : NavigationUIEnabledPreference.DISABLED}
-          headerEnabled={hasTarget}
-          footerEnabled={hasTarget}
-          tripProgressBarEnabled={false}
-          trafficEnabled
-          trafficPromptsEnabled={false}
-          trafficIncidentCardsEnabled={false}
-          speedometerEnabled
-          speedLimitIconEnabled
-          recenterButtonEnabled
-          reportIncidentButtonEnabled={false}
-          myLocationEnabled={false}
-          myLocationButtonEnabled={false}
-          compassEnabled
-          indoorEnabled={false}
-          indoorLevelPickerEnabled={false}
-          buildingsEnabled={false}
-          mapToolbarEnabled={false}
-          onMapViewControllerCreated={setMapViewController}
-          onNavigationViewControllerCreated={setNavigationViewController}
-          onRecenterButtonClick={followDriver}
-          androidStylingOptions={{
-            primaryDayModeThemeColor: GREEN,
-            secondaryDayModeThemeColor: GOLD,
-            primaryNightModeThemeColor: GREEN,
-            secondaryNightModeThemeColor: GOLD,
-          }}
-          iOSStylingOptions={{
-            navigationHeaderPrimaryBackgroundColor: GREEN,
-            navigationHeaderSecondaryBackgroundColor: GOLD,
-            navigationHeaderPrimaryBackgroundColorNightMode: '#111111',
-            navigationHeaderSecondaryBackgroundColorNightMode: '#1D2939',
-          }}
-        />
-      ) : hasDeviceLocation ? (
+      {hasDeviceLocation ? (
         <MapView
-          key={mapMode}
           style={StyleSheet.absoluteFill}
           initialCameraPosition={{
             target: { lat: Number(latitude), lng: Number(longitude) },
-            zoom: 16,
+            zoom: hasTarget ? 17 : 16,
             bearing: Number(heading) || 0,
-            tilt: 0,
+            tilt: hasTarget ? 42 : 0,
           }}
-          // The online map deliberately has no Navigation SDK guidance UI and
-          // no Google current-location layer. The custom HY3N car marker above
-          // is therefore the only moving Driver position on screen.
+          // The branded MapView never switches at acceptance. The HY3N car is
+          // its only live vehicle marker; the Google blue location arrow stays
+          // disabled while the Navigation SDK remains the voice/route engine.
           mapColorScheme={MapColorScheme.FOLLOW_SYSTEM}
           mapStyle={CLEAN_GOOGLE_STYLE}
           trafficEnabled

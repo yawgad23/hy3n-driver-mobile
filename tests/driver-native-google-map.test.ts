@@ -9,16 +9,13 @@ const nativeMapSource = readFileSync(
 );
 const driverHomeSource = readFileSync(path.join(__dirname, '../app/(tabs)/home.tsx'), 'utf8');
 
-test('Driver native navigation keeps maneuver, traffic, safety, and re-centering controls inside HY3N', () => {
+test('Driver native navigation keeps route, traffic, voice, and branded map controls inside HY3N', () => {
   assert.match(nativeMapSource, /trafficEnabled/);
-  assert.match(nativeMapSource, /trafficPromptsEnabled/);
-  assert.match(nativeMapSource, /trafficIncidentCardsEnabled/);
-  assert.match(nativeMapSource, /speedometerEnabled/);
-  assert.match(nativeMapSource, /speedLimitIconEnabled/);
-  assert.match(nativeMapSource, /recenterButtonEnabled/);
-  assert.match(nativeMapSource, /reportIncidentButtonEnabled/);
   assert.match(nativeMapSource, /myLocationEnabled/);
   assert.match(nativeMapSource, /showTermsAndConditionsDialog/);
+  assert.match(nativeMapSource, /setOnRouteChanged/);
+  assert.match(nativeMapSource, /getRouteSegments/);
+  assert.match(nativeMapSource, /mapViewController\.addPolyline/);
 });
 
 test('Driver Home retains one branded request sound per ride ID', () => {
@@ -48,9 +45,8 @@ test('the trip screen stays map-first while retaining availability and destinati
   assert.match(driverHomeSource, /Go Offline/);
   assert.match(driverHomeSource, /isOnline && !activeTrip && \(/);
   assert.match(driverHomeSource, /styles\.destFilterBar/);
-  assert.match(nativeMapSource, /NavigationUIEnabledPreference\.AUTOMATIC/);
-  assert.match(nativeMapSource, /tripProgressBarEnabled=\{false\}/);
-  assert.match(nativeMapSource, /unexplained blue line/);
+  assert.match(nativeMapSource, /The branded MapView never switches at acceptance/);
+  assert.match(nativeMapSource, /The HY3N car is/);
   assert.match(driverHomeSource, /activeTripDetails\(incomingRide\)\.bookedFare/);
   assert.match(driverHomeSource, /BOOKED FARE/);
   assert.doesNotMatch(driverHomeSource, /Active Trip Navigation Card/);
