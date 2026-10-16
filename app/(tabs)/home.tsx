@@ -5,7 +5,7 @@ import { RIDE_CATEGORIES, FREE_WAITING_MINUTES, POPULAR_DESTINATIONS } from '@/c
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView,
   Dimensions, Alert, ActivityIndicator, Animated, Image, Platform, PanResponder,
-  Modal, TextInput, StatusBar
+  Modal, TextInput, StatusBar, AppState
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -17,7 +17,10 @@ import { trpc } from '@/lib/trpc';
 import { driverLocationPublisher } from '@/lib/driver-location-publisher';
 import { registerDriverForegroundLocationCleanup } from '@/lib/driver-foreground-location-runtime';
 import { shouldPublishDriverTripMeter } from '@/lib/driver-trip-meter-publisher';
-import { subscribeDriverRideOffer } from '@/lib/ride-offer-signal';
+import {
+  shouldRefreshDriverRideOffersOnAppResume,
+  subscribeDriverRideOffer,
+} from '@/lib/ride-offer-signal';
 import { submitDriverSos } from '@/lib/safety';
 import { Linking } from 'react-native';
 import { RideChatModal } from '@/components/ride-chat-modal';
@@ -246,14 +249,39 @@ export default function DriverHomeScreen() {
   // synchronized, while keeping the endpoint fully server-validated.
   const availableOffers = (trpc.driverTrips as any).availableOffers.useQuery(
     { driverId: user?.uid || '' },
-    { enabled: Boolean(user?.uid && isOnline && hasCurrentLocation), refetchInterval: DRIVER_OFFER_POLL_INTERVAL_MS },
+    {
+      enabled: Boolean(user?.uid && isOnline && hasCurrentLocation),
+      refetchInterval: DRIVER_OFFER_POLL_INTERVAL_MS,
+      refetchOnMount: 'always',
+      refetchOnWindowFocus: true,
+    },
   );
 
   // A server ride-offer push makes foreground delivery immediate instead of
-  // waiting for the next polling tick. Polling remains the safe fallback.
-  useEffect(() => subscribeDriverRideOffer(() => {
+  // waiting for the next polling tick. A foreground resume needs the same
+  // refresh because React Query pauses interval polling in the background.
+  const refreshAvailableOffers = useCallback(() => {
     if (user?.uid && isOnline && hasCurrentLocation) void availableOffers.refetch();
-  }), [availableOffers, hasCurrentLocation, isOnline, user?.uid]);
+  }, [availableOffers, hasCurrentLocation, isOnline, user?.uid]);
+
+  useEffect(() => subscribeDriverRideOffer(refreshAvailableOffers), [refreshAvailableOffers]);
+
+  useEffect(() => {
+    let previousAppState = AppState.currentState;
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (shouldRefreshDriverRideOffersOnAppResume({
+        previousAppState,
+        nextAppState,
+        authenticated: Boolean(user?.uid),
+        online: isOnline,
+        hasCurrentLocation,
+      })) {
+        refreshAvailableOffers();
+      }
+      previousAppState = nextAppState;
+    });
+    return () => subscription.remove();
+  }, [hasCurrentLocation, isOnline, refreshAvailableOffers, user?.uid]);
   // A query may refetch several times while the same offer is outstanding.
   // Keep a session-level record so one ride request produces one device alert.
   const notifiedOfferIds = useRef<Set<string>>(new Set());
