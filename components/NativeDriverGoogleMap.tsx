@@ -13,6 +13,7 @@ import {
   type MapViewController,
 } from '@googlemaps/react-native-navigation-sdk';
 import {
+  DRIVER_REROUTE_ROUTE_REDRAW_DELAYS_MS,
   driverMapMotionFrames,
   routePointsForMap,
   type DriverMapPosition,
@@ -100,6 +101,7 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
     removeAllListeners,
     setOnArrival,
     setOnRouteChanged,
+    setOnReroutingRequestedByOffRoute,
   } = useNavigation();
   const [mapViewController, setMapViewController] = useState<MapViewController | null>(null);
   const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
@@ -109,6 +111,9 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
   const vehiclePositionRef = useRef<DriverMapPosition | null>(null);
   const vehicleMotionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const vehicleMotionRunRef = useRef(0);
+  const routeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const routeRefreshRunRef = useRef(0);
+  const rerouteMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasDeviceLocation = hasPoint(latitude, longitude);
   const targetLatitude = Number(target?.latitude);
   const targetLongitude = Number(target?.longitude);
@@ -122,6 +127,14 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
     vehicleMotionRunRef.current += 1;
     if (vehicleMotionTimerRef.current) clearTimeout(vehicleMotionTimerRef.current);
     vehicleMotionTimerRef.current = null;
+  }, []);
+
+  const clearRouteRefresh = useCallback(() => {
+    routeRefreshRunRef.current += 1;
+    if (routeRefreshTimerRef.current) clearTimeout(routeRefreshTimerRef.current);
+    if (rerouteMessageTimerRef.current) clearTimeout(rerouteMessageTimerRef.current);
+    routeRefreshTimerRef.current = null;
+    rerouteMessageTimerRef.current = null;
   }, []);
 
   const applyVehiclePosition = useCallback((position: DriverMapPosition, followTrip: boolean) => {
@@ -188,11 +201,11 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
   }, [mapViewController]);
 
   const drawNavigationRoute = useCallback(async () => {
-    if (!mapViewController || !hasTarget) return;
+    if (!mapViewController || !hasTarget) return false;
     try {
       const segments = await navigationController.getRouteSegments();
       const points = routePointsForMap(segments);
-      if (points.length < 2) return;
+      if (points.length < 2) return false;
       await mapViewController.addPolyline({
         id: DRIVER_ROUTE_OUTLINE_ID,
         points,
@@ -214,31 +227,75 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
         anchor: { u: 0.5, v: 1 },
         visible: true,
       });
+      return true;
     } catch {
       // Navigation voice guidance continues if native route geometry is
       // temporarily unavailable. A later route-change event retries drawing.
+      return false;
     }
   }, [hasTarget, mapViewController, navigationController, targetLabel, targetLatitude, targetLongitude]);
+
+  /**
+   * Google owns off-route detection and route choice. HY3N owns the clean map
+   * presentation, so it re-reads the native route after the SDK says a route
+   * changed. A short retry window handles the native callback/geometry race on
+   * iPhone without resetting a destination or disrupting spoken guidance.
+   */
+  const refreshBrandedRouteAfterNativeChange = useCallback((offRoute: boolean) => {
+    clearRouteRefresh();
+    const run = routeRefreshRunRef.current + 1;
+    routeRefreshRunRef.current = run;
+
+    if (offRoute) setNavigationMessage('Re-routing from your current road…');
+
+    const redraw = (attempt: number) => {
+      if (routeRefreshRunRef.current !== run) return;
+      void drawNavigationRoute().finally(() => {
+        if (routeRefreshRunRef.current !== run) return;
+        const nextDelay = DRIVER_REROUTE_ROUTE_REDRAW_DELAYS_MS[attempt + 1];
+        if (nextDelay !== undefined) {
+          routeRefreshTimerRef.current = setTimeout(() => redraw(attempt + 1), nextDelay);
+          return;
+        }
+        routeRefreshTimerRef.current = null;
+        if (offRoute) {
+          rerouteMessageTimerRef.current = setTimeout(() => {
+            if (routeRefreshRunRef.current === run) {
+              setNavigationMessage((message) => message === 'Re-routing from your current road…' ? null : message);
+            }
+          }, 900);
+        }
+      });
+    };
+
+    redraw(0);
+  }, [clearRouteRefresh, drawNavigationRoute]);
 
   useEffect(() => {
     setOnArrival(() => {
       setNavigationMessage('You have reached this stop. Confirm your HY3N trip action below.');
     });
-    setOnRouteChanged(() => { void drawNavigationRoute(); });
-    return () => removeAllListeners();
-  }, [drawNavigationRoute, removeAllListeners, setOnArrival, setOnRouteChanged]);
+    setOnRouteChanged(() => refreshBrandedRouteAfterNativeChange(false));
+    setOnReroutingRequestedByOffRoute(() => refreshBrandedRouteAfterNativeChange(true));
+    return () => {
+      clearRouteRefresh();
+      removeAllListeners();
+    };
+  }, [clearRouteRefresh, refreshBrandedRouteAfterNativeChange, removeAllListeners, setOnArrival, setOnRouteChanged, setOnReroutingRequestedByOffRoute]);
 
   useEffect(() => () => {
     clearVehicleMotion();
+    clearRouteRefresh();
     navigationRequestRef.current += 1;
     if (initializedRef.current) void navigationController.cleanup().catch(() => {});
-  }, [clearVehicleMotion, navigationController]);
+  }, [clearRouteRefresh, clearVehicleMotion, navigationController]);
 
   useEffect(() => {
     const request = ++navigationRequestRef.current;
 
     if (!hasTarget || !targetKey) {
       lastTargetKeyRef.current = null;
+      clearRouteRefresh();
       clearRoute();
       if (initializedRef.current) {
         void (async () => {
@@ -321,7 +378,7 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
     })();
 
     return () => { cancelled = true; };
-  }, [clearRoute, drawNavigationRoute, hasDeviceLocation, hasTarget, navigationController, targetKey, targetLabel, targetLatitude, targetLongitude]);
+  }, [clearRoute, clearRouteRefresh, drawNavigationRoute, hasDeviceLocation, hasTarget, navigationController, targetKey, targetLabel, targetLatitude, targetLongitude]);
 
   return (
     <View style={styles.container}>

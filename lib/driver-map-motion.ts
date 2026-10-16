@@ -14,6 +14,12 @@ const EARTH_RADIUS_METRES = 6_371_000;
 const MAX_SMOOTH_MOVE_METRES = 1_200;
 const FRAME_COUNT = 12;
 
+// The native Navigation SDK reports a route-change event before every platform
+// has made the replacement route geometry readable. Re-read it a few times so
+// HY3N's custom polyline switches promptly, without asking the SDK to create a
+// second competing route.
+export const DRIVER_REROUTE_ROUTE_REDRAW_DELAYS_MS = [0, 250, 850, 1_800] as const;
+
 function radians(value: number) {
   return (value * Math.PI) / 180;
 }

@@ -60,8 +60,12 @@ test('Driver active navigation keeps the map clean and stable during live moveme
 
 test('Driver active map re-routes for each pickup or drop-off and cleans up safely', () => {
   assert.match(component, /driverMapMotionFrames/);
+  assert.match(component, /DRIVER_REROUTE_ROUTE_REDRAW_DELAYS_MS/);
   assert.match(component, /mapViewController\.moveCamera/);
   assert.match(component, /lastTargetKeyRef\.current === targetKey/);
+  assert.match(component, /setOnReroutingRequestedByOffRoute/);
+  assert.match(component, /Re-routing from your current road/);
+  assert.match(component, /refreshBrandedRouteAfterNativeChange/);
   assert.match(component, /clearDestinations\(\)/);
   assert.match(component, /stopGuidance\(\)/);
   assert.match(component, /navigationController\.cleanup\(\)/);

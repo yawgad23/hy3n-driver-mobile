@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  DRIVER_REROUTE_ROUTE_REDRAW_DELAYS_MS,
   driverMapMotionFrames,
   normalisedHeading,
   routePointsForMap,
@@ -40,6 +41,11 @@ test('derives the car heading from movement when the device reports no compass h
 test('normalises headings and safely rejects malformed marker coordinates', () => {
   assert.equal(normalisedHeading(-10), 350);
   assert.deepEqual(driverMapMotionFrames(null, { latitude: 99, longitude: 0, heading: 0 }), []);
+});
+
+test('keeps a bounded redraw window after native navigation reroutes', () => {
+  assert.deepEqual(DRIVER_REROUTE_ROUTE_REDRAW_DELAYS_MS, [0, 250, 850, 1_800]);
+  assert.ok(DRIVER_REROUTE_ROUTE_REDRAW_DELAYS_MS.at(-1)! < 2_000);
 });
 
 test('converts Navigation SDK geometry to one valid HY3N route line', () => {
