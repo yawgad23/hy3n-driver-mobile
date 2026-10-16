@@ -54,10 +54,9 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 87 delivers the locally validated map separation, compact external
-    // navigation chooser, removed progress rail, and system-theme map behavior
-    // to TestFlight internal testers. Android remains at its published 57011.
-    buildNumber: "87",
+    // Build 88 includes the locally validated map corrections and refreshes
+    // server-backed ride offers immediately when the Driver reopens HY3N.
+    buildNumber: "88",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
