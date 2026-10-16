@@ -31,10 +31,10 @@ type Props = {
 const GOLD = '#D4AF37';
 const GREEN = '#22C55E';
 const DRIVER_VEHICLE_MARKER_ID = 'hy3n-driver-vehicle';
-// Keep the active Driver map as clean as the previous HY3N Google Map: retain
-// roads, route and traffic, but remove business pins, restaurant/store names,
-// transit badges and parcel labels that compete with driving instructions.
-const CLEAN_DAY_GOOGLE_STYLE = JSON.stringify([
+// “Clean” applies only to clutter. It does not force a colour theme: the map
+// must mirror the phone’s own light/dark setting just like the rest of HY3N.
+// Keep roads, route and traffic while hiding distracting place/transit labels.
+const CLEAN_GOOGLE_STYLE = JSON.stringify([
   { featureType: 'poi', elementType: 'all', stylers: [{ visibility: 'off' }] },
   { featureType: 'transit', elementType: 'all', stylers: [{ visibility: 'off' }] },
   { featureType: 'administrative.land_parcel', stylers: [{ visibility: 'off' }] },
@@ -272,12 +272,11 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
             bearing: 0,
             tilt: 0,
           }}
-          // Keep the road map light and quiet like the leading Driver apps.
-          // The device theme can still style HY3N's dialogs, but it must not
-          // force a dark, high-density map while the Driver is navigating.
-          mapColorScheme={MapColorScheme.LIGHT}
-          navigationNightMode={NavigationNightMode.FORCE_DAY}
-          mapStyle={CLEAN_DAY_GOOGLE_STYLE}
+          // Follow the phone's system theme. The clean style only suppresses
+          // clutter; it never forces a light map on Drivers using dark mode.
+          mapColorScheme={MapColorScheme.FOLLOW_SYSTEM}
+          navigationNightMode={NavigationNightMode.AUTO}
+          mapStyle={CLEAN_GOOGLE_STYLE}
           // Match the familiar driving-navigation pattern: when a ride has a
           // target, Navigation SDK owns the top maneuver banner and bottom
           // live ETA/distance panel. The separate vertical trip-progress rail
@@ -332,8 +331,8 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
           // The online map deliberately has no Navigation SDK guidance UI and
           // no Google current-location layer. The custom HY3N car marker above
           // is therefore the only moving Driver position on screen.
-          mapColorScheme={MapColorScheme.LIGHT}
-          mapStyle={CLEAN_DAY_GOOGLE_STYLE}
+          mapColorScheme={MapColorScheme.FOLLOW_SYSTEM}
+          mapStyle={CLEAN_GOOGLE_STYLE}
           trafficEnabled
           myLocationEnabled={false}
           myLocationButtonEnabled={false}

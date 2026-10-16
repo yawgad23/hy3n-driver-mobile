@@ -47,17 +47,18 @@ test('Driver embedded navigation retains the existing HY3N car marker on both na
   assert.match(configPlugin, /_mapView\.myLocationEnabled = NO/);
 });
 
-test('Driver active navigation keeps the map clean and does not restart for each live-location render', () => {
+test('Driver active navigation keeps the map clean, follows the system theme, and does not restart for each live-location render', () => {
   assert.match(component, /const HY3N_NAVIGATION_TERMS_OPTIONS = \{/);
   assert.match(component, /NavigationProvider builds its native controller/);
   assert.match(component, /termsAndConditionsDialogOptions=\{HY3N_NAVIGATION_TERMS_OPTIONS\}/);
-  assert.match(component, /CLEAN_DAY_GOOGLE_STYLE/);
+  assert.match(component, /CLEAN_GOOGLE_STYLE/);
   assert.match(component, /featureType: 'poi'/);
   assert.match(component, /featureType: 'transit'/);
-  assert.match(component, /mapColorScheme=\{MapColorScheme\.LIGHT\}/);
-  assert.match(component, /navigationNightMode=\{NavigationNightMode\.FORCE_DAY\}/);
-  assert.match(component, /mapStyle=\{CLEAN_DAY_GOOGLE_STYLE\}/);
-  assert.doesNotMatch(component, /CLEAN_NIGHT_GOOGLE_STYLE/);
+  assert.match(component, /mapColorScheme=\{MapColorScheme\.FOLLOW_SYSTEM\}/);
+  assert.match(component, /navigationNightMode=\{NavigationNightMode\.AUTO\}/);
+  assert.match(component, /mapStyle=\{CLEAN_GOOGLE_STYLE\}/);
+  assert.doesNotMatch(component, /MapColorScheme\.LIGHT/);
+  assert.doesNotMatch(component, /NavigationNightMode\.FORCE_DAY/);
   assert.match(component, /CameraPerspective\.TOP_DOWN_NORTH_UP/);
   assert.match(component, /CameraPerspective\.TILTED/);
   assert.match(component, /NavigationView is reserved for an accepted trip/);
