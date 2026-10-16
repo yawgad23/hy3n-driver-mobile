@@ -54,8 +54,8 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 90 adds the incoming-offer crash and reroute presentation repairs.
-    buildNumber: "90",
+    // Build 91 adds the latest Driver live-location and navigation repairs.
+    buildNumber: "91",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
