@@ -127,6 +127,10 @@ function DriverNavigationSurface({
   const vehicleMotionRunRef = useRef(0);
   const routeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const routeRefreshRunRef = useRef(0);
+  // Native polyline operations cross an asynchronous bridge. Keep one ordered
+  // queue so an older route-change event can never add its green line after a
+  // newer reroute or after the destination has changed.
+  const routeOverlayWorkRef = useRef<Promise<void>>(Promise.resolve());
   const rerouteMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const routePointsRef = useRef<DriverRoutePoint[]>([]);
   const offRouteMonitorRef = useRef(EMPTY_DRIVER_OFF_ROUTE_MONITOR);
@@ -232,44 +236,63 @@ function DriverNavigationSurface({
     ]);
   }, [clearRouteLines, mapViewController]);
 
-  const drawNavigationRoute = useCallback(async () => {
-    if (!mapViewController || !hasTarget) return false;
-    try {
-      const segments = await navigationController.getRouteSegments();
-      const points = routePointsForMap(segments);
-      if (points.length < 2) return false;
+  const drawNavigationRoute = useCallback((isCurrent: () => boolean = () => true) => {
+    const work = routeOverlayWorkRef.current.then(async () => {
+      if (!mapViewController || !hasTarget || !isCurrent()) return false;
+      try {
+        // Remove the passed road before reading replacement geometry. A blank
+        // line is safer than showing a Driver travelling along the old road.
+        await clearRouteLines();
+        if (!isCurrent()) return false;
 
-      routePointsRef.current = points;
-      offRouteMonitorRef.current = EMPTY_DRIVER_OFF_ROUTE_MONITOR;
+        const segments = await navigationController.getRouteSegments();
+        const points = routePointsForMap(segments);
+        if (!isCurrent() || points.length < 2) return false;
 
-      await mapViewController.addPolyline({
-        id: DRIVER_ROUTE_OUTLINE_ID,
-        points,
-        color: ROUTE_OUTLINE,
-        width: 14,
-        visible: true,
-      });
-      await mapViewController.addPolyline({
-        id: DRIVER_ROUTE_ID,
-        points,
-        color: GREEN,
-        width: 8,
-        visible: true,
-      });
-      await mapViewController.addMarker({
-        id: DRIVER_TARGET_MARKER_ID,
-        position: { lat: targetLatitude, lng: targetLongitude },
-        title: targetLabel,
-        anchor: { u: 0.5, v: 1 },
-        visible: true,
-      });
-      return true;
-    } catch {
-      // Navigation voice guidance continues if native route geometry is
-      // temporarily unavailable. A later route-change event retries drawing.
-      return false;
-    }
-  }, [hasTarget, mapViewController, navigationController, targetLabel, targetLatitude, targetLongitude]);
+        routePointsRef.current = points;
+        offRouteMonitorRef.current = EMPTY_DRIVER_OFF_ROUTE_MONITOR;
+
+        await mapViewController.addPolyline({
+          id: DRIVER_ROUTE_OUTLINE_ID,
+          points,
+          color: ROUTE_OUTLINE,
+          width: 14,
+          visible: true,
+        });
+        if (!isCurrent()) {
+          await clearRouteLines();
+          return false;
+        }
+        await mapViewController.addPolyline({
+          id: DRIVER_ROUTE_ID,
+          points,
+          color: GREEN,
+          width: 8,
+          visible: true,
+        });
+        if (!isCurrent()) {
+          await clearRouteLines();
+          return false;
+        }
+        await mapViewController.addMarker({
+          id: DRIVER_TARGET_MARKER_ID,
+          position: { lat: targetLatitude, lng: targetLongitude },
+          title: targetLabel,
+          anchor: { u: 0.5, v: 1 },
+          visible: true,
+        });
+        return true;
+      } catch {
+        // Navigation voice guidance continues if native route geometry is
+        // temporarily unavailable. A later route-change event retries drawing.
+        return false;
+      }
+    });
+    // Preserve the ordering queue even after a native bridge failure. The
+    // caller gets the real result while the next reroute can still continue.
+    routeOverlayWorkRef.current = work.then(() => undefined, () => undefined);
+    return work;
+  }, [clearRouteLines, hasTarget, mapViewController, navigationController, targetLabel, targetLatitude, targetLongitude]);
 
   /**
    * Google owns off-route detection and route choice. HY3N owns the clean map
@@ -289,7 +312,7 @@ function DriverNavigationSurface({
 
       const drawReplacement = () => {
         if (routeRefreshRunRef.current !== run) return;
-        void drawNavigationRoute().finally(() => {
+        void drawNavigationRoute(() => routeRefreshRunRef.current === run).finally(() => {
           if (routeRefreshRunRef.current !== run) return;
           const nextDelay = DRIVER_REROUTE_ROUTE_REDRAW_DELAYS_MS[attempt + 1];
           if (nextDelay !== undefined) {
@@ -307,21 +330,14 @@ function DriverNavigationSurface({
         });
       };
 
-      // On iOS the bridge reliably forwards route-changed, but does not
-      // currently forward a separate off-route-requested callback. Clear the
-      // old HY3N line before the first geometry read, then redraw from the new
-      // route. This removes the green road already passed even if the native
-      // SDK needs a moment before its replacement geometry becomes readable.
-      if (attempt === 0) {
-        void clearRouteLines().finally(drawReplacement);
-        return;
-      }
-
+      // Every attempt is serialized with the prior map operation. This matters
+      // on iOS where route-changed events can arrive before the old overlay's
+      // removal has crossed the native bridge.
       drawReplacement();
     };
 
     redraw(0);
-  }, [clearRouteLines, clearRouteRefresh, drawNavigationRoute]);
+  }, [clearRouteRefresh, drawNavigationRoute]);
 
   /**
    * The iOS bridge forwards route-change events, but a real road test showed
@@ -443,6 +459,9 @@ function DriverNavigationSurface({
 
   useEffect(() => {
     const request = ++navigationRequestRef.current;
+    // A pickup/drop-off target replacement must also invalidate an older
+    // route-change retry that captured the previous marker target.
+    clearRouteRefresh();
 
     if (!hasTarget || !targetKey) {
       lastTargetKeyRef.current = null;
@@ -520,7 +539,7 @@ function DriverNavigationSurface({
 
         await navigationController.startGuidance();
         if (cancelled || navigationRequestRef.current !== request) return;
-        await drawNavigationRoute();
+        await drawNavigationRoute(() => !cancelled && navigationRequestRef.current === request);
         lastTargetKeyRef.current = targetKey;
         setNavigationMessage(null);
       } catch {

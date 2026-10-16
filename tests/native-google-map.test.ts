@@ -72,8 +72,10 @@ test('Driver active map re-routes for each pickup or drop-off and cleans up safe
   assert.match(component, /const clearRouteLines = useCallback\(async/);
   assert.match(component, /Promise\.allSettled\(\[/);
   assert.match(component, /await clearRouteLines\(\)/);
-  assert.match(component, /clearRouteLines\(\)\.finally\(drawReplacement\)/);
-  assert.match(component, /if \(attempt === 0\)/);
+  assert.match(component, /routeOverlayWorkRef/);
+  assert.match(component, /const drawNavigationRoute = useCallback\(\(isCurrent/);
+  assert.match(component, /routeRefreshRunRef\.current === run/);
+  assert.match(component, /A blank\n\s+\/\/ line is safer than showing a Driver travelling along the old road/);
   assert.match(component, /clearDestinations\(\)/);
   assert.match(component, /stopGuidance\(\)/);
   assert.match(component, /navigationController\.cleanup\(\)/);
