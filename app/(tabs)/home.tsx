@@ -29,7 +29,7 @@ import { buildVehicleFields } from '@/lib/vehicle';
 import { useThemeContext } from '@/lib/theme-provider';
 import { startDriverBackgroundLocationUpdates, stopDriverBackgroundLocationUpdates } from '@/lib/driver-background-location';
 import {
-  DRIVER_FOREGROUND_LOCATION_POLICY,
+  driverForegroundLocationPolicy,
   DRIVER_FOREGROUND_PRESENCE_HEARTBEAT_MS,
   shouldTrackDriverLocation,
 } from '@/lib/driver-location-policy';
@@ -385,6 +385,7 @@ export default function DriverHomeScreen() {
     let subscription: any;
     let disposed = false;
     const shouldTrack = shouldTrackDriverLocation(isOnline, Boolean(activeTrip?.id));
+    const foregroundLocationPolicy = driverForegroundLocationPolicy(Boolean(activeTrip?.id));
     if (!shouldTrack) return;
     const stopForegroundWatch = () => {
       disposed = true;
@@ -408,8 +409,8 @@ export default function DriverHomeScreen() {
       const watch = await ExpoLocation.watchPositionAsync(
         {
           accuracy: ExpoLocation.Accuracy.BestForNavigation,
-          timeInterval: DRIVER_FOREGROUND_LOCATION_POLICY.timeIntervalMs,
-          distanceInterval: DRIVER_FOREGROUND_LOCATION_POLICY.distanceIntervalMeters,
+          timeInterval: foregroundLocationPolicy.timeIntervalMs,
+          distanceInterval: foregroundLocationPolicy.distanceIntervalMeters,
         },
         (newLoc) => {
           if (!disposed) updateLocation(newLoc);
