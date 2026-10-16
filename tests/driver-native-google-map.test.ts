@@ -49,7 +49,8 @@ test('the trip screen stays map-first while retaining availability and destinati
   assert.match(driverHomeSource, /isOnline && !activeTrip && \(/);
   assert.match(driverHomeSource, /styles\.destFilterBar/);
   assert.match(nativeMapSource, /NavigationUIEnabledPreference\.AUTOMATIC/);
-  assert.match(nativeMapSource, /tripProgressBarEnabled=\{hasTarget\}/);
+  assert.match(nativeMapSource, /tripProgressBarEnabled=\{false\}/);
+  assert.match(nativeMapSource, /unexplained blue line/);
   assert.match(driverHomeSource, /activeTripDetails\(incomingRide\)\.bookedFare/);
   assert.match(driverHomeSource, /BOOKED FARE/);
   assert.doesNotMatch(driverHomeSource, /Active Trip Navigation Card/);

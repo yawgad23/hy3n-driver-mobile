@@ -1426,13 +1426,13 @@ export default function DriverHomeScreen() {
           {activeTrip && (
             <>
               <TouchableOpacity
-                style={[styles.navigateTripBtn, { backgroundColor: '#075985' }]}
+                style={[styles.navigateTripIconBtn, { backgroundColor: '#075985' }]}
                 onPress={openTripNavigation}
                 accessibilityRole="button"
                 accessibilityLabel="Choose navigation app"
+                accessibilityHint="Choose Apple Maps, Google Maps, or another map app for this trip"
               >
-                <MaterialIcons name="navigation" size={19} color="#FFF" />
-                <Text style={styles.actionBtnText}>Navigate</Text>
+                <MaterialIcons name="navigation" size={22} color="#FFF" />
               </TouchableOpacity>
               <TouchableOpacity style={[styles.actionBtn, { backgroundColor: BLUE, flex: 1 }]} onPress={openChat}>
                 <MaterialIcons name="chat" size={18} color="#FFF" />
@@ -1762,7 +1762,9 @@ const styles = StyleSheet.create({
   destText: { flex: 1, fontSize: 14, fontWeight: '700' },
 
   activeTripActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  navigateTripBtn: { alignItems: 'center', borderRadius: 12, flexDirection: 'row', gap: 8, justifyContent: 'center', paddingVertical: 12, width: '100%' },
+  // A compact icon keeps the optional external-map chooser available without
+  // covering the driving map or pushing the primary trip actions downward.
+  navigateTripIconBtn: { alignItems: 'center', borderRadius: 12, height: 48, justifyContent: 'center', width: 48 },
   actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 12 },
   navigationChooserBackdrop: { alignItems: 'center', backgroundColor: 'rgba(2, 6, 23, 0.62)', flex: 1, justifyContent: 'flex-end', padding: 16 },
   navigationChooser: { borderRadius: 22, borderWidth: 1, maxWidth: 520, padding: 20, width: '100%' },

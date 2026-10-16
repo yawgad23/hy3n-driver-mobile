@@ -280,14 +280,15 @@ function DriverNavigationSurface({ latitude, longitude, heading, target, tripSta
           mapStyle={CLEAN_DAY_GOOGLE_STYLE}
           // Match the familiar driving-navigation pattern: when a ride has a
           // target, Navigation SDK owns the top maneuver banner and bottom
-          // live ETA/distance panel. HY3N keeps this UI off while the Driver
-          // is merely online without an assigned trip.
+          // live ETA/distance panel. The separate vertical trip-progress rail
+          // is intentionally off because it adds an unexplained blue line to
+          // the left side of the driving map.
           navigationUIEnabledPreference={hasTarget
             ? NavigationUIEnabledPreference.AUTOMATIC
             : NavigationUIEnabledPreference.DISABLED}
           headerEnabled={hasTarget}
           footerEnabled={hasTarget}
-          tripProgressBarEnabled={hasTarget}
+          tripProgressBarEnabled={false}
           trafficEnabled
           trafficPromptsEnabled={false}
           trafficIncidentCardsEnabled={false}

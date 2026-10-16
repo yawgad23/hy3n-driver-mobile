@@ -105,7 +105,11 @@ test('Driver presents a map-app choice when Navigate is tapped during a trip', (
   assert.match(screen, /Apple Maps/);
   assert.match(screen, /Google Maps/);
   assert.match(screen, /Other map app/);
-  assert.match(screen, /<Text style=\{styles\.actionBtnText\}>Navigate<\/Text>/);
+  assert.match(screen, /style=\{\[styles\.navigateTripIconBtn, \{ backgroundColor: '#075985' \}\]\}/);
+  assert.match(screen, /accessibilityHint="Choose Apple Maps, Google Maps, or another map app for this trip"/);
+  assert.match(screen, /<MaterialIcons name="navigation" size=\{22\} color="#FFF" \/>/);
+  assert.doesNotMatch(screen, /<Text style=\{styles\.actionBtnText\}>Navigate<\/Text>/);
+  assert.match(screen, /navigateTripIconBtn: \{ alignItems: 'center', borderRadius: 12, height: 48, justifyContent: 'center', width: 48 \}/);
 });
 
 test('native build configuration persists the Navigation SDK API key and Android desugaring support', () => {
