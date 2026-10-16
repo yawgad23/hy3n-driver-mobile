@@ -3,18 +3,16 @@ export const INCOMING_TRIP_ALERT_PLAYBACK = Object.freeze({
   volume: 0.92,
 });
 
-// The app plays the branded HY3N alert itself. The accompanying local
-// notification remains visual-only so iOS never layers its default chime over
-// that same offer.
+// The trusted server push owns the audible alert. Keeping this as a platform
+// sound avoids the previous foreground-only Expo Audio player and works while
+// HY3N is backgrounded as well.
 export const INCOMING_TRIP_NOTIFICATION = Object.freeze({
-  sound: false,
+  sound: 'default',
 });
 
 /**
- * A foreground Driver receives the branded one-shot alert from the app after
- * the authenticated offer query confirms eligibility. The remote wake-up must
- * remain visible, but its Android channel sound would otherwise play on top of
- * that branded alert (and can sound like the request is repeating).
+ * A Driver ride-offer push is the single alert source. Its payload contains no
+ * fare; the authenticated offer query owns all trip details.
  */
 export function isDriverRideOfferNotification(data: unknown): boolean {
   return Boolean(

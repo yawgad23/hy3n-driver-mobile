@@ -78,10 +78,9 @@ const config: ExpoConfig = {
     versionCode: 57011,
     googleServicesFile: "./firebase/google-services.json",
     permissions: ["POST_NOTIFICATIONS", "ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_LOCATION"],
-    // expo-audio merges audio recording/media-service permissions by default.
-    // HY3N only plays a short foreground ride-offer tone and never records or
-    // performs background media playback, so retain only the Driver's
-    // user-visible location foreground service.
+    // Driver request alerts use the operating system notification sound. HY3N
+    // never records or performs background media playback, so retain only the
+    // Driver's user-visible location foreground service.
     blockedPermissions: ["android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK", "android.permission.RECORD_AUDIO"],
     intentFilters: [
       {

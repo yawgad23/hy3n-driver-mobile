@@ -198,9 +198,9 @@ export default function DriverHomeScreen() {
   }, []);
 
   const stopIncomingTripAlert = () => {
-    // The protected server push is the one incoming-offer alert on iPhone.
-    // Do not create, pause, or release an extra Expo Audio player while the
-    // offer card is mounting in this Hermes/React Native runtime.
+    // The protected server push is the one incoming-offer alert. Do not create,
+    // pause, or release an additional Expo Audio player while the offer card is
+    // mounting in this Hermes/React Native runtime.
   };
 
   // The previous demand-zone circles obscured the map and were not real cars.
@@ -578,10 +578,9 @@ export default function DriverHomeScreen() {
 
     if (incomingRide?.id !== offeredRide.id) {
       setRideOfferSeconds(DRIVER_OFFER_REVIEW_SECONDS);
-      // The server push has already woken the Driver. While HY3N is foregrounded
-      // the in-app card and one branded sound are sufficient; scheduling a
-      // second local iPhone notification here duplicated the banner and added a
-      // native TurboModule call in the exact incoming-offer crash window.
+      // The server push has already produced the one system sound. The
+      // authenticated offer card must not schedule a second local notification
+      // or instantiate a separate audio player in this crash-sensitive window.
       setIncomingRide(offeredRide);
     }
   }, [user?.uid, isOnline, hasCurrentLocation, activeTrip, incomingRide, availableOffers.data?.offers, prefs.longTripsOnly, prefs.preferHighRated]);
