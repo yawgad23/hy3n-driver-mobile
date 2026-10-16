@@ -54,7 +54,6 @@ import {
 } from '@/lib/driver-location-readiness';
 import {
   INCOMING_TRIP_ALERT_PLAYBACK,
-  INCOMING_TRIP_NOTIFICATION,
   shouldPlayIncomingTripAlert,
 } from '@/lib/incoming-trip-alert';
 import { deliveryContactForDriver, isDeliveryRide } from '@/lib/delivery-contact';
@@ -262,9 +261,25 @@ export default function DriverHomeScreen() {
   // A server ride-offer push makes foreground delivery immediate instead of
   // waiting for the next polling tick. A foreground resume needs the same
   // refresh because React Query pauses interval polling in the background.
+  // Keep its current query function in a ref: the React Query result object is
+  // replaced during each refresh, but the offer-signal subscription itself
+  // must stay stable while an iPhone receives an offer.
+  const offerRefreshInputsRef = useRef({
+    authenticated: false,
+    hasCurrentLocation: false,
+    online: false,
+    refetch: () => Promise.resolve<unknown>(undefined),
+  });
+  offerRefreshInputsRef.current = {
+    authenticated: Boolean(user?.uid),
+    hasCurrentLocation,
+    online: isOnline,
+    refetch: availableOffers.refetch,
+  };
   const refreshAvailableOffers = useCallback(() => {
-    if (user?.uid && isOnline && hasCurrentLocation) void availableOffers.refetch();
-  }, [availableOffers, hasCurrentLocation, isOnline, user?.uid]);
+    const inputs = offerRefreshInputsRef.current;
+    if (inputs.authenticated && inputs.online && inputs.hasCurrentLocation) void inputs.refetch();
+  }, []);
 
   useEffect(() => subscribeDriverRideOffer(refreshAvailableOffers), [refreshAvailableOffers]);
 
@@ -284,9 +299,6 @@ export default function DriverHomeScreen() {
     });
     return () => subscription.remove();
   }, [hasCurrentLocation, isOnline, refreshAvailableOffers, user?.uid]);
-  // A query may refetch several times while the same offer is outstanding.
-  // Keep a session-level record so one ride request produces one device alert.
-  const notifiedOfferIds = useRef<Set<string>>(new Set());
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const deliveryContact = deliveryContactForDriver(activeTrip);
@@ -624,28 +636,14 @@ export default function DriverHomeScreen() {
       return;
     }
 
-    setIncomingRide((current: any) => {
-      if (current?.id === offeredRide.id) return current;
+    if (incomingRide?.id !== offeredRide.id) {
       setRideOfferSeconds(DRIVER_OFFER_REVIEW_SECONDS);
-      const offerId = String(offeredRide.id);
-      if (!notifiedOfferIds.current.has(offerId)) {
-        if (notifiedOfferIds.current.size >= 100) notifiedOfferIds.current.clear();
-        notifiedOfferIds.current.add(offerId);
-        Notifications.scheduleNotificationAsync({
-          content: {
-            title: `New ${rideCategoryName(offeredRide.category)} Ride`,
-            // Keep fares inside the protected in-app offer only; device push
-            // previews must not disclose an amount on the lock screen.
-            body: airConditioningReminder(offeredRide.category, 'pickup')
-              || `Ride request from ${offeredRide.rider_name || 'a rider'}. Open HY3N Driver to review the trip.`,
-            sound: INCOMING_TRIP_NOTIFICATION.sound,
-            priority: Notifications.AndroidNotificationPriority.MAX,
-          },
-          trigger: null,
-        }).catch(() => {});
-      }
-      return offeredRide;
-    });
+      // The server push has already woken the Driver. While HY3N is foregrounded
+      // the in-app card and one branded sound are sufficient; scheduling a
+      // second local iPhone notification here duplicated the banner and added a
+      // native TurboModule call in the exact incoming-offer crash window.
+      setIncomingRide(offeredRide);
+    }
   }, [user?.uid, isOnline, hasCurrentLocation, activeTrip, incomingRide, availableOffers.data?.offers, prefs.longTripsOnly, prefs.preferHighRated]);
 
   // Recover a trip if the app is reopened while the driver is already assigned.

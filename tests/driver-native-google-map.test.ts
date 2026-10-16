@@ -22,6 +22,7 @@ test('Driver Home retains one branded request sound per ride ID', () => {
   assert.match(driverHomeSource, /const playedOfferAlertIdsRef = useRef<Set<string>>\(new Set\(\)\)/);
   assert.match(driverHomeSource, /playedOfferAlertIdsRef\.current\.has\(offerId\)/);
   assert.match(driverHomeSource, /playedOfferAlertIdsRef\.current\.add\(offerId\)/);
+  assert.doesNotMatch(driverHomeSource, /const notifiedOfferIds = useRef/);
 });
 
 test('Driver Home shows a prominent Android location disclosure before requesting background tracking', () => {

@@ -8,17 +8,25 @@ type DriverOfferResumeInput = {
   hasCurrentLocation: boolean;
 };
 
-const listeners = new Set<OfferListener>();
+// Keep this as a small array rather than a Set. TestFlight crash reports from
+// recent iPhones show Hermes failing in Set.delete during incoming-offer
+// refreshes. A copied array also makes subscribe/unsubscribe safe while an
+// offer event is being delivered.
+let listeners: OfferListener[] = [];
 
 /** A foreground ride-offer push should refresh the authenticated offer query immediately. */
 export function emitDriverRideOffer() {
-  listeners.forEach((listener) => listener());
+  listeners.slice().forEach((listener) => listener());
 }
 
 export function subscribeDriverRideOffer(listener: OfferListener) {
-  listeners.add(listener);
+  listeners = [...listeners, listener];
+  let active = true;
   return () => {
-    listeners.delete(listener);
+    if (!active) return;
+    active = false;
+    const index = listeners.indexOf(listener);
+    if (index >= 0) listeners = [...listeners.slice(0, index), ...listeners.slice(index + 1)];
   };
 }
 
