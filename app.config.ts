@@ -54,9 +54,8 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 89 keeps the HY3N map and moving car during navigation, and retains
-    // the verified offer-resume and route-change repairs for TestFlight.
-    buildNumber: "89",
+    // Build 90 adds the incoming-offer crash and reroute presentation repairs.
+    buildNumber: "90",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
