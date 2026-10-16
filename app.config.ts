@@ -54,8 +54,8 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 92 adds the latest Driver off-route reroute recovery.
-    buildNumber: "92",
+    // Build 93 packages the validated reroute overlay ordering repair.
+    buildNumber: "93",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
