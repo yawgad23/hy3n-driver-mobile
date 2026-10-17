@@ -54,8 +54,8 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 93 packages the validated reroute overlay ordering repair.
-    buildNumber: "93",
+    // Build 94 packages tested remaining-route recovery and foreground request audio.
+    buildNumber: "94",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
