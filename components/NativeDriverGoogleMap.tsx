@@ -880,7 +880,7 @@ function DriverNavigationSurface({
   );
 }
 
-export default function NativeDriverGoogleMap(props: Props) {
+function NativeDriverGoogleMap(props: Props) {
   return (
     <NavigationProvider
       termsAndConditionsDialogOptions={HY3N_NAVIGATION_TERMS_OPTIONS}
@@ -890,6 +890,12 @@ export default function NativeDriverGoogleMap(props: Props) {
     </NavigationProvider>
   );
 }
+
+// Incoming-offer countdown state belongs to Home. Memoizing this native
+// provider keeps its map surface stable when only the request timer/card
+// changes, while real GPS, heading and navigation-target prop changes still
+// update normally.
+export default React.memo(NativeDriverGoogleMap);
 
 const styles = StyleSheet.create({
   container: { ...StyleSheet.absoluteFillObject },

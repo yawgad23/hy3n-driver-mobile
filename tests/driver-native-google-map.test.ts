@@ -16,6 +16,7 @@ test('Driver native navigation keeps route, traffic, voice, and branded map cont
   assert.match(nativeMapSource, /setOnRouteChanged/);
   assert.match(nativeMapSource, /getRouteSegments/);
   assert.match(nativeMapSource, /mapViewController\.addPolyline/);
+  assert.match(nativeMapSource, /React\.memo\(NativeDriverGoogleMap\)/);
 });
 
 test('Driver Home uses one server push alert and serializes incoming-offer refreshes', () => {
@@ -31,6 +32,10 @@ test('Driver Home uses one server push alert and serializes incoming-offer refre
   assert.match(driverHomeSource, /incomingTripAlertStatus\.isLoaded/);
   assert.match(driverHomeSource, /driverOfferExpiryMs/);
   assert.match(driverHomeSource, /isDriverOfferWithinWindow/);
+  assert.match(driverHomeSource, /retiredOfferLeaseRef/);
+  assert.match(driverHomeSource, /shouldPresentDriverOffer/);
+  assert.match(driverHomeSource, /isUnavailableDriverOfferError/);
+  assert.match(driverHomeSource, /const activeNavigationTarget = useMemo/);
   assert.match(driverHomeSource, /transient empty response/);
   assert.doesNotMatch(driverHomeSource, /new Set/);
 });

@@ -60,6 +60,7 @@ import {
   driverOfferAcceptedByServer,
 } from '@/lib/driver-offer-lifecycle';
 import { driverOfferExpiryMs, isDriverOfferWithinWindow } from '@/lib/driver-offer-expiry';
+import { driverOfferLeaseKey, isUnavailableDriverOfferError, shouldPresentDriverOffer } from '@/lib/driver-offer-lease';
 import { createSingleFlightDriverOfferRefresher } from '@/lib/driver-offer-refresh';
 import { driverTripTerminalStatus } from '@/lib/driver-trip-lifecycle';
 import { activeTripDetails } from '@/lib/driver-active-trip-details';
@@ -177,6 +178,7 @@ export default function DriverHomeScreen() {
   const incomingTripAlertStatus = useAudioPlayerStatus(incomingTripAlertPlayer);
   const incomingTripAudioRuntimeRef = useRef(createDriverRequestAudio());
   const incomingOfferReceivedAtRef = useRef<number | null>(null);
+  const retiredOfferLeaseRef = useRef<string | null>(null);
   const lastTripLocationRef = useRef<ExpoLocation.LocationObject | null>(null);
   const lastTripMeterPublishedAtRef = useRef(0);
   const lastSpeedRef = useRef<number | null>(null);
@@ -584,6 +586,7 @@ export default function DriverHomeScreen() {
       // deadline is allowed to retire an unanswered offer locally.
       if (incomingRide && expiresAtMs !== null && !isDriverOfferWithinWindow(expiresAtMs, Date.now())) {
         stopIncomingTripAlert();
+        retiredOfferLeaseRef.current = driverOfferLeaseKey(incomingRide);
         incomingOfferReceivedAtRef.current = null;
         setIncomingRide(null);
       }
@@ -598,6 +601,8 @@ export default function DriverHomeScreen() {
       setNextRide((current: any) => current || offeredRide);
       return;
     }
+
+    if (!shouldPresentDriverOffer(offeredRide, retiredOfferLeaseRef.current)) return;
 
     if (incomingRide?.id !== offeredRide.id) {
       incomingOfferReceivedAtRef.current = Date.now();
@@ -663,6 +668,7 @@ export default function DriverHomeScreen() {
       setRideOfferSeconds(seconds);
       if (seconds === 0) {
         stopIncomingTripAlert();
+        retiredOfferLeaseRef.current = driverOfferLeaseKey(incomingRide);
         incomingOfferReceivedAtRef.current = null;
         setIncomingRide(null);
         refreshAvailableOffers();
@@ -938,7 +944,9 @@ export default function DriverHomeScreen() {
 
   const handleDeclineRide = async () => {
     if (!incomingRide || !user?.uid) return;
+    const retiredLeaseKey = driverOfferLeaseKey(incomingRide);
     stopIncomingTripAlert();
+    retiredOfferLeaseRef.current = retiredLeaseKey;
     incomingOfferReceivedAtRef.current = null;
     try {
       await respondToOffer.mutateAsync({ driverId: user.uid, rideId: incomingRide.id, decision: 'decline' });
@@ -948,7 +956,9 @@ export default function DriverHomeScreen() {
       setIncomingRide(null);
       setRideOfferSeconds(DRIVER_OFFER_REVIEW_SECONDS);
       void refreshAvailableOffers();
-      Alert.alert('Error', 'Failed to decline ride');
+      if (!isUnavailableDriverOfferError(err)) {
+        Alert.alert('Could not decline ride', 'HY3N could not send the decline. The request will not ring again; please stay online while offers refresh.');
+      }
     }
   };
 
@@ -1317,22 +1327,23 @@ export default function DriverHomeScreen() {
     }
   };
 
-  const activeNavigationRawTarget = activeTrip
-    ? (activeTrip.status === 'in_progress' ? (activeTrip.route_target?.location || activeTrip.destination) : activeTrip.pickup)
-    : null;
-  const activeNavigationLatitude = Number(activeNavigationRawTarget?.lat ?? activeNavigationRawTarget?.latitude ?? (activeTrip?.status === 'in_progress' ? activeTrip?.destination_lat : activeTrip?.pickup_lat));
-  const activeNavigationLongitude = Number(activeNavigationRawTarget?.lng ?? activeNavigationRawTarget?.longitude ?? (activeTrip?.status === 'in_progress' ? activeTrip?.destination_lng : activeTrip?.pickup_lng));
-  const activeNavigationTarget = activeTrip && Number.isFinite(activeNavigationLatitude) && Number.isFinite(activeNavigationLongitude)
-    ? {
-        latitude: activeNavigationLatitude,
-        longitude: activeNavigationLongitude,
-        label: activeTrip.status === 'in_progress'
-          ? (activeTrip.route_target?.kind === 'stop'
-            ? (activeTrip.route_target?.location?.address || activeTrip.route_target?.location?.name || 'Next stop')
-            : (activeTrip.destination_address || 'Drop-off'))
-          : (activeTrip.pickup_address || 'Pickup'),
-      }
-    : null;
+  const activeNavigationTarget = useMemo(() => {
+    const target = activeTrip
+      ? (activeTrip.status === 'in_progress' ? (activeTrip.route_target?.location || activeTrip.destination) : activeTrip.pickup)
+      : null;
+    const latitude = Number(target?.lat ?? target?.latitude ?? (activeTrip?.status === 'in_progress' ? activeTrip?.destination_lat : activeTrip?.pickup_lat));
+    const longitude = Number(target?.lng ?? target?.longitude ?? (activeTrip?.status === 'in_progress' ? activeTrip?.destination_lng : activeTrip?.pickup_lng));
+    if (!activeTrip || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    return {
+      latitude,
+      longitude,
+      label: activeTrip.status === 'in_progress'
+        ? (activeTrip.route_target?.kind === 'stop'
+          ? (activeTrip.route_target?.location?.address || activeTrip.route_target?.location?.name || 'Next stop')
+          : (activeTrip.destination_address || 'Drop-off'))
+        : (activeTrip.pickup_address || 'Pickup'),
+    };
+  }, [activeTrip]);
 
 
 
