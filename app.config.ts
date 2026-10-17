@@ -54,8 +54,8 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 96 packages the tested iOS live-leg reroute acceptance correction.
-    buildNumber: "96",
+    // Build 97 packages the tested Driver request-song lifecycle correction.
+    buildNumber: "97",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
