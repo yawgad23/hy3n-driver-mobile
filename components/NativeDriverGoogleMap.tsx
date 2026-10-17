@@ -15,6 +15,7 @@ import {
 import {
   DRIVER_REROUTE_ROUTE_REDRAW_DELAYS_MS,
   driverMapMotionFrames,
+  distanceBetweenPositionsMetres,
   routePointsForMap,
   type DriverMapPosition,
 } from '@/lib/driver-map-motion';
@@ -28,8 +29,10 @@ import {
   assessDriverWrongWay,
   EMPTY_DRIVER_WRONG_WAY_MONITOR,
   driverRouteReachesTarget,
+  driverRouteStartsAtLocation,
   isSameDriverRoadPlan,
 } from '@/lib/driver-route-progress';
+import { createDriverNavigationDiagnostics, driverNavigationDiagnosticsEnabled, navigationErrorCode } from '@/lib/driver-navigation-diagnostics';
 
 type MapTarget = { latitude: number; longitude: number; label: string };
 type Props = {
@@ -84,6 +87,11 @@ function hasPoint(latitude?: number, longitude?: number) {
     && !(Number(latitude) === 0 && Number(longitude) === 0);
 }
 
+function hasFreshNavigationFix(accuracy: number | null | undefined, time: number | null | undefined) {
+  return accuracy != null && Number.isFinite(accuracy) && accuracy >= 0 && accuracy <= 50
+    && time != null && Number.isFinite(time) && Date.now() - time <= 15_000 && time - Date.now() <= 5_000;
+}
+
 function readableNavigationFailure(status: NavigationSessionStatus | RouteStatus) {
   switch (status) {
     case NavigationSessionStatus.NOT_AUTHORIZED:
@@ -123,9 +131,13 @@ function DriverNavigationSurface({
     setOnArrival,
     setOnRouteChanged,
     setOnReroutingRequestedByOffRoute,
+    setOnLocationChanged,
   } = useNavigation();
   const [mapViewController, setMapViewController] = useState<MapViewController | null>(null);
   const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
+  const diagnostics = useRef(createDriverNavigationDiagnostics()).current;
+  const nativeLocationRef = useRef<{ latitude: number; longitude: number; time: number } | null>(null);
+  const confirmedRerouteRef = useRef<{ request: number; origin: { latitude: number; longitude: number }; atMs: number } | null>(null);
   const initializedRef = useRef(false);
   const navigationRequestRef = useRef(0);
   const navigationWorkRef = useRef<Promise<void>>(Promise.resolve());
@@ -156,10 +168,10 @@ function DriverNavigationSurface({
   // Async native callbacks must read the latest real GPS fix, not coordinates
   // captured when the destination was first set.
   const liveLocationRef = useRef<{
-    latitude: number; longitude: number; accuracyMeters?: number | null;
+    latitude: number; longitude: number; accuracyMeters?: number | null; time?: number | null;
   } | null>(null);
   liveLocationRef.current = hasDeviceLocation
-    ? { latitude: Number(latitude), longitude: Number(longitude), accuracyMeters: locationAccuracy }
+    ? { latitude: Number(latitude), longitude: Number(longitude), accuracyMeters: locationAccuracy, time: locationTimestamp }
     : null;
 
   const runNavigationWork = useCallback((operation: () => Promise<void>) => {
@@ -245,11 +257,12 @@ function DriverNavigationSurface({
     // HY3N-owned overlays. Remove them as one awaited operation before drawing
     // replacement geometry, otherwise an off-route Driver can see the road
     // they have already left until the map's asynchronous bridge catches up.
-    await Promise.allSettled([
+    const results = await Promise.allSettled([
       Promise.resolve(mapViewController.removePolyline(DRIVER_ROUTE_OUTLINE_ID)),
       Promise.resolve(mapViewController.removePolyline(DRIVER_ROUTE_ID)),
     ]);
-  }, [mapViewController]);
+    for (const result of results) if (result.status === 'rejected') diagnostics('polyline.failed', { reason: 'remove', code: navigationErrorCode(result.reason) });
+  }, [diagnostics, mapViewController]);
 
   const clearRoute = useCallback(() => {
     const request = navigationRequestRef.current;
@@ -280,22 +293,36 @@ function DriverNavigationSurface({
       });
       if (navigationRequestRef.current !== request) await clearRouteLines();
     });
-    routeOverlayWorkRef.current = work.catch(() => {});
-  }, [clearRouteLines, mapViewController]);
+    routeOverlayWorkRef.current = work.catch((error) => {
+      diagnostics('polyline.failed', { request, reason: 'gps_progress', code: navigationErrorCode(error) });
+    });
+  }, [clearRouteLines, diagnostics, mapViewController]);
 
   const drawNavigationRoute = useCallback((isCurrent: () => boolean = () => true) => {
     const work = routeOverlayWorkRef.current.then(async () => {
       if (!mapViewController || !hasTarget || !isCurrent()) return false;
+      let stage: 'geometry' | 'polyline' = 'geometry';
       try {
         // Remove the passed road before reading replacement geometry. A blank
         // line is safer than showing a Driver travelling along the old road.
         await clearRouteLines();
         if (!isCurrent()) return false;
 
-        const segments = await navigationController.getRouteSegments();
+        // iOS currentRouteLeg explicitly starts at the most recent native GPS
+        // fix. HY3N sets one active stop at a time, so this is the entire leg we
+        // must display. Do not silently substitute cached full legs on failure.
+        const iosCurrentLeg = Platform.OS === 'ios';
+        const segments = iosCurrentLeg
+          ? [await navigationController.getCurrentRouteSegment()]
+          : await navigationController.getRouteSegments();
         const points = routePointsForMap(segments);
-        if (!isCurrent() || points.length < 2
-          || !driverRouteReachesTarget(points, { lat: targetLatitude, lng: targetLongitude })) return false;
+        const targetMatches = driverRouteReachesTarget(points, { lat: targetLatitude, lng: targetLongitude });
+        diagnostics('geometry.received', { request: navigationRequestRef.current, points: points.length, targetMatches, source: iosCurrentLeg ? 'ios-current-leg' : 'route-legs' });
+        if (!isCurrent() || points.length < 2 || !targetMatches) {
+          diagnostics('geometry.rejected', { reason: !isCurrent() ? 'stale_request' : points.length < 2 ? 'invalid_points' : 'wrong_target' });
+          return false;
+        }
+        stage = 'polyline';
         await mapViewController.addMarker({
           id: DRIVER_TARGET_MARKER_ID,
           position: { lat: targetLatitude, lng: targetLongitude },
@@ -311,8 +338,16 @@ function DriverNavigationSurface({
         const remaining = remainingDriverRoute(liveLocationRef.current, points);
         // Google can still return the old leg while a reroute is pending.
         // Retain it for deviation checks but do not repaint a disconnected line.
-        if (remaining.length < 2 || (staleRoutePlanRef.current && isSameDriverRoadPlan(points, staleRoutePlanRef.current))) return false;
+        const confirmation = confirmedRerouteRef.current;
+        const confirmedFreshStart = iosCurrentLeg && confirmation?.request === navigationRequestRef.current
+          && Date.now() - confirmation.atMs <= 30_000
+          && driverRouteStartsAtLocation(points, confirmation.origin);
+        if (remaining.length < 2 || (staleRoutePlanRef.current && isSameDriverRoadPlan(points, staleRoutePlanRef.current) && !confirmedFreshStart)) {
+          diagnostics('geometry.rejected', { reason: remaining.length < 2 ? 'not_on_current_road' : 'unconfirmed_shared_road' });
+          return false;
+        }
         staleRoutePlanRef.current = null;
+        confirmedRerouteRef.current = null;
 
         await mapViewController.addPolyline({
           id: DRIVER_ROUTE_OUTLINE_ID,
@@ -336,8 +371,21 @@ function DriverNavigationSurface({
           await clearRouteLines();
           return false;
         }
+        diagnostics('polyline.applied', { request: navigationRequestRef.current, points: remaining.length });
+        if (driverNavigationDiagnosticsEnabled()) {
+          try {
+            const nativeLines = await mapViewController.getPolylines();
+            const nativePath = nativeLines.find((line) => line.id === DRIVER_ROUTE_ID)?.points;
+            const nativePathMatches = Boolean(nativePath && nativePath.length === remaining.length
+              && nativePath.every((point, index) => Math.abs(point.lat - remaining[index].lat) < 1e-7 && Math.abs(point.lng - remaining[index].lng) < 1e-7));
+            diagnostics('polyline.verified', { request: navigationRequestRef.current, nativePathMatches, points: nativePath?.length ?? 0 });
+          } catch (error) {
+            diagnostics('polyline.failed', { reason: 'readback', code: navigationErrorCode(error) });
+          }
+        }
         return true;
-      } catch {
+      } catch (error) {
+        diagnostics(stage === 'geometry' ? 'geometry.failed' : 'polyline.failed', { request: navigationRequestRef.current, code: navigationErrorCode(error) });
         // Navigation voice guidance continues if native route geometry is
         // temporarily unavailable. A later route-change event retries drawing.
         return false;
@@ -347,7 +395,7 @@ function DriverNavigationSurface({
     // caller gets the real result while the next reroute can still continue.
     routeOverlayWorkRef.current = work.then(() => undefined, () => undefined);
     return work;
-  }, [clearRouteLines, hasTarget, mapViewController, navigationController, targetLabel, targetLatitude, targetLongitude]);
+  }, [clearRouteLines, diagnostics, hasTarget, mapViewController, navigationController, targetLabel, targetLatitude, targetLongitude]);
 
   /**
    * Google owns off-route detection and route choice. HY3N owns the clean map
@@ -413,11 +461,19 @@ function DriverNavigationSurface({
     const request = navigationRequestRef.current;
     const stillCurrent = () => navigationRequestRef.current === request && lastTargetKeyRef.current === targetKey;
     forcedRerouteInFlightRef.current = true;
+    confirmedRerouteRef.current = null;
     staleRoutePlanRef.current = routePointsRef.current.slice();
     setNavigationMessage('Re-routing from your current road…');
     void runNavigationWork(async () => {
       try {
         if (!stillCurrent()) return;
+        const observedOrigin = liveLocationRef.current && { ...liveLocationRef.current };
+        if (!observedOrigin || (Platform.OS === 'ios' && !hasFreshNavigationFix(observedOrigin.accuracyMeters, observedOrigin.time))) {
+          diagnostics('route.assessment', { shouldReroute: false, reason: 'stale_or_imprecise_gps' });
+          return;
+        }
+        diagnostics('route.request', { request, accuracyMeters: observedOrigin.accuracyMeters,
+          ageMs: observedOrigin.time != null ? Math.max(0, Date.now() - observedOrigin.time) : null });
         // Keep the destination server-owned. This only asks Google Navigation
         // to replace its route from the Driver's verified current GPS position.
         const routeStatus = await navigationController.setDestination(
@@ -436,20 +492,24 @@ function DriverNavigationSurface({
           },
         );
         if (!stillCurrent()) return;
+        diagnostics('route.response', { request, status: routeStatus });
         if (routeStatus !== RouteStatus.OK) {
           setNavigationMessage(readableNavigationFailure(routeStatus));
           return;
         }
+        confirmedRerouteRef.current = { request, origin: observedOrigin, atMs: Date.now() };
         await navigationController.startGuidance();
         if (!stillCurrent()) return;
         refreshBrandedRouteAfterNativeChange(true);
-      } catch {
+      } catch (error) {
+        diagnostics('route.response', { request, status: 'exception', code: navigationErrorCode(error) });
         if (stillCurrent()) setNavigationMessage('Navigation could not re-route. Please check location and connection.');
       } finally {
         forcedRerouteInFlightRef.current = false;
       }
     });
   }, [
+    diagnostics,
     hasTarget,
     navigationController,
     refreshBrandedRouteAfterNativeChange,
@@ -461,10 +521,26 @@ function DriverNavigationSurface({
   ]);
 
   useEffect(() => {
+    setOnLocationChanged((location) => {
+      const valid = hasPoint(location.lat, location.lng);
+      const previous = nativeLocationRef.current;
+      const point = valid ? { latitude: location.lat, longitude: location.lng, time: location.time } : null;
+      const expo = liveLocationRef.current;
+      diagnostics('native.gps', {
+        valid, accuracyMeters: location.accuracy ?? null,
+        ageMs: Number.isFinite(location.time) ? Math.max(0, Date.now() - location.time) : null,
+        movementMeters: point && previous ? distanceBetweenPositionsMetres({ ...previous, heading: 0 }, { ...point, heading: 0 }) : null,
+        nativeDeltaMeters: point && expo ? distanceBetweenPositionsMetres({ ...point, heading: 0 }, { ...expo, heading: 0 }) : null,
+      });
+      if (point) nativeLocationRef.current = point;
+    });
     setOnArrival(() => {
       setNavigationMessage('You have reached this stop. Confirm your HY3N trip action below.');
     });
-    setOnRouteChanged(() => refreshBrandedRouteAfterNativeChange(false));
+    setOnRouteChanged(() => {
+      diagnostics('route.native-change', { request: navigationRequestRef.current });
+      refreshBrandedRouteAfterNativeChange(false);
+    });
     setOnReroutingRequestedByOffRoute(() => {
       staleRoutePlanRef.current = routePointsRef.current.slice();
       refreshBrandedRouteAfterNativeChange(true);
@@ -473,7 +549,7 @@ function DriverNavigationSurface({
       clearRouteRefresh();
       removeAllListeners();
     };
-  }, [clearRouteRefresh, refreshBrandedRouteAfterNativeChange, removeAllListeners, setOnArrival, setOnRouteChanged, setOnReroutingRequestedByOffRoute]);
+  }, [clearRouteRefresh, diagnostics, refreshBrandedRouteAfterNativeChange, removeAllListeners, setOnArrival, setOnLocationChanged, setOnRouteChanged, setOnReroutingRequestedByOffRoute]);
 
   // The branded overlay is not a NavigationView: Google does not update it for
   // us. A low-frequency single-flight read recovers a dropped native callback;
@@ -525,6 +601,15 @@ function DriverNavigationSurface({
     const sampleKey = locationTimestamp != null && Number.isFinite(Number(locationTimestamp))
       ? `timestamp:${Number(locationTimestamp)}`
       : `coordinate:${Number(latitude).toFixed(6)}:${Number(longitude).toFixed(6)}`;
+    const usableFix = hasFreshNavigationFix(locationAccuracy, locationTimestamp);
+    diagnostics('gps.sample', { valid: usableFix, accuracyMeters: locationAccuracy ?? null,
+      ageMs: locationTimestamp != null ? Math.max(0, Date.now() - locationTimestamp) : null });
+    if (Platform.OS === 'ios' && !usableFix) {
+      offRouteMonitorRef.current = { ...offRouteMonitorRef.current, consecutiveOffRouteSamples: 0 };
+      wrongWayMonitorRef.current = { ...wrongWayMonitorRef.current, previousLocation: null, consecutiveSamples: 0 };
+      diagnostics('route.assessment', { shouldReroute: false, reason: 'stale_or_imprecise_gps' });
+      return;
+    }
     const assessment = assessDriverOffRoute(
       offRouteMonitorRef.current,
       {
@@ -542,9 +627,12 @@ function DriverNavigationSurface({
       liveLocationRef.current!, routePointsRef.current, sampleKey, Date.now(),
     );
     wrongWayMonitorRef.current = wrongWay.next;
+    diagnostics('route.assessment', { distanceMeters: assessment.distanceMeters, thresholdMeters: assessment.thresholdMeters,
+      offRoute: assessment.offRoute, wrongWay: wrongWay.shouldReroute, shouldReroute: assessment.shouldReroute || wrongWay.shouldReroute });
     if (assessment.shouldReroute || wrongWay.shouldReroute) requestGpsFallbackReroute();
     updateRemainingRoute();
   }, [
+    diagnostics,
     hasDeviceLocation,
     hasTarget,
     latitude,
@@ -562,6 +650,7 @@ function DriverNavigationSurface({
     navigationRequestRef.current += 1;
     routePointsRef.current = [];
     staleRoutePlanRef.current = null;
+    confirmedRerouteRef.current = null;
     offRouteMonitorRef.current = EMPTY_DRIVER_OFF_ROUTE_MONITOR;
     wrongWayMonitorRef.current = EMPTY_DRIVER_WRONG_WAY_MONITOR;
     forcedRerouteInFlightRef.current = false;
@@ -570,6 +659,7 @@ function DriverNavigationSurface({
 
   useEffect(() => {
     const request = ++navigationRequestRef.current;
+    confirmedRerouteRef.current = null;
     // A pickup/drop-off target replacement must also invalidate an older
     // route-change retry that captured the previous marker target.
     clearRouteRefresh();
@@ -626,6 +716,7 @@ function DriverNavigationSurface({
 
         if (!initializedRef.current) {
           const sessionStatus = await navigationController.init();
+          diagnostics('session.response', { request, status: sessionStatus });
           if (cancelled || navigationRequestRef.current !== request) return;
           if (sessionStatus !== NavigationSessionStatus.OK) {
             setNavigationMessage(readableNavigationFailure(sessionStatus));
@@ -644,6 +735,7 @@ function DriverNavigationSurface({
         navigationController.setBackgroundLocationUpdatesEnabled(true);
         navigationController.startUpdatingLocation();
 
+        diagnostics('route.request', { request, reason: 'initial' });
         const routeStatus = await navigationController.setDestination(
           {
             title: targetLabel,
@@ -660,6 +752,7 @@ function DriverNavigationSurface({
           },
         );
         if (cancelled || navigationRequestRef.current !== request) return;
+        diagnostics('route.response', { request, status: routeStatus });
         if (routeStatus !== RouteStatus.OK) {
           setNavigationMessage(readableNavigationFailure(routeStatus));
           return;
@@ -671,7 +764,8 @@ function DriverNavigationSurface({
         if (cancelled || navigationRequestRef.current !== request) return;
         lastTargetKeyRef.current = targetKey;
         setNavigationMessage(painted ? null : 'Re-routing from your current road…');
-      } catch {
+      } catch (error) {
+        diagnostics('route.response', { request, status: 'exception', code: navigationErrorCode(error) });
         if (!cancelled && navigationRequestRef.current === request) {
           setNavigationMessage('Navigation could not start. Please check location and connection.');
         }
@@ -679,7 +773,7 @@ function DriverNavigationSurface({
     });
 
     return () => { cancelled = true; };
-  }, [clearRoute, clearRouteRefresh, drawNavigationRoute, hasDeviceLocation, hasTarget, navigationController, runNavigationWork, targetKey, targetLabel, targetLatitude, targetLongitude]);
+  }, [clearRoute, clearRouteRefresh, diagnostics, drawNavigationRoute, hasDeviceLocation, hasTarget, navigationController, runNavigationWork, targetKey, targetLabel, targetLatitude, targetLongitude]);
 
   return (
     <View style={styles.container}>

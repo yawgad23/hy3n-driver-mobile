@@ -98,6 +98,15 @@ export function driverRouteReachesTarget(points: readonly DriverRoutePoint[], ta
   return Math.hypot(x, y) <= maxDistanceMeters;
 }
 
+/** A shared road is acceptable after confirmation only if its native start is fresh. */
+export function driverRouteStartsAtLocation(points: readonly DriverRoutePoint[], location: DriverLocationPoint | null, maxDistanceMeters = 35) {
+  const start = points[0];
+  if (!start || !location || !validPoint(start) || !validPoint({ lat: location.latitude, lng: location.longitude })) return false;
+  const x = (start.lng - location.longitude) * METRES_PER_DEGREE * Math.cos(location.latitude * Math.PI / 180);
+  const y = (start.lat - location.latitude) * METRES_PER_DEGREE;
+  return Math.hypot(x, y) <= maxDistanceMeters;
+}
+
 /** A progress-only prefix/density change is not a newly rerouted road plan. */
 export function isSameDriverRoadPlan(candidate: readonly DriverRoutePoint[], previous: readonly DriverRoutePoint[]) {
   if (candidate.length < 2 || previous.length < 2 || !candidate.every(validPoint) || !previous.every(validPoint)) return false;

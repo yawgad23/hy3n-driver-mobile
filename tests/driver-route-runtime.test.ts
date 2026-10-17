@@ -36,6 +36,7 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
     setBackgroundLocationUpdatesEnabled: (enabled: boolean) => { backgroundLocationCalls.push(enabled); },
     startGuidance: async () => {}, stopGuidance: async () => {},
     clearDestinations: async () => {}, cleanup: async () => {},
+    getCurrentRouteSegment: async () => ({ segmentLatLngList: segments }),
     getRouteSegments: async () => [{ segmentLatLngList: segments }],
     setDestination: async (point: any) => { destinationCalls.push(point); return onDestination ? onDestination(point) : 0; },
   };
@@ -45,6 +46,7 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
     setOnArrival: (cb: any) => { listeners.arrival = cb; },
     setOnRouteChanged: (cb: any) => { listeners.changed = cb; },
     setOnReroutingRequestedByOffRoute: (cb: any) => { listeners.offRoute = cb; },
+    setOnLocationChanged: (cb: any) => { listeners.location = cb; },
   }), []);
   const MapView = ({ onMapViewControllerCreated }: any) => {
     React.useEffect(() => { onMapViewControllerCreated(controller); }, [onMapViewControllerCreated]);
@@ -80,7 +82,7 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
     module, module.exports,
   );
   const Component = module.exports.default;
-  let props: any = { ...initial, locationTimestamp: 1, locationAccuracy: 5, heading: 0,
+  let props: any = { ...initial, locationTimestamp: Date.now(), locationAccuracy: 5, heading: 0,
     target: { latitude: destination.lat, longitude: destination.lng, label: 'Drop-off' }, tripStatus: 'dropoff' };
   let tree: ReactTestRenderer;
   const flush = async () => { for (let i = 0; i < 15; i++) await Promise.resolve(); };
@@ -95,6 +97,9 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
     setSegments: (v: typeof road) => { segments = v; },
     setDestinationHandler: (handler: (point: any) => Promise<number>) => { onDestination = handler; },
     update: async (update: any) => {
+      if (typeof update.locationTimestamp === 'number' && update.locationTimestamp < 1000) {
+        update = { ...update, locationTimestamp: Date.now() + update.locationTimestamp };
+      }
       props = { ...props, ...update };
       await act(async () => { tree!.update(React.createElement(Component, props)); await flush(); });
     },
