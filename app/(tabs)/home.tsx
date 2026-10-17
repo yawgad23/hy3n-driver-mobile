@@ -10,7 +10,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Notifications from 'expo-notifications';
-import { useAudioPlayer } from 'expo-audio';
+import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { trpc } from '@/lib/trpc';
@@ -72,6 +72,7 @@ import {
   type DriverNavigationPlatform,
 } from '@/lib/driver-navigation-fallback';
 import { shouldPlayIncomingTripAlert } from '@/lib/incoming-trip-alert';
+import { createDriverRequestAudio } from '@/lib/driver-request-audio';
 
 const GOLD = '#D4AF37';
 const GREEN = '#22C55E';
@@ -173,6 +174,8 @@ export default function DriverHomeScreen() {
     require('@/assets/audio/incoming-trip-alert.wav'),
     { keepAudioSessionActive: false },
   );
+  const incomingTripAlertStatus = useAudioPlayerStatus(incomingTripAlertPlayer);
+  const incomingTripAudioRuntimeRef = useRef(createDriverRequestAudio());
   const lastTripLocationRef = useRef<ExpoLocation.LocationObject | null>(null);
   const lastTripMeterPublishedAtRef = useRef(0);
   const lastSpeedRef = useRef<number | null>(null);
@@ -181,7 +184,6 @@ export default function DriverHomeScreen() {
   const offerRefresherRef = useRef(createSingleFlightDriverOfferRefresher());
   const tripActionInFlightRef = useRef(false);
   const ratingSubmitInFlightRef = useRef(false);
-  const incomingTripAlertedRideIdRef = useRef<string | null>(null);
   const backgroundLocationDisclosureDecisionRef = useRef<DriverBackgroundLocationDisclosureDecision>('unseen');
   const backgroundLocationRequestStateRef = useRef<DriverBackgroundLocationRequestState>('ready');
   const backgroundLocationWarningShownRef = useRef(false);
@@ -208,19 +210,11 @@ export default function DriverHomeScreen() {
   }, []);
 
   const stopIncomingTripAlert = useCallback(() => {
-    incomingTripAlertPlayer.pause();
-    void incomingTripAlertPlayer.seekTo(0).catch(() => {});
+    incomingTripAudioRuntimeRef.current.stop(incomingTripAlertPlayer);
   }, [incomingTripAlertPlayer]);
 
   const playIncomingTripAlert = useCallback((rideId: string) => {
-    if (incomingTripAlertedRideIdRef.current === rideId) return;
-    incomingTripAlertedRideIdRef.current = rideId;
-    incomingTripAlertPlayer.pause();
-    // A prior offer may have ended mid-tone. Always rewind before the one-shot
-    // playback so the next Driver request is immediately audible.
-    void incomingTripAlertPlayer.seekTo(0)
-      .catch(() => {})
-      .finally(() => incomingTripAlertPlayer.play());
+    void incomingTripAudioRuntimeRef.current.play(rideId, incomingTripAlertPlayer, setAudioModeAsync);
   }, [incomingTripAlertPlayer]);
 
   // The previous demand-zone circles obscured the map and were not real cars.
@@ -604,15 +598,22 @@ export default function DriverHomeScreen() {
 
   useEffect(() => {
     const incomingRideId = incomingRide?.id ? String(incomingRide.id) : null;
-    if (!incomingRideId) return;
     if (!shouldPlayIncomingTripAlert({
       isOnline,
       incomingRideId,
       activeTripId: activeTrip?.id || null,
       soundAlerts: prefs.soundAlerts,
-    })) return;
+    })) {
+      stopIncomingTripAlert();
+      return;
+    }
+    // An offer may arrive before native AVPlayer finishes loading. Subscribe to
+    // readiness so that same pending request is tried when the WAV becomes ready.
+    if (!incomingRideId || !incomingTripAlertStatus.isLoaded) return;
     playIncomingTripAlert(incomingRideId);
-  }, [activeTrip?.id, incomingRide?.id, isOnline, playIncomingTripAlert, prefs.soundAlerts]);
+  }, [activeTrip?.id, incomingRide?.id, incomingTripAlertStatus.isLoaded, isOnline, playIncomingTripAlert, prefs.soundAlerts, stopIncomingTripAlert]);
+
+  useEffect(() => () => stopIncomingTripAlert(), [stopIncomingTripAlert]);
 
   // Recover a trip if the app is reopened while the driver is already assigned.
   useEffect(() => {

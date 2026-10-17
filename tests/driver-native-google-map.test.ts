@@ -26,7 +26,9 @@ test('Driver Home uses one server push alert and serializes incoming-offer refre
   assert.match(driverHomeSource, /useAudioPlayer\(/);
   assert.match(driverHomeSource, /incoming-trip-alert\.wav/);
   assert.match(driverHomeSource, /shouldPlayIncomingTripAlert/);
-  assert.match(driverHomeSource, /incomingTripAlertedRideIdRef/);
+  assert.match(driverHomeSource, /incomingTripAudioRuntimeRef/);
+  assert.match(driverHomeSource, /useAudioPlayerStatus/);
+  assert.match(driverHomeSource, /incomingTripAlertStatus\.isLoaded/);
   assert.doesNotMatch(driverHomeSource, /new Set/);
 });
 
