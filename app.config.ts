@@ -54,8 +54,8 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 98 packages the tested stale-offer song-stop and timer-map stability corrections.
-    buildNumber: "98",
+    // Build 99 packages the immediate request-song stop on Accept and Decline.
+    buildNumber: "99",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
