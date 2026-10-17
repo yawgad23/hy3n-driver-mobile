@@ -13,7 +13,7 @@ const corner = { lat: 5.704, lng: -0.1 };
 const target = { lat: 5.704, lng: -0.096 };
 const initialRoad = [origin, corner, target];
 
-async function mountIos(options: { initialNetworkFailure?: boolean } = {}) {
+async function mountIos(options: { initialNetworkFailure?: boolean; platform?: 'ios' | 'android' } = {}) {
   let route = initialRoad;
   let currentLeg = initialRoad;
   let props: any = { latitude: 5.703, longitude: origin.lng, locationTimestamp: Date.now(), locationAccuracy: 5,
@@ -64,7 +64,7 @@ async function mountIos(options: { initialNetworkFailure?: boolean } = {}) {
   };
   const native = { View: 'view', Text: 'text', TouchableOpacity: 'button',
     AppState: { currentState: 'active', addEventListener: () => ({ remove: () => {} }) },
-    Linking: { openSettings: () => {} }, Platform: { OS: 'ios', select: (v: any) => v.ios },
+    Linking: { openSettings: () => {} }, Platform: { OS: options.platform || 'ios', select: (v: any) => v[options.platform || 'ios'] },
     StyleSheet: { create: (v: any) => v, absoluteFillObject: {}, absoluteFill: {} } };
   const keepAwake = { useKeepAwake: () => {} };
   const result = await build({ entryPoints: [path.join(__dirname, '../components/NativeDriverGoogleMap.tsx')],
@@ -84,6 +84,7 @@ async function mountIos(options: { initialNetworkFailure?: boolean } = {}) {
     rendered: () => JSON.stringify(tree.toJSON()),
     arrival: async (event: any) => { await act(async () => { listeners.arrival?.(event); await flush(); }); },
     routeChanged: async () => { await act(async () => { listeners.changed?.(); await flush(); }); },
+    nativeLocation: async (location: any) => { await act(async () => { listeners.location?.(location); await flush(); }); },
     providerRecovers: () => { shouldFail = false; },
     providerFails: () => { shouldFail = true; },
     geometryFails: (value: boolean) => { geometryFails = value; },
@@ -138,6 +139,71 @@ test('iOS exposes native Google location movement separately from the Expo car f
     assert.equal(events.length, 2);
     assert.ok(events[1][2].movementMeters > 0);
     assert.ok(!JSON.stringify(events).includes('5.703'));
+  } finally { await map.dispose(); }
+});
+
+test('iOS clears the old branded line and replaces it when Navigation moves but Expo is stale', async () => {
+  const map = await mountIos();
+  try {
+    // This is the reported phone failure: Google Navigation has advanced onto a
+    // different road, while the Expo prop remains at the earlier point. The
+    // custom HY3N route must use the valid native iOS feed for safety rather
+    // than continue drawing the passed green/white line from stale Expo state.
+    const nativeStart = { lat: 5.702, lng: -0.102 };
+    const nativeLater = { lat: 5.7022, lng: -0.102 };
+    map.nextRoute([nativeLater, { lat: 5.704, lng: -0.102 }, corner, target]);
+    await map.nativeLocation({ ...nativeStart, time: Date.now() + 1, accuracy: 5 });
+    await map.nativeLocation({ ...nativeLater, time: Date.now() + 2, accuracy: 5 });
+
+    assert.equal(map.calls.length, 2, 'two valid native iOS off-route samples must request one replacement route');
+    assert.deepEqual(map.calls.at(-1).point.position, target, 'the server-owned trip target must remain unchanged');
+    assert.deepEqual(map.lines.get('hy3n-driver-route')?.points[0], nativeLater,
+      'the visible line must begin on the current native road, not the stale Expo point');
+    assert.deepEqual(map.lines.get('hy3n-driver-route')?.points.at(-1), target);
+  } finally { await map.dispose(); }
+});
+
+test('iOS rejects an older native sample and keeps the newer valid Expo fix authoritative', async () => {
+  const map = await mountIos();
+  try {
+    // Native must be fresh and newer to win. A delayed native bridge event may
+    // not roll the custom line back over a newer foreground device fix.
+    await map.nativeLocation({ lat: 5.702, lng: -0.102, time: Date.now() - 1_000, accuracy: 5 });
+    assert.equal(map.calls.length, 1, 'older native data cannot create a reroute by itself');
+
+    const expoLater = { lat: 5.7022, lng: -0.102 };
+    map.nextRoute([expoLater, { lat: 5.704, lng: -0.102 }, corner, target]);
+    await map.update({ latitude: 5.7021, longitude: -0.102, locationTimestamp: Date.now() + 1, locationAccuracy: 5 });
+    await map.update({ latitude: expoLater.lat, longitude: expoLater.lng, locationTimestamp: Date.now() + 2, locationAccuracy: 5 });
+
+    assert.equal(map.calls.length, 2);
+    assert.deepEqual(map.lines.get('hy3n-driver-route')?.points[0], expoLater);
+  } finally { await map.dispose(); }
+});
+
+test('iOS clears branded guidance instead of retaining it after every location source becomes stale', async () => {
+  const map = await mountIos();
+  try {
+    assert.ok(map.lines.has('hy3n-driver-route'));
+    await map.update({ latitude: 5.702, locationTimestamp: Date.now() - 60_000, locationAccuracy: 5 });
+    assert.equal(map.lines.has('hy3n-driver-route'), false,
+      'a stale phone fix must clear old visual guidance rather than direct a Driver from an old road');
+  } finally { await map.dispose(); }
+});
+
+test('Android keeps its existing Expo route path and ignores the iPhone-only Navigation location bridge', async () => {
+  const map = await mountIos({ platform: 'android' });
+  try {
+    await map.nativeLocation({ lat: 5.702, lng: -0.102, time: Date.now() + 1, accuracy: 5 });
+    assert.equal(map.calls.length, 1, 'the iOS bridge callback cannot alter Android rerouting');
+
+    const expoLater = { lat: 5.7022, lng: -0.102 };
+    map.nextRoute([expoLater, { lat: 5.704, lng: -0.102 }, corner, target]);
+    await map.update({ latitude: 5.7021, longitude: -0.102, locationTimestamp: Date.now() + 2, locationAccuracy: 5 });
+    await map.update({ latitude: expoLater.lat, longitude: expoLater.lng, locationTimestamp: Date.now() + 3, locationAccuracy: 5 });
+
+    assert.equal(map.calls.length, 2);
+    assert.deepEqual(map.lines.get('hy3n-driver-route')?.points[0], expoLater);
   } finally { await map.dispose(); }
 });
 
