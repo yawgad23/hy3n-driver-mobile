@@ -22,6 +22,7 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
   const destinationCalls: any[] = [];
   const listeners: Record<string, (() => void) | null> = {};
   const backgroundLocationCalls: boolean[] = [];
+  const keepAwakeCalls: string[] = [];
   let locationStarts = 0;
   let appStateListener: ((state: string) => void) | null = null;
   const controller = {
@@ -68,17 +69,25 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
     Linking: { openSettings: () => {} }, Platform: { OS: 'ios', select: (v: any) => v.ios },
     StyleSheet: { create: (v: any) => v, absoluteFillObject: {}, absoluteFill: {} },
   };
+  const keepAwake = {
+    useKeepAwake: (tag: string) => {
+      React.useEffect(() => {
+        keepAwakeCalls.push(`activate:${tag}`);
+        return () => { keepAwakeCalls.push(`deactivate:${tag}`); };
+      }, [tag]);
+    },
+  };
   const result = await build({
     entryPoints: [path.join(__dirname, '../components/NativeDriverGoogleMap.tsx')],
     bundle: true, write: false, platform: 'node', format: 'cjs',
     external: ['react'],
     plugins: [{ name: 'native-boundary-mocks', setup(b) {
-      b.onResolve({ filter: /^(react-native|@googlemaps\/react-native-navigation-sdk)$/ }, args => ({ path: args.path, external: true }));
+      b.onResolve({ filter: /^(react-native|@googlemaps\/react-native-navigation-sdk|expo-keep-awake)$/ }, args => ({ path: args.path, external: true }));
     } }],
   });
   const module = { exports: {} as any };
   new Function('require', 'module', 'exports', result.outputFiles[0].text)(
-    (name: string) => name === 'react-native' ? native : name === '@googlemaps/react-native-navigation-sdk' ? sdk : requireHere(name),
+    (name: string) => name === 'react-native' ? native : name === '@googlemaps/react-native-navigation-sdk' ? sdk : name === 'expo-keep-awake' ? keepAwake : requireHere(name),
     module, module.exports,
   );
   const Component = module.exports.default;
@@ -91,7 +100,7 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
   await act(async () => { await flush(); });
   return {
     polylines, destinationCalls, listeners,
-    backgroundLocationCalls,
+    backgroundLocationCalls, keepAwakeCalls,
     locationStarts: () => locationStarts,
     appState: async (state: string) => { await act(async () => { appStateListener?.(state); await flush(); }); },
     setSegments: (v: typeof road) => { segments = v; },
@@ -240,6 +249,20 @@ test('native navigation location is stopped without a target and restarted for t
     await map.update({ target: { latitude: destination.lat, longitude: destination.lng, label: 'Next trip' }, tripStatus: 'dropoff' });
     assert.equal(map.backgroundLocationCalls.at(-1), true);
     assert.equal(map.locationStarts(), starts + 1, 'a reused native session must restart its location provider');
+  } finally { await map.dispose(); }
+});
+
+test('active Driver navigation keeps the display awake and releases it after the current target clears', async () => {
+  const map = await mountMap();
+  try {
+    assert.deepEqual(map.keepAwakeCalls, ['activate:hy3n-driver-active-navigation']);
+    await map.update({ target: null, tripStatus: null });
+    assert.deepEqual(map.keepAwakeCalls, [
+      'activate:hy3n-driver-active-navigation',
+      'deactivate:hy3n-driver-active-navigation',
+    ]);
+    await map.update({ target: { latitude: destination.lat, longitude: destination.lng, label: 'Next trip' }, tripStatus: 'dropoff' });
+    assert.deepEqual(map.keepAwakeCalls.at(-1), 'activate:hy3n-driver-active-navigation');
   } finally { await map.dispose(); }
 });
 

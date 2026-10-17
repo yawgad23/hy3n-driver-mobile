@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useKeepAwake } from 'expo-keep-awake';
 import {
   AudioGuidance,
   MapColorScheme,
@@ -52,6 +53,7 @@ const DRIVER_VEHICLE_MARKER_ID = 'hy3n-driver-vehicle';
 const DRIVER_ROUTE_OUTLINE_ID = 'hy3n-driver-route-outline';
 const DRIVER_ROUTE_ID = 'hy3n-driver-route';
 const DRIVER_TARGET_MARKER_ID = 'hy3n-driver-target';
+const DRIVER_ACTIVE_NAVIGATION_KEEP_AWAKE_TAG = 'hy3n-driver-active-navigation';
 // “Clean” applies only to clutter. It does not force a colour theme: the map
 // mirrors the phone’s own light/dark setting just like the rest of HY3N.
 const CLEAN_GOOGLE_STYLE = JSON.stringify([
@@ -109,6 +111,16 @@ function readableNavigationFailure(status: NavigationSessionStatus | RouteStatus
     default:
       return 'Navigation could not start. Please try again.';
   }
+}
+
+/**
+ * Mounted only for an active, server-backed pickup/drop-off/approved-stop
+ * target. The phone returns to its normal idle-lock behaviour as soon as the
+ * target clears or this navigation surface unmounts.
+ */
+function DriverActiveNavigationKeepAwake() {
+  useKeepAwake(DRIVER_ACTIVE_NAVIGATION_KEEP_AWAKE_TAG);
+  return null;
 }
 
 /**
@@ -824,6 +836,7 @@ function DriverNavigationSurface({
 
   return (
     <View style={styles.container}>
+      {hasTarget ? <DriverActiveNavigationKeepAwake /> : null}
       {hasDeviceLocation ? (
         <MapView
           style={StyleSheet.absoluteFill}

@@ -66,13 +66,14 @@ async function mountIos(options: { initialNetworkFailure?: boolean } = {}) {
     AppState: { currentState: 'active', addEventListener: () => ({ remove: () => {} }) },
     Linking: { openSettings: () => {} }, Platform: { OS: 'ios', select: (v: any) => v.ios },
     StyleSheet: { create: (v: any) => v, absoluteFillObject: {}, absoluteFill: {} } };
+  const keepAwake = { useKeepAwake: () => {} };
   const result = await build({ entryPoints: [path.join(__dirname, '../components/NativeDriverGoogleMap.tsx')],
     bundle: true, write: false, platform: 'node', format: 'cjs', external: ['react'],
-    plugins: [{ name: 'actual-ios-boundary', setup(b) { b.onResolve({ filter: /^(react-native|@googlemaps\/react-native-navigation-sdk)$/ }, args => ({ path: args.path, external: true })); } }] });
+    plugins: [{ name: 'actual-ios-boundary', setup(b) { b.onResolve({ filter: /^(react-native|@googlemaps\/react-native-navigation-sdk|expo-keep-awake)$/ }, args => ({ path: args.path, external: true })); } }] });
   const module = { exports: {} as any };
   const capturedConsole = { ...console, info: (...args: any[]) => logs.push(args), warn: (...args: any[]) => logs.push(args) };
   new Function('require', 'module', 'exports', '__DEV__', 'console', result.outputFiles[0].text)(
-    (name: string) => name === 'react-native' ? native : name === '@googlemaps/react-native-navigation-sdk' ? sdk : requireHere(name),
+    (name: string) => name === 'react-native' ? native : name === '@googlemaps/react-native-navigation-sdk' ? sdk : name === 'expo-keep-awake' ? keepAwake : requireHere(name),
     module, module.exports, true, capturedConsole);
   const Component = module.exports.default;
   let tree!: ReactTestRenderer;
