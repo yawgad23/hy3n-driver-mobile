@@ -651,7 +651,10 @@ export default function DriverHomeScreen() {
     return firestoreDB.subscribeDoc(COLLECTIONS.RIDES, activeTrip.id, (serverRide: any) => {
       if (!serverRide?.id) return;
       if (applyServerTerminalRide(serverRide)) return;
-      setActiveTrip((current: any) => current?.id === serverRide.id ? { ...current, ...serverRide } : current);
+      // subscribeDoc provides a complete Firestore document, not a sparse
+      // patch. Replace it so deleted route_target/in_trip_stops fields cannot
+      // remain locally and send the native navigator to an old waypoint.
+      setActiveTrip((current: any) => current?.id === serverRide.id ? serverRide : current);
     });
   }, [activeTrip?.id, applyServerTerminalRide]);
 
