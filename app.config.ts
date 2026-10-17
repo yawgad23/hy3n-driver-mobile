@@ -54,8 +54,8 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 99 packages the immediate request-song stop on Accept and Decline.
-    buildNumber: "99",
+    // Build 100 packages the validated iPhone route-safety correction.
+    buildNumber: "100",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
