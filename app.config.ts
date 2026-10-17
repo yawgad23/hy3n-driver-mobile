@@ -54,8 +54,8 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 94 packages tested remaining-route recovery and foreground request audio.
-    buildNumber: "94",
+    // Build 95 packages tested native reroute continuity and audible loaded request playback.
+    buildNumber: "95",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
