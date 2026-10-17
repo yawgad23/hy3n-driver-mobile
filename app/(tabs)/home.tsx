@@ -212,8 +212,8 @@ export default function DriverHomeScreen() {
     return true;
   }, []);
 
-  const stopIncomingTripAlert = useCallback(() => {
-    incomingTripAudioRuntimeRef.current.stop(incomingTripAlertPlayer);
+  const stopIncomingTripAlert = useCallback((force = false) => {
+    incomingTripAudioRuntimeRef.current.stop(incomingTripAlertPlayer, { force });
   }, [incomingTripAlertPlayer]);
 
   const playIncomingTripAlert = useCallback((rideId: string) => {
@@ -883,7 +883,9 @@ export default function DriverHomeScreen() {
     };
     tripActionInFlightRef.current = true;
     setTripActionPending(true);
-    stopIncomingTripAlert();
+    // Stop on tap, not after the accepted server response. iPhone native
+    // playback status can lag the audible request song by a short interval.
+    stopIncomingTripAlert(true);
     incomingOfferReceivedAtRef.current = null;
     const reconciliationTimers = DRIVER_ACCEPT_RECONCILIATION_DELAYS_MS.map((delay) => setTimeout(() => {
       if (!serverConfirmed) void reconcileAcceptedRide();
@@ -948,7 +950,7 @@ export default function DriverHomeScreen() {
   const handleDeclineRide = async () => {
     if (!incomingRide || !user?.uid) return;
     const retiredLeaseKey = driverOfferLeaseKey(incomingRide);
-    stopIncomingTripAlert();
+    stopIncomingTripAlert(true);
     retiredOfferLeaseRef.current = retiredLeaseKey;
     incomingOfferReceivedAtRef.current = null;
     try {

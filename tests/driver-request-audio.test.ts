@@ -45,6 +45,15 @@ test('stopping an idle player does not deactivate the shared native guidance aud
   assert.deepEqual(p.calls, ['pause']);
 });
 
+test('an Accept or Decline can force immediate pause when iPhone player status is stale', () => {
+  const runtime = createDriverRequestAudio(); const p = player();
+  // Native audio can still be audible while Expo has not yet propagated the
+  // updated `playing` status through JavaScript.
+  p.playing = false;
+  runtime.stop(p, { force: true });
+  assert.deepEqual(p.calls, ['pause']);
+});
+
 test('released native audio objects are safe during Home cleanup', () => {
   const runtime = createDriverRequestAudio(); const p = player();
   Object.defineProperty(p, 'playing', { get: () => { throw Error('shared object released'); } });

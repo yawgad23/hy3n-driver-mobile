@@ -35,6 +35,7 @@ test('Driver Home uses one server push alert and serializes incoming-offer refre
   assert.match(driverHomeSource, /retiredOfferLeaseRef/);
   assert.match(driverHomeSource, /shouldPresentDriverOffer/);
   assert.match(driverHomeSource, /isUnavailableDriverOfferError/);
+  assert.match(driverHomeSource, /stopIncomingTripAlert\(true\)/);
   assert.match(driverHomeSource, /const activeNavigationTarget = useMemo/);
   assert.match(driverHomeSource, /transient empty response/);
   assert.doesNotMatch(driverHomeSource, /new Set/);
