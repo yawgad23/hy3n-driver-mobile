@@ -54,11 +54,13 @@ export function createDriverRequestAudio() {
     stop(player: DriverRequestAudioPlayer, options: { force?: boolean } = {}) {
       generation++;
       pendingRide = null;
-      // Do not pause an idle player on ordinary poll/render cleanup because it
-      // can disturb the shared iOS guidance session. A Driver's Accept or
-      // Decline is different: Expo's `playing` property can lag native audio,
-      // so force an immediate pause rather than waiting for server round-trip.
+      // iOS replays a looping AVPlayer from its end observer. Disable that
+      // path and silence only this request player before pausing, so a stale
+      // JavaScript `playing` status or queued end event cannot revive the song.
       try {
+        player.loop = false;
+        player.muted = true;
+        player.volume = 0;
         if (options.force || player.playing) player.pause();
       } catch {
         // useAudioPlayer may already have released this shared native object.

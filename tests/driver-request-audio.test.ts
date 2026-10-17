@@ -54,6 +54,18 @@ test('an Accept or Decline can force immediate pause when iPhone player status i
   assert.deepEqual(p.calls, ['pause']);
 });
 
+test('terminal request-song cancellation disarms a native loop before pausing', () => {
+  const runtime = createDriverRequestAudio(); const p = player();
+  // iOS can queue the end-of-item observer before JavaScript receives a pause.
+  // The terminal stop must silence this player even if `playing` is stale.
+  p.playing = false;
+  runtime.stop(p, { force: true });
+  assert.equal(p.loop, false);
+  assert.equal(p.muted, true);
+  assert.equal(p.volume, 0);
+  assert.deepEqual(p.calls, ['pause']);
+});
+
 test('released native audio objects are safe during Home cleanup', () => {
   const runtime = createDriverRequestAudio(); const p = player();
   Object.defineProperty(p, 'playing', { get: () => { throw Error('shared object released'); } });
