@@ -32,8 +32,19 @@ test('uses the Driver-approved active stop before the final destination', () => 
   assert.deepEqual(
     tripNavigationDestination({
       destination: { lat: 5.6037, lng: -0.187 },
-      route_target: { kind: 'stop', location: { lat: 5.618, lng: -0.15 } },
+      route_target: { kind: 'stop', stop_id: 'stop-1', location: { lat: 5.618, lng: -0.15 } },
+      in_trip_stops: [{ id: 'stop-1', status: 'pending', lat: 5.618, lng: -0.15 }],
     }, 'dropoff'),
     { latitude: 5.618, longitude: -0.15 },
+  );
+});
+
+test('does not navigate to a malformed legacy route target instead of the real destination', () => {
+  assert.deepEqual(
+    tripNavigationDestination({
+      destination: { lat: 5.6037, lng: -0.187 },
+      route_target: { location: { lat: 5.618, lng: -0.15 } },
+    }, 'dropoff'),
+    { latitude: 5.6037, longitude: -0.187 },
   );
 });

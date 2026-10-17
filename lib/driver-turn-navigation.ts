@@ -35,15 +35,56 @@ export function googleMapsNavigationFallbackUrl(destination: TurnByTurnDestinati
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(coordinates)}&travelmode=driving&dir_action=navigate`;
 }
 
+type NavigationTargetKind = 'pickup' | 'destination' | 'stop';
+export type TripNavigationTarget = TurnByTurnDestination & { kind: NavigationTargetKind; label: string };
+
+function pointFrom(value: any, fallbackLatitude?: unknown, fallbackLongitude?: unknown): TurnByTurnDestination | null {
+  const latitude = Number(value?.lat ?? value?.latitude ?? fallbackLatitude);
+  const longitude = Number(value?.lng ?? value?.longitude ?? fallbackLongitude);
+  const point = { latitude, longitude };
+  return isTurnByTurnDestination(point) ? point : null;
+}
+
+/**
+ * A stop can override a drop-off only when route_target references the exact
+ * server-owned pending in_trip_stops entry. This rejects legacy loose route
+ * targets, which otherwise can leave iPhone guidance pointing at an old pin.
+ */
+function verifiedPendingStopTarget(ride: any): TripNavigationTarget | null {
+  const target = ride?.route_target;
+  if (!target || typeof target !== 'object' || target.kind !== 'stop') return null;
+  const stopId = String(target.stop_id || '').trim();
+  if (!stopId || !Array.isArray(ride?.in_trip_stops)) return null;
+  const stop = ride.in_trip_stops.find((candidate: any) => candidate
+    && typeof candidate === 'object'
+    && String(candidate.id || '').trim() === stopId
+    && String(candidate.status || '').trim().toLowerCase() === 'pending');
+  const fromStop = pointFrom(stop);
+  const fromTarget = pointFrom(target.location);
+  if (!fromStop || !fromTarget
+    || fromStop.latitude !== fromTarget.latitude
+    || fromStop.longitude !== fromTarget.longitude) return null;
+  return {
+    ...fromStop,
+    kind: 'stop',
+    label: String(stop.address || stop.name || target.location?.address || target.location?.name || 'Next stop'),
+  };
+}
+
+/** One safe target selector for embedded guidance and external map handoff. */
+export function activeTripNavigationTarget(ride: any, phase: 'pickup' | 'dropoff'): TripNavigationTarget | null {
+  if (phase === 'pickup') {
+    const pickup = pointFrom(ride?.pickup, ride?.pickup_lat, ride?.pickup_lng);
+    return pickup ? { ...pickup, kind: 'pickup', label: String(ride?.pickup_address || 'Pickup') } : null;
+  }
+
+  const stop = verifiedPendingStopTarget(ride);
+  if (stop) return stop;
+  const destination = pointFrom(ride?.destination, ride?.destination_lat, ride?.destination_lng);
+  return destination ? { ...destination, kind: 'destination', label: String(ride?.destination_address || 'Drop-off') } : null;
+}
+
 export function tripNavigationDestination(ride: any, phase: 'pickup' | 'dropoff'): TurnByTurnDestination | null {
-  // During an active trip the server may temporarily target a Driver-approved
-  // stop. It is deliberately preferred only for drop-off navigation; pickup
-  // guidance remains fixed until the trip has started.
-  const target = phase === 'dropoff'
-    ? (ride?.route_target?.location || ride?.destination)
-    : ride?.pickup;
-  const latitude = Number(target?.lat ?? target?.latitude ?? (phase === 'dropoff' ? ride?.destination_lat : ride?.pickup_lat));
-  const longitude = Number(target?.lng ?? target?.longitude ?? (phase === 'dropoff' ? ride?.destination_lng : ride?.pickup_lng));
-  const destination = { latitude, longitude };
-  return isTurnByTurnDestination(destination) ? destination : null;
+  const target = activeTripNavigationTarget(ride, phase);
+  return target ? { latitude: target.latitude, longitude: target.longitude } : null;
 }

@@ -64,7 +64,7 @@ import { driverOfferLeaseKey, isUnavailableDriverOfferError, shouldPresentDriver
 import { createSingleFlightDriverOfferRefresher } from '@/lib/driver-offer-refresh';
 import { driverTripTerminalStatus } from '@/lib/driver-trip-lifecycle';
 import { activeTripDetails } from '@/lib/driver-active-trip-details';
-import { tripNavigationDestination } from '@/lib/driver-turn-navigation';
+import { activeTripNavigationTarget, tripNavigationDestination } from '@/lib/driver-turn-navigation';
 import {
   driverGoogleMapsAppUri,
   driverMapAppNavigationUri,
@@ -1328,21 +1328,11 @@ export default function DriverHomeScreen() {
   };
 
   const activeNavigationTarget = useMemo(() => {
-    const target = activeTrip
-      ? (activeTrip.status === 'in_progress' ? (activeTrip.route_target?.location || activeTrip.destination) : activeTrip.pickup)
-      : null;
-    const latitude = Number(target?.lat ?? target?.latitude ?? (activeTrip?.status === 'in_progress' ? activeTrip?.destination_lat : activeTrip?.pickup_lat));
-    const longitude = Number(target?.lng ?? target?.longitude ?? (activeTrip?.status === 'in_progress' ? activeTrip?.destination_lng : activeTrip?.pickup_lng));
-    if (!activeTrip || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-    return {
-      latitude,
-      longitude,
-      label: activeTrip.status === 'in_progress'
-        ? (activeTrip.route_target?.kind === 'stop'
-          ? (activeTrip.route_target?.location?.address || activeTrip.route_target?.location?.name || 'Next stop')
-          : (activeTrip.destination_address || 'Drop-off'))
-        : (activeTrip.pickup_address || 'Pickup'),
-    };
+    if (!activeTrip) return null;
+    return activeTripNavigationTarget(
+      activeTrip,
+      activeTrip.status === 'in_progress' ? 'dropoff' : 'pickup',
+    );
   }, [activeTrip]);
 
 
