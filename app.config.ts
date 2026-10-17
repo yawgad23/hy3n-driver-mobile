@@ -54,8 +54,8 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 97 packages the tested Driver request-song lifecycle correction.
-    buildNumber: "97",
+    // Build 98 packages the tested stale-offer song-stop and timer-map stability corrections.
+    buildNumber: "98",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
