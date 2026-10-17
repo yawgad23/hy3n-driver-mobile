@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { remainingDriverRoute, projectDriverOnRoute, assessDriverWrongWay, EMPTY_DRIVER_WRONG_WAY_MONITOR, driverRouteReachesTarget } from '../lib/driver-route-progress';
+import { remainingDriverRoute, projectDriverOnRoute, assessDriverWrongWay, EMPTY_DRIVER_WRONG_WAY_MONITOR, driverRouteReachesTarget, isSameDriverRoadPlan } from '../lib/driver-route-progress';
 
 const road = [{ lat: 5.7, lng: -0.1 }, { lat: 5.704, lng: -0.1 }, { lat: 5.704, lng: -0.096 }];
 test('remaining geometry begins at the Driver on the road and retains the destination', () => {
@@ -40,4 +40,22 @@ test('normal forward movement and stationary GPS drift do not cause wrong-way re
 test('replacement geometry must terminate near the unchanged Driver target', () => {
   assert.equal(driverRouteReachesTarget(road, road[2]), true);
   assert.equal(driverRouteReachesTarget(road, { lat: 5.73, lng: -0.11 }), false);
+});
+
+test('shortened prefixes and extra points on the same directed road remain the old plan', () => {
+  assert.equal(isSameDriverRoadPlan([{ lat: 5.70005, lng: -0.1 }, road[1], road[2]], road), true);
+  assert.equal(isSameDriverRoadPlan([road[0], { lat: 5.702, lng: -0.1 }, road[1], road[2]], road), true);
+});
+
+test('a real road detour is genuine replacement geometry', () => {
+  assert.equal(isSameDriverRoadPlan([road[0], { lat: 5.7, lng: -0.096 }, road[2]], road), false);
+});
+
+test('a supplied U-turn is a genuine new direction even on the same road footprint', () => {
+  assert.equal(isSameDriverRoadPlan([{ lat: 5.702, lng: -0.1 }, { lat: 5.7017, lng: -0.1 }, road[1], road[2]], road), false);
+});
+
+test('malformed and empty paths cannot be treated as equivalent road plans', () => {
+  assert.equal(isSameDriverRoadPlan([], road), false);
+  assert.equal(isSameDriverRoadPlan([{ lat: NaN, lng: -0.1 }, road[1]], road), false);
 });

@@ -97,3 +97,22 @@ export function driverRouteReachesTarget(points: readonly DriverRoutePoint[], ta
   const y = (end.lat - target.lat) * METRES_PER_DEGREE;
   return Math.hypot(x, y) <= maxDistanceMeters;
 }
+
+/** A progress-only prefix/density change is not a newly rerouted road plan. */
+export function isSameDriverRoadPlan(candidate: readonly DriverRoutePoint[], previous: readonly DriverRoutePoint[]) {
+  if (candidate.length < 2 || previous.length < 2 || !candidate.every(validPoint) || !previous.every(validPoint)) return false;
+  let checked = 0;
+  for (let index = 0; index < candidate.length - 1; index++) {
+    const a = candidate[index], b = candidate[index + 1];
+    const x = (b.lng - a.lng) * METRES_PER_DEGREE * Math.cos(a.lat * Math.PI / 180);
+    const y = (b.lat - a.lat) * METRES_PER_DEGREE;
+    if (Math.hypot(x, y) < 1) continue;
+    const bearing = (Math.atan2(x, y) * 180 / Math.PI + 360) % 360;
+    const match = projectDriverOnRoute({ latitude: (a.lat + b.lat) / 2, longitude: (a.lng + b.lng) / 2 }, previous);
+    if (!match || match.distanceMeters > 8) return false;
+    const angle = Math.abs(((bearing - match.bearing + 540) % 360) - 180);
+    if (angle > 35) return false; // A real U-turn is replacement geometry, not a prefix refresh.
+    checked++;
+  }
+  return checked > 0;
+}

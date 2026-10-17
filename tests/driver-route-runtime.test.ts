@@ -21,6 +21,9 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
   const polylines = new Map<string, any>();
   const destinationCalls: any[] = [];
   const listeners: Record<string, (() => void) | null> = {};
+  const backgroundLocationCalls: boolean[] = [];
+  let locationStarts = 0;
+  let appStateListener: ((state: string) => void) | null = null;
   const controller = {
     addMarker: async () => ({}), removeMarker: async () => {}, moveCamera: () => {},
     addPolyline: async (line: any) => { polylines.set(line.id, line); return line; },
@@ -28,7 +31,9 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
   };
   const navigationController = {
     showTermsAndConditionsDialog: async () => true, init: async () => 0,
-    setAudioGuidanceType: () => {}, startUpdatingLocation: () => {},
+    setAudioGuidanceType: () => {}, startUpdatingLocation: () => { locationStarts++; },
+    stopUpdatingLocation: () => {},
+    setBackgroundLocationUpdatesEnabled: (enabled: boolean) => { backgroundLocationCalls.push(enabled); },
     startGuidance: async () => {}, stopGuidance: async () => {},
     clearDestinations: async () => {}, cleanup: async () => {},
     getRouteSegments: async () => [{ segmentLatLngList: segments }],
@@ -54,6 +59,10 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
   };
   const native = {
     View: 'view', Text: 'text', TouchableOpacity: 'button',
+    AppState: { currentState: 'active', addEventListener: (_event: string, listener: (state: string) => void) => {
+      appStateListener = listener;
+      return { remove: () => { appStateListener = null; } };
+    } },
     Linking: { openSettings: () => {} }, Platform: { OS: 'ios', select: (v: any) => v.ios },
     StyleSheet: { create: (v: any) => v, absoluteFillObject: {}, absoluteFill: {} },
   };
@@ -80,6 +89,9 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
   await act(async () => { await flush(); });
   return {
     polylines, destinationCalls, listeners,
+    backgroundLocationCalls,
+    locationStarts: () => locationStarts,
+    appState: async (state: string) => { await act(async () => { appStateListener?.(state); await flush(); }); },
     setSegments: (v: typeof road) => { segments = v; },
     setDestinationHandler: (handler: (point: any) => Promise<number>) => { onDestination = handler; },
     update: async (update: any) => {
@@ -173,4 +185,70 @@ test('old-target geometry returned by Google is never drawn for a new destinatio
     await map.update({ latitude: 5.702, locationTimestamp: 2 });
     assert.equal(map.polylines.has('hy3n-driver-route'), false, 'GPS progress must not resurrect the old target route');
   } finally { await map.dispose(); }
+});
+
+test('native path-prefix updates do not erase consecutive wrong-way evidence', async () => {
+  const clock = requireHere('@sinonjs/fake-timers').install({ now: 100_000, toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+  const map = await mountMap({ latitude: 5.703, longitude: origin.lng });
+  try {
+    await map.update({ latitude: 5.7028, locationTimestamp: 2 });
+    await map.update({ latitude: 5.7024, locationTimestamp: 3 });
+    // The actual native leg can shorten its prefix on a progress/traffic read.
+    // The road/direction did not change. JSON inequality must not erase the
+    // first confirmed wrong-way sample before the next real GPS observation.
+    map.setSegments([{ lat: 5.70005, lng: origin.lng }, corner, destination]);
+    await act(async () => { await clock.tickAsync(3_000); });
+    await map.update({ latitude: 5.7020, locationTimestamp: 4 });
+    assert.equal(map.destinationCalls.length, 2, 'native progress refresh must not prevent a wrong-way reroute');
+  } finally { await map.dispose(); clock.uninstall(); }
+});
+
+test('Google native location continues when Driver is backgrounded, separately from Expo GPS', async () => {
+  const map = await mountMap();
+  try {
+    assert.ok(map.backgroundLocationCalls.includes(true), 'native Google location must explicitly be enabled in the background');
+    await map.appState('background');
+    assert.notEqual(map.backgroundLocationCalls.at(-1), false, 'switching to Rider must not disable active-trip native tracking');
+  } finally { await map.dispose(); }
+});
+
+test('returning to Driver explicitly restarts native location and refreshes route geometry', async () => {
+  const map = await mountMap();
+  try {
+    const starts = map.locationStarts();
+    await map.appState('background');
+    map.setSegments([origin, { lat: 5.7, lng: -0.096 }, destination]);
+    await map.appState('active');
+    assert.equal(map.locationStarts(), starts + 1, 'a moving Expo car does not establish that Google native location resumed');
+    await map.flush();
+    assert.deepEqual(map.polylines.get('hy3n-driver-route')?.points[1], { lat: 5.7, lng: -0.096 });
+    assert.equal(map.destinationCalls.length, 1, 'foreground recovery must not reset a healthy destination');
+  } finally { await map.dispose(); }
+});
+
+test('native navigation location is stopped without a target and restarted for the next trip', async () => {
+  const map = await mountMap();
+  try {
+    await map.update({ target: null, tripStatus: null });
+    assert.equal(map.backgroundLocationCalls.at(-1), false, 'active-trip native background tracking must not leak into idle state');
+    const starts = map.locationStarts();
+    await map.update({ target: { latitude: destination.lat, longitude: destination.lng, label: 'Next trip' }, tripStatus: 'dropoff' });
+    assert.equal(map.backgroundLocationCalls.at(-1), true);
+    assert.equal(map.locationStarts(), starts + 1, 'a reused native session must restart its location provider');
+  } finally { await map.dispose(); }
+});
+
+test('native progress-only prefix changes cannot resurrect a quarantined wrong-way route', async () => {
+  const clock = requireHere('@sinonjs/fake-timers').install({ now: 100_000, toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+  const map = await mountMap({ latitude: 5.703, longitude: origin.lng });
+  try {
+    await map.update({ latitude: 5.7028, locationTimestamp: 2 });
+    await map.update({ latitude: 5.7024, locationTimestamp: 3 });
+    await map.update({ latitude: 5.7020, locationTimestamp: 4 });
+    assert.equal(map.polylines.has('hy3n-driver-route'), false);
+    map.setSegments([{ lat: 5.70005, lng: origin.lng }, corner, destination]);
+    await act(async () => { await clock.tickAsync(3_000); });
+    await map.flush();
+    assert.equal(map.polylines.has('hy3n-driver-route'), false, 'an old-direction road with a shortened prefix is not a genuine replacement route');
+  } finally { await map.dispose(); clock.uninstall(); }
 });

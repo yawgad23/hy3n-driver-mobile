@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AppState, Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
   AudioGuidance,
   MapColorScheme,
@@ -28,6 +28,7 @@ import {
   assessDriverWrongWay,
   EMPTY_DRIVER_WRONG_WAY_MONITOR,
   driverRouteReachesTarget,
+  isSameDriverRoadPlan,
 } from '@/lib/driver-route-progress';
 
 type MapTarget = { latitude: number; longitude: number; label: string };
@@ -140,7 +141,7 @@ function DriverNavigationSurface({
   const routeOverlayWorkRef = useRef<Promise<void>>(Promise.resolve());
   const rerouteMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const routePointsRef = useRef<DriverRoutePoint[]>([]);
-  const staleRouteSignatureRef = useRef<string | null>(null);
+  const staleRoutePlanRef = useRef<DriverRoutePoint[] | null>(null);
   const offRouteMonitorRef = useRef(EMPTY_DRIVER_OFF_ROUTE_MONITOR);
   const wrongWayMonitorRef = useRef(EMPTY_DRIVER_WRONG_WAY_MONITOR);
   const forcedRerouteInFlightRef = useRef(false);
@@ -266,7 +267,7 @@ function DriverNavigationSurface({
     const request = navigationRequestRef.current;
     const work = routeOverlayWorkRef.current.then(async () => {
       if (!mapViewController || navigationRequestRef.current !== request) return;
-      const points = staleRouteSignatureRef.current === JSON.stringify(routePointsRef.current)
+      const points = staleRoutePlanRef.current && isSameDriverRoadPlan(routePointsRef.current, staleRoutePlanRef.current)
         ? [] : remainingDriverRoute(liveLocationRef.current, routePointsRef.current);
       await clearRouteLines();
       if (navigationRequestRef.current !== request || points.length < 2) return;
@@ -302,17 +303,16 @@ function DriverNavigationSurface({
         });
         if (!isCurrent()) return false;
 
-        const changed = JSON.stringify(routePointsRef.current) !== JSON.stringify(points);
         routePointsRef.current = points;
-        if (changed) {
-          offRouteMonitorRef.current = { ...EMPTY_DRIVER_OFF_ROUTE_MONITOR, lastRerouteAtMs: offRouteMonitorRef.current.lastRerouteAtMs };
-          wrongWayMonitorRef.current = { ...EMPTY_DRIVER_WRONG_WAY_MONITOR, lastRequestAtMs: wrongWayMonitorRef.current.lastRequestAtMs };
-        }
+        // Native path prefixes can change on progress/traffic reads without a
+        // genuine new direction. Never erase distinct real-GPS evidence because
+        // JSON geometry changed. The next GPS assessment recalculates against
+        // this geometry; only a real target change resets the monitors.
         const remaining = remainingDriverRoute(liveLocationRef.current, points);
         // Google can still return the old leg while a reroute is pending.
         // Retain it for deviation checks but do not repaint a disconnected line.
-        if (remaining.length < 2 || staleRouteSignatureRef.current === JSON.stringify(points)) return false;
-        staleRouteSignatureRef.current = null;
+        if (remaining.length < 2 || (staleRoutePlanRef.current && isSameDriverRoadPlan(points, staleRoutePlanRef.current))) return false;
+        staleRoutePlanRef.current = null;
 
         await mapViewController.addPolyline({
           id: DRIVER_ROUTE_OUTLINE_ID,
@@ -413,7 +413,7 @@ function DriverNavigationSurface({
     const request = navigationRequestRef.current;
     const stillCurrent = () => navigationRequestRef.current === request && lastTargetKeyRef.current === targetKey;
     forcedRerouteInFlightRef.current = true;
-    staleRouteSignatureRef.current = JSON.stringify(routePointsRef.current);
+    staleRoutePlanRef.current = routePointsRef.current.slice();
     setNavigationMessage('Re-routing from your current road…');
     void runNavigationWork(async () => {
       try {
@@ -466,7 +466,7 @@ function DriverNavigationSurface({
     });
     setOnRouteChanged(() => refreshBrandedRouteAfterNativeChange(false));
     setOnReroutingRequestedByOffRoute(() => {
-      staleRouteSignatureRef.current = JSON.stringify(routePointsRef.current);
+      staleRoutePlanRef.current = routePointsRef.current.slice();
       refreshBrandedRouteAfterNativeChange(true);
     });
     return () => {
@@ -495,6 +495,22 @@ function DriverNavigationSurface({
     }, 3_000);
     return () => { cancelled = true; clearInterval(timer); };
   }, [drawNavigationRoute, hasTarget, targetKey]);
+
+  // Expo's vehicle/publisher watcher and Google's road-snapped location
+  // provider are different engines. A moving car does not prove that Google's
+  // provider continued after switching to Rider or returning from the lock screen.
+  useEffect(() => {
+    let previousState = AppState.currentState;
+    const subscription = AppState.addEventListener('change', (state) => {
+      const returning = state === 'active' && previousState !== 'active';
+      previousState = state;
+      if (!returning || !initializedRef.current || !targetKey || lastTargetKeyRef.current !== targetKey) return;
+      navigationController.setBackgroundLocationUpdatesEnabled(true);
+      navigationController.startUpdatingLocation();
+      refreshBrandedRouteAfterNativeChange(false);
+    });
+    return () => subscription.remove();
+  }, [navigationController, refreshBrandedRouteAfterNativeChange, targetKey]);
 
   useEffect(() => {
     if (
@@ -545,7 +561,7 @@ function DriverNavigationSurface({
     clearRouteRefresh();
     navigationRequestRef.current += 1;
     routePointsRef.current = [];
-    staleRouteSignatureRef.current = null;
+    staleRoutePlanRef.current = null;
     offRouteMonitorRef.current = EMPTY_DRIVER_OFF_ROUTE_MONITOR;
     wrongWayMonitorRef.current = EMPTY_DRIVER_WRONG_WAY_MONITOR;
     forcedRerouteInFlightRef.current = false;
@@ -561,7 +577,7 @@ function DriverNavigationSurface({
     if (!hasTarget || !targetKey) {
       lastTargetKeyRef.current = null;
       routePointsRef.current = [];
-      staleRouteSignatureRef.current = null;
+      staleRoutePlanRef.current = null;
       offRouteMonitorRef.current = EMPTY_DRIVER_OFF_ROUTE_MONITOR;
       wrongWayMonitorRef.current = EMPTY_DRIVER_WRONG_WAY_MONITOR;
       clearRouteRefresh();
@@ -570,6 +586,8 @@ function DriverNavigationSurface({
         void runNavigationWork(async () => {
           try {
             if (navigationRequestRef.current !== request) return;
+            navigationController.setBackgroundLocationUpdatesEnabled(false);
+            navigationController.stopUpdatingLocation();
             await navigationController.stopGuidance();
             await navigationController.clearDestinations();
           } catch {
@@ -589,7 +607,7 @@ function DriverNavigationSurface({
     if (lastTargetKeyRef.current === targetKey) return;
 
     routePointsRef.current = [];
-    staleRouteSignatureRef.current = null;
+    staleRoutePlanRef.current = null;
     offRouteMonitorRef.current = EMPTY_DRIVER_OFF_ROUTE_MONITOR;
     wrongWayMonitorRef.current = EMPTY_DRIVER_WRONG_WAY_MONITOR;
     void clearRoute();
@@ -617,8 +635,14 @@ function DriverNavigationSurface({
           navigationController.setAudioGuidanceType(
             AudioGuidance.VOICE_ALERTS_AND_GUIDANCE | AudioGuidance.BLUETOOTH_AUDIO,
           );
-          navigationController.startUpdatingLocation();
         }
+
+        // The app already requests Always location for online Driver trips.
+        // Explicitly keep Google's provider alive too; Expo background GPS
+        // alone cannot make the independent native navigator reroute. Restart
+        // this even for a reused session after the previous trip ended.
+        navigationController.setBackgroundLocationUpdatesEnabled(true);
+        navigationController.startUpdatingLocation();
 
         const routeStatus = await navigationController.setDestination(
           {
