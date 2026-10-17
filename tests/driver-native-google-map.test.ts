@@ -55,8 +55,8 @@ test('the trip screen stays map-first while retaining availability and destinati
   assert.match(driverHomeSource, /styles\.destFilterBar/);
   assert.match(nativeMapSource, /The branded MapView never switches at acceptance/);
   assert.match(nativeMapSource, /The HY3N car is/);
-  assert.doesNotMatch(driverHomeSource, /activeTripDetails\(incomingRide\)\.bookedFare/);
-  assert.doesNotMatch(driverHomeSource, /BOOKED FARE/);
+  assert.match(driverHomeSource, /activeTripDetails\(incomingRide\)\.bookedFare/);
+  assert.match(driverHomeSource, /BOOKED FARE/);
   assert.doesNotMatch(driverHomeSource, /Active Trip Navigation Card/);
 });
 

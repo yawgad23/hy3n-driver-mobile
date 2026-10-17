@@ -62,6 +62,7 @@ import {
 } from '@/lib/driver-offer-lifecycle';
 import { createSingleFlightDriverOfferRefresher } from '@/lib/driver-offer-refresh';
 import { driverTripTerminalStatus } from '@/lib/driver-trip-lifecycle';
+import { activeTripDetails } from '@/lib/driver-active-trip-details';
 import { tripNavigationDestination } from '@/lib/driver-turn-navigation';
 import {
   driverGoogleMapsAppUri,
@@ -1389,6 +1390,12 @@ export default function DriverHomeScreen() {
                 <Text style={[styles.categoryBadge, { color: GOLD }]}>{rideCategoryName(incomingRide.category)}</Text>
                 {!!(incomingRide.distance_km || incomingRide.estimated_distance_km) && <Text style={[styles.metaText, dynamicStyles.muted]}>{Number(incomingRide.distance_km || incomingRide.estimated_distance_km).toFixed(1)} km</Text>}
               </View>
+              {activeTripDetails(incomingRide).bookedFare !== null && (
+                <View style={[styles.offerFareChip, { backgroundColor: isDark ? '#2C260E' : '#FFF8DD', borderColor: `${GOLD}55` }]} accessibilityLabel={`Booked fare ${formatPassengerFare(activeTripDetails(incomingRide).bookedFare)}`}>
+                  <Text style={styles.offerFareLabel}>BOOKED FARE</Text>
+                  <Text style={styles.offerFareAmount}>{formatPassengerFare(activeTripDetails(incomingRide).bookedFare)}</Text>
+                </View>
+              )}
               {hasIncludedAirConditioning(incomingRide.category) && (
                 <View style={styles.acServiceBanner} accessibilityLabel={airConditioningReminder(incomingRide.category, 'pickup') || undefined}>
                   <MaterialIcons name="ac-unit" size={17} color="#075985" />
@@ -1822,6 +1829,9 @@ const styles = StyleSheet.create({
   paymentText: { fontSize: 11, fontWeight: '600' },
   rideActions: { flexDirection: 'row', gap: 8 },
   rideBtn: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  offerFareChip: { alignItems: 'center', borderRadius: 12, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', marginTop: 10, paddingHorizontal: 11, paddingVertical: 8 },
+  offerFareLabel: { color: '#8A6A00', fontSize: 10, fontWeight: '900', letterSpacing: 0.7 },
+  offerFareAmount: { color: '#A16207', fontSize: 18, fontWeight: '900' },
   navCard: { flexDirection: 'row', padding: 16, borderRadius: 20, borderWidth: 1, gap: 12, alignItems: 'center' },
   navStatus: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   navTitle: { fontSize: 16, fontWeight: '900', marginTop: 4 },
