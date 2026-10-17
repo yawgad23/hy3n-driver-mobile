@@ -11,8 +11,8 @@ import {
 
 const notificationsSource = readFileSync(path.join(__dirname, '../lib/notifications.ts'), 'utf8');
 
-test('an eligible incoming request plays the existing alert one time', () => {
-  assert.equal(INCOMING_TRIP_ALERT_PLAYBACK.loop, false);
+test('an eligible incoming request keeps the existing alert looping until its offer ends', () => {
+  assert.equal(INCOMING_TRIP_ALERT_PLAYBACK.loop, true);
   assert.equal(INCOMING_TRIP_NOTIFICATION.sound, 'default');
   assert.equal(shouldPlayIncomingTripAlert({
     isOnline: true,

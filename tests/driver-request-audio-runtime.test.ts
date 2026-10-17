@@ -49,10 +49,10 @@ test('actual Home configures iPhone silent-mode playback before starting its req
   assert.equal(mode.allowsRecording, false);
   assert.equal(mode.shouldPlayInBackground, false);
   assert.equal(player.volume, 0.92);
-  assert.equal(player.loop, false);
+  assert.equal(player.loop, true);
 });
 
-test('actual Home does not consume the one-shot alert before the audio is loaded', async () => {
+test('actual Home does not consume the looping request alert before the audio is loaded', async () => {
   let plays = 0;
   const player = { isLoaded: false, playing: false, muted: false, volume: 0, loop: true,
     pause: () => {}, seekTo: async () => {}, play: () => { plays++; } };

@@ -1,5 +1,7 @@
 export const INCOMING_TRIP_ALERT_PLAYBACK = Object.freeze({
-  loop: false,
+  // The foreground request card owns the life of this player. It stops when
+  // the Driver accepts, declines, goes offline, or the server offer expires.
+  loop: true,
   volume: 0.92,
 });
 
@@ -29,7 +31,7 @@ type IncomingTripAlertInput = {
   soundAlerts: boolean;
 };
 
-/** A request gets one local HY3N alert; it must never ring continuously. */
+/** An eligible, active request owns the looping foreground HY3N alert. */
 export function shouldPlayIncomingTripAlert({
   isOnline,
   incomingRideId,

@@ -58,8 +58,8 @@ import {
   DRIVER_OFFER_POLL_INTERVAL_MS,
   DRIVER_OFFER_REVIEW_SECONDS,
   driverOfferAcceptedByServer,
-  nextDriverOfferCountdown,
 } from '@/lib/driver-offer-lifecycle';
+import { driverOfferExpiryMs, isDriverOfferWithinWindow } from '@/lib/driver-offer-expiry';
 import { createSingleFlightDriverOfferRefresher } from '@/lib/driver-offer-refresh';
 import { driverTripTerminalStatus } from '@/lib/driver-trip-lifecycle';
 import { activeTripDetails } from '@/lib/driver-active-trip-details';
@@ -176,6 +176,7 @@ export default function DriverHomeScreen() {
   );
   const incomingTripAlertStatus = useAudioPlayerStatus(incomingTripAlertPlayer);
   const incomingTripAudioRuntimeRef = useRef(createDriverRequestAudio());
+  const incomingOfferReceivedAtRef = useRef<number | null>(null);
   const lastTripLocationRef = useRef<ExpoLocation.LocationObject | null>(null);
   const lastTripMeterPublishedAtRef = useRef(0);
   const lastSpeedRef = useRef<number | null>(null);
@@ -561,6 +562,7 @@ export default function DriverHomeScreen() {
   useEffect(() => {
     if (!user?.uid || !isOnline || !hasCurrentLocation) {
       stopIncomingTripAlert();
+      incomingOfferReceivedAtRef.current = null;
       setIncomingRide(null);
       return;
     }
@@ -574,8 +576,15 @@ export default function DriverHomeScreen() {
     });
 
     if (!offeredRide) {
-      if (incomingRide) {
+      const expiresAtMs = incomingRide
+        ? driverOfferExpiryMs(incomingRide.driver_offer_expires_at, incomingOfferReceivedAtRef.current ?? Date.now())
+        : null;
+      // A transient empty response during the two-second protected poll must
+      // not erase a live request card or stop its song. Only the server lease
+      // deadline is allowed to retire an unanswered offer locally.
+      if (incomingRide && expiresAtMs !== null && !isDriverOfferWithinWindow(expiresAtMs, Date.now())) {
         stopIncomingTripAlert();
+        incomingOfferReceivedAtRef.current = null;
         setIncomingRide(null);
       }
       return;
@@ -591,6 +600,7 @@ export default function DriverHomeScreen() {
     }
 
     if (incomingRide?.id !== offeredRide.id) {
+      incomingOfferReceivedAtRef.current = Date.now();
       setRideOfferSeconds(DRIVER_OFFER_REVIEW_SECONDS);
       setIncomingRide(offeredRide);
     }
@@ -645,16 +655,15 @@ export default function DriverHomeScreen() {
   // expired card rather than leaving an unusable “Review” state on screen.
   useEffect(() => {
     if (!incomingRide || activeTrip) return;
-    const expiresAtMs = Date.parse(String(incomingRide.driver_offer_expires_at || ''));
-    if (!Number.isFinite(expiresAtMs)) {
-      const timer = setInterval(() => setRideOfferSeconds(nextDriverOfferCountdown), 1000);
-      return () => clearInterval(timer);
-    }
+    const receivedAtMs = incomingOfferReceivedAtRef.current ?? Date.now();
+    if (incomingOfferReceivedAtRef.current === null) incomingOfferReceivedAtRef.current = receivedAtMs;
+    const expiresAtMs = driverOfferExpiryMs(incomingRide.driver_offer_expires_at, receivedAtMs);
     const updateOfferExpiry = () => {
       const seconds = Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000));
       setRideOfferSeconds(seconds);
       if (seconds === 0) {
         stopIncomingTripAlert();
+        incomingOfferReceivedAtRef.current = null;
         setIncomingRide(null);
         refreshAvailableOffers();
       }
@@ -845,6 +854,7 @@ export default function DriverHomeScreen() {
     const showAcceptedRide = (ride: any) => {
       serverConfirmed = true;
       setActiveTrip(ride);
+      incomingOfferReceivedAtRef.current = null;
       setIncomingRide(null);
       setRideOfferSeconds(DRIVER_OFFER_REVIEW_SECONDS);
       // Do not leave the Accept button spinning when Firestore confirms the
@@ -865,6 +875,7 @@ export default function DriverHomeScreen() {
     tripActionInFlightRef.current = true;
     setTripActionPending(true);
     stopIncomingTripAlert();
+    incomingOfferReceivedAtRef.current = null;
     const reconciliationTimers = DRIVER_ACCEPT_RECONCILIATION_DELAYS_MS.map((delay) => setTimeout(() => {
       if (!serverConfirmed) void reconcileAcceptedRide();
     }, delay));
@@ -928,6 +939,7 @@ export default function DriverHomeScreen() {
   const handleDeclineRide = async () => {
     if (!incomingRide || !user?.uid) return;
     stopIncomingTripAlert();
+    incomingOfferReceivedAtRef.current = null;
     try {
       await respondToOffer.mutateAsync({ driverId: user.uid, rideId: incomingRide.id, decision: 'decline' });
       setIncomingRide(null);
