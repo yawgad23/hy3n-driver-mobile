@@ -33,6 +33,7 @@ import {
   isSameDriverRoadPlan,
 } from '@/lib/driver-route-progress';
 import { createDriverNavigationDiagnostics, driverNavigationDiagnosticsEnabled, navigationErrorCode } from '@/lib/driver-navigation-diagnostics';
+import { validateDriverNavigationArrival } from '@/lib/driver-navigation-arrival';
 
 type MapTarget = { latitude: number; longitude: number; label: string };
 type Props = {
@@ -136,7 +137,9 @@ function DriverNavigationSurface({
   const [mapViewController, setMapViewController] = useState<MapViewController | null>(null);
   const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
   const diagnostics = useRef(createDriverNavigationDiagnostics()).current;
-  const nativeLocationRef = useRef<{ latitude: number; longitude: number; time: number } | null>(null);
+  const nativeLocationRef = useRef<{
+    latitude: number; longitude: number; accuracyMeters?: number | null; time: number;
+  } | null>(null);
   const confirmedRerouteRef = useRef<{ request: number; origin: { latitude: number; longitude: number }; atMs: number } | null>(null);
   const initializedRef = useRef(false);
   const navigationRequestRef = useRef(0);
@@ -154,6 +157,10 @@ function DriverNavigationSurface({
   const rerouteMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const routePointsRef = useRef<DriverRoutePoint[]>([]);
   const staleRoutePlanRef = useRef<DriverRoutePoint[] | null>(null);
+  // A target is considered locally arrived only for display. It is reset only
+  // when the server-backed pickup/drop-off/stop target changes; it never
+  // changes trip state or advances a stop by itself.
+  const arrivedTargetKeyRef = useRef<string | null>(null);
   const offRouteMonitorRef = useRef(EMPTY_DRIVER_OFF_ROUTE_MONITOR);
   const wrongWayMonitorRef = useRef(EMPTY_DRIVER_WRONG_WAY_MONITOR);
   const forcedRerouteInFlightRef = useRef(false);
@@ -164,6 +171,10 @@ function DriverNavigationSurface({
   const hasTarget = hasPoint(targetLatitude, targetLongitude);
   const targetKey = hasTarget
     ? `${tripStatus || 'target'}:${targetLatitude.toFixed(6)}:${targetLongitude.toFixed(6)}:${targetLabel}`
+    : null;
+  const activeTargetRef = useRef<{ key: string; latitude: number; longitude: number } | null>(null);
+  activeTargetRef.current = hasTarget && targetKey
+    ? { key: targetKey, latitude: targetLatitude, longitude: targetLongitude }
     : null;
   // Async native callbacks must read the latest real GPS fix, not coordinates
   // captured when the destination was first set.
@@ -277,6 +288,7 @@ function DriverNavigationSurface({
   }, [clearRouteLines, mapViewController]);
 
   const updateRemainingRoute = useCallback(() => {
+    if (arrivedTargetKeyRef.current && arrivedTargetKeyRef.current === activeTargetRef.current?.key) return;
     const request = navigationRequestRef.current;
     const work = routeOverlayWorkRef.current.then(async () => {
       if (!mapViewController || navigationRequestRef.current !== request) return;
@@ -300,7 +312,7 @@ function DriverNavigationSurface({
 
   const drawNavigationRoute = useCallback((isCurrent: () => boolean = () => true) => {
     const work = routeOverlayWorkRef.current.then(async () => {
-      if (!mapViewController || !hasTarget || !isCurrent()) return false;
+      if (!mapViewController || !hasTarget || !isCurrent() || arrivedTargetKeyRef.current === activeTargetRef.current?.key) return false;
       let stage: 'geometry' | 'polyline' = 'geometry';
       try {
         // Remove the passed road before reading replacement geometry. A blank
@@ -404,6 +416,7 @@ function DriverNavigationSurface({
    * iPhone without resetting a destination or disrupting spoken guidance.
    */
   const refreshBrandedRouteAfterNativeChange = useCallback((offRoute: boolean) => {
+    if (arrivedTargetKeyRef.current && arrivedTargetKeyRef.current === activeTargetRef.current?.key) return;
     clearRouteRefresh();
     const run = routeRefreshRunRef.current + 1;
     routeRefreshRunRef.current = run;
@@ -456,6 +469,7 @@ function DriverNavigationSurface({
       || !hasTarget
       || !targetKey
       || lastTargetKeyRef.current !== targetKey
+      || arrivedTargetKeyRef.current === targetKey
     ) return;
 
     const request = navigationRequestRef.current;
@@ -524,7 +538,9 @@ function DriverNavigationSurface({
     setOnLocationChanged((location) => {
       const valid = hasPoint(location.lat, location.lng);
       const previous = nativeLocationRef.current;
-      const point = valid ? { latitude: location.lat, longitude: location.lng, time: location.time } : null;
+      const point = valid
+        ? { latitude: location.lat, longitude: location.lng, accuracyMeters: location.accuracy ?? null, time: location.time }
+        : null;
       const expo = liveLocationRef.current;
       diagnostics('native.gps', {
         valid, accuracyMeters: location.accuracy ?? null,
@@ -534,8 +550,36 @@ function DriverNavigationSurface({
       });
       if (point) nativeLocationRef.current = point;
     });
-    setOnArrival(() => {
+    setOnArrival((arrivalEvent) => {
+      // A native arrival can be queued from an earlier destination after a
+      // reroute or stop transition. It is never a HY3N trip-state transition:
+      // only show a local prompt when its exact waypoint and a fresh phone fix
+      // independently match the active server-owned target.
+      const arrival = validateDriverNavigationArrival({
+        target: activeTargetRef.current,
+        arrival: arrivalEvent,
+        deviceFix: liveLocationRef.current,
+      });
+      if (!arrival.accepted) {
+        diagnostics('arrival.ignored', {
+          reason: arrival.reason,
+          distanceMeters: arrival.waypointDistanceMeters ?? arrival.locationDistanceMeters,
+        });
+        return;
+      }
+      diagnostics('arrival.confirmed', {
+        distanceMeters: arrival.locationDistanceMeters,
+      });
+      arrivedTargetKeyRef.current = activeTargetRef.current?.key || null;
       setNavigationMessage('You have reached this stop. Confirm your HY3N trip action below.');
+      const request = navigationRequestRef.current;
+      const work = routeOverlayWorkRef.current.then(async () => {
+        if (navigationRequestRef.current !== request) return;
+        await clearRouteLines();
+      });
+      routeOverlayWorkRef.current = work.catch((error) => {
+        diagnostics('polyline.failed', { request, reason: 'arrival_clear', code: navigationErrorCode(error) });
+      });
     });
     setOnRouteChanged(() => {
       diagnostics('route.native-change', { request: navigationRequestRef.current });
@@ -549,7 +593,7 @@ function DriverNavigationSurface({
       clearRouteRefresh();
       removeAllListeners();
     };
-  }, [clearRouteRefresh, diagnostics, refreshBrandedRouteAfterNativeChange, removeAllListeners, setOnArrival, setOnLocationChanged, setOnRouteChanged, setOnReroutingRequestedByOffRoute]);
+  }, [clearRouteLines, clearRouteRefresh, diagnostics, refreshBrandedRouteAfterNativeChange, removeAllListeners, setOnArrival, setOnLocationChanged, setOnRouteChanged, setOnReroutingRequestedByOffRoute]);
 
   // The branded overlay is not a NavigationView: Google does not update it for
   // us. A low-frequency single-flight read recovers a dropped native callback;
@@ -595,6 +639,7 @@ function DriverNavigationSurface({
       || !targetKey
       || !initializedRef.current
       || lastTargetKeyRef.current !== targetKey
+      || arrivedTargetKeyRef.current === targetKey
       || routePointsRef.current.length < 2
     ) return;
 
@@ -666,6 +711,7 @@ function DriverNavigationSurface({
 
     if (!hasTarget || !targetKey) {
       lastTargetKeyRef.current = null;
+      arrivedTargetKeyRef.current = null;
       routePointsRef.current = [];
       staleRoutePlanRef.current = null;
       offRouteMonitorRef.current = EMPTY_DRIVER_OFF_ROUTE_MONITOR;
@@ -696,6 +742,7 @@ function DriverNavigationSurface({
 
     if (lastTargetKeyRef.current === targetKey) return;
 
+    arrivedTargetKeyRef.current = null;
     routePointsRef.current = [];
     staleRoutePlanRef.current = null;
     offRouteMonitorRef.current = EMPTY_DRIVER_OFF_ROUTE_MONITOR;

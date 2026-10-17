@@ -1,7 +1,8 @@
 export type DriverNavigationStage =
   | 'gps.sample' | 'native.gps' | 'route.assessment' | 'route.request' | 'route.response'
   | 'geometry.received' | 'geometry.rejected' | 'geometry.failed' | 'polyline.applied'
-  | 'polyline.verified' | 'polyline.failed' | 'session.response' | 'route.native-change' | 'route.retry';
+  | 'polyline.verified' | 'polyline.failed' | 'session.response' | 'route.native-change' | 'route.retry'
+  | 'arrival.ignored' | 'arrival.confirmed';
 
 type DiagnosticFields = {
   request?: number; valid?: boolean; accuracyMeters?: number | null; ageMs?: number | null;

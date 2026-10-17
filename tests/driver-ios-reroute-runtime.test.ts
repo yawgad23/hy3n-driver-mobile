@@ -80,6 +80,9 @@ async function mountIos(options: { initialNetworkFailure?: boolean } = {}) {
   await act(async () => { tree = create(React.createElement(Component, props)); await flush(); });
   await act(async () => { await flush(); });
   return { lines, calls, logs, listeners, currentLegReads: () => currentLegReads,
+    rendered: () => JSON.stringify(tree.toJSON()),
+    arrival: async (event: any) => { await act(async () => { listeners.arrival?.(event); await flush(); }); },
+    routeChanged: async () => { await act(async () => { listeners.changed?.(); await flush(); }); },
     providerRecovers: () => { shouldFail = false; },
     providerFails: () => { shouldFail = true; },
     geometryFails: (value: boolean) => { geometryFails = value; },
@@ -223,5 +226,30 @@ test('stale iPhone fixes cannot trigger rerouting and fresh GPS resumes detectio
     await map.update({ latitude: 5.7024, locationTimestamp: Date.now() + 2 });
     assert.equal(map.calls.length, 2);
     assert.deepEqual(map.lines.get('hy3n-driver-route')?.points.at(-1), target);
+  } finally { await map.dispose(); }
+});
+
+test('iOS ignores an arrival callback for a previous waypoint and keeps the current route visible', async () => {
+  const map = await mountIos();
+  try {
+    assert.ok(map.lines.has('hy3n-driver-route'));
+    await map.arrival({
+      waypoint: { position: { lat: 5.699, lng: -0.11 } },
+      isFinalDestination: true,
+    });
+    assert.doesNotMatch(map.rendered(), /You have reached this stop/);
+    assert.ok(map.lines.has('hy3n-driver-route'), 'an obsolete arrival must not erase current guidance');
+  } finally { await map.dispose(); }
+});
+
+test('iOS shows arrival guidance and clears only the current target route after a fresh matching phone fix', async () => {
+  const map = await mountIos();
+  try {
+    await map.update({ latitude: target.lat, longitude: target.lng, locationTimestamp: Date.now() + 1 });
+    await map.arrival({ waypoint: { position: { lat: target.lat, lng: target.lng } }, isFinalDestination: true });
+    assert.match(map.rendered(), /You have reached this stop/);
+    assert.equal(map.lines.has('hy3n-driver-route'), false, 'a genuine arrival must not leave an old route behind');
+    await map.routeChanged();
+    assert.equal(map.lines.has('hy3n-driver-route'), false, 'a delayed native route event must not redraw a completed target');
   } finally { await map.dispose(); }
 });
