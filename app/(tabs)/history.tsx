@@ -371,7 +371,9 @@ const styles = StyleSheet.create({
   summaryLabel: { fontSize: 10, color: MUTED, textAlign: 'center' },
   searchWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: CARD, borderRadius: 12, margin: 16, marginBottom: 8, paddingHorizontal: 12, height: 44, borderWidth: 1, borderColor: BORDER },
   searchInput: { flex: 1, color: TEXT, fontSize: 14 },
-  filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 4, flexWrap: 'nowrap' },
+  // Five filter chips do not fit across a narrow iPhone. Wrap onto a second
+  // row instead of clipping the Cancelled control beyond the screen edge.
+  filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 4, flexWrap: 'wrap' },
   filterBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: CARD, borderWidth: 1, borderColor: BORDER },
   filterBtnActive: { backgroundColor: GOLD + '20', borderColor: GOLD },
   filterText: { color: MUTED, fontSize: 12, fontWeight: '600' },
