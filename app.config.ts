@@ -54,9 +54,9 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 102 packages the corrected Monday–Sunday Driver History period
-    // and responsive History filters that keep Cancelled visible on iPhone.
-    buildNumber: "102",
+    // Build 103 packages Driver History repairs and the iPhone-only route
+    // safety fallback when Expo has no current GPS fix but Navigation does.
+    buildNumber: "103",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
