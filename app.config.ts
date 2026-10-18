@@ -54,8 +54,9 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 100 packages the validated iPhone route-safety correction.
-    buildNumber: "100",
+    // Build 101 packages iPhone route safety plus synchronized Driver
+    // Settings, Auto-Accept, and offer-preference enforcement.
+    buildNumber: "101",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
