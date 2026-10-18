@@ -74,7 +74,7 @@ import {
 } from '@/lib/driver-navigation-fallback';
 import { shouldPlayIncomingTripAlert } from '@/lib/incoming-trip-alert';
 import { createDriverRequestAudio } from '@/lib/driver-request-audio';
-
+import { offerMatchesDriverPreferences } from '@/lib/driver-offer-preferences';
 const GOLD = '#D4AF37';
 const GREEN = '#22C55E';
 const RED = '#EF4444';
@@ -186,6 +186,7 @@ export default function DriverHomeScreen() {
   const offerSwipeX = useRef(new Animated.Value(0)).current;
   const offerRefresherRef = useRef(createSingleFlightDriverOfferRefresher());
   const tripActionInFlightRef = useRef(false);
+  const acceptRideRef = useRef<() => void>(() => {});
   const ratingSubmitInFlightRef = useRef(false);
   const backgroundLocationDisclosureDecisionRef = useRef<DriverBackgroundLocationDisclosureDecision>('unseen');
   const backgroundLocationRequestStateRef = useRef<DriverBackgroundLocationRequestState>('ready');
@@ -570,12 +571,7 @@ export default function DriverHomeScreen() {
     }
 
     const offers: any[] = availableOffers.data?.offers || [];
-    const offeredRide = offers.find((ride: any) => {
-      const estimatedDistance = Number(ride.distance_km || ride.estimated_distance_km || 0);
-      const eligibleForLongTrip = !prefs.longTripsOnly || estimatedDistance >= 8;
-      const eligibleForRating = !prefs.preferHighRated || Number(ride.rider_rating || 5) >= 4.5;
-      return eligibleForLongTrip && eligibleForRating;
-    });
+    const offeredRide = offers.find((ride: any) => offerMatchesDriverPreferences(ride, prefs));
 
     if (!offeredRide) {
       const expiresAtMs = incomingRide
@@ -609,7 +605,7 @@ export default function DriverHomeScreen() {
       setRideOfferSeconds(DRIVER_OFFER_REVIEW_SECONDS);
       setIncomingRide(offeredRide);
     }
-  }, [user?.uid, isOnline, hasCurrentLocation, activeTrip, incomingRide, availableOffers.data?.offers, prefs.longTripsOnly, prefs.preferHighRated]);
+  }, [user?.uid, isOnline, hasCurrentLocation, activeTrip, incomingRide, availableOffers.data?.offers, prefs]);
 
   useEffect(() => {
     const incomingRideId = incomingRide?.id ? String(incomingRide.id) : null;
@@ -684,7 +680,7 @@ export default function DriverHomeScreen() {
 
   useEffect(() => {
     if (!incomingRide || activeTrip || !prefs.autoAccept) return;
-    const timer = setTimeout(() => handleAcceptRide(), 2500);
+    const timer = setTimeout(() => acceptRideRef.current(), 2500);
     return () => clearTimeout(timer);
   }, [incomingRide, activeTrip, prefs.autoAccept]);
 
@@ -921,6 +917,9 @@ export default function DriverHomeScreen() {
       setTripActionPending(false);
     }
   };
+  // Settings can change while Home is mounted. The timer always invokes the
+  // newest authenticated accept callback instead of an older render closure.
+  acceptRideRef.current = () => { void handleAcceptRide(); };
 
   const handleAcceptQueuedRide = async () => {
     if (!nextRide || !activeTrip || !user?.uid) return;

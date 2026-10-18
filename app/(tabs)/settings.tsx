@@ -25,7 +25,7 @@ export default function DriverSettingsScreen() {
   const { driverProfile, deleteAccount } = useDriverAuth();
   const insets = useSafeAreaInsets();
   const [deleting, setDeleting] = useState(false);
-  const { prefs, toggle, saving, loaded } = useDriverPreferences();
+  const { prefs, toggle, saving, loaded, syncError } = useDriverPreferences();
   const { colorScheme } = useThemeContext();
   const colors = useColors();
 
@@ -108,10 +108,10 @@ export default function DriverSettingsScreen() {
             <Text style={styles.savingText}>Saving…</Text>
           </View>
         )}
-        {!saving && loaded && (
+        {!saving && loaded && !syncError && (
           <View style={styles.savedBadge}>
             <MaterialIcons name="cloud-done" size={14} color={GREEN} />
-            <Text style={styles.savedText}>Synced</Text>
+            <Text style={styles.savedText}>Saved</Text>
           </View>
         )}
       </View>
@@ -142,6 +142,13 @@ export default function DriverSettingsScreen() {
             </View>
           ))}
         </View>
+
+        {syncError && (
+          <View style={styles.preferenceSyncError}>
+            <MaterialIcons name="cloud-off" size={18} color={RED} />
+            <Text style={styles.preferenceSyncErrorText}>{syncError}</Text>
+          </View>
+        )}
 
         {/* Appearance */}
         <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -291,6 +298,11 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   autoAcceptText: { flex: 1, fontSize: 13, color: '#EAB308', lineHeight: 18 },
+  preferenceSyncError: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: '#EF444412',
+    borderWidth: 1, borderColor: '#EF444455', borderRadius: 12, padding: 12,
+  },
+  preferenceSyncErrorText: { flex: 1, fontSize: 13, color: RED, lineHeight: 18 },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
