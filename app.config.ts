@@ -54,9 +54,9 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 101 packages iPhone route safety plus synchronized Driver
-    // Settings, Auto-Accept, and offer-preference enforcement.
-    buildNumber: "101",
+    // Build 102 packages the corrected Monday–Sunday Driver History period
+    // and responsive History filters that keep Cancelled visible on iPhone.
+    buildNumber: "102",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
