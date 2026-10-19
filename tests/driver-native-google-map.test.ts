@@ -41,6 +41,12 @@ test('Driver Home uses one server push alert and serializes incoming-offer refre
   assert.doesNotMatch(driverHomeSource, /new Set/);
 });
 
+test('accepting an offer removes the request before the async server response and preserves its route fields', () => {
+  assert.match(driverHomeSource, /const offeredRideSnapshot = incomingRide/);
+  assert.match(driverHomeSource, /setActiveTrip\(\{ \.\.\.offeredRideSnapshot, \.\.\.\(ride \|\| \{\}\) \}\)/);
+  assert.match(driverHomeSource, /stopIncomingTripAlert\(true\);\n    \/\/ Remove the offer synchronously[\s\S]*?setIncomingRide\(null\);/);
+});
+
 test('Driver Home shows a prominent Android location disclosure before requesting background tracking', () => {
   assert.match(driverHomeSource, /DRIVER_BACKGROUND_LOCATION_DISCLOSURE/);
   assert.match(driverHomeSource, /shouldShowDriverBackgroundLocationDisclosure/);

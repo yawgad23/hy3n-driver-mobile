@@ -855,10 +855,15 @@ export default function DriverHomeScreen() {
   const handleAcceptRide = async () => {
     if (!incomingRide || !user?.uid || tripActionInFlightRef.current) return;
     const rideId = String(incomingRide.id);
+    const offeredRideSnapshot = incomingRide;
     let serverConfirmed = false;
     const showAcceptedRide = (ride: any) => {
       serverConfirmed = true;
-      setActiveTrip(ride);
+      // The offer already contains the server-owned pickup/destination. Keep
+      // those fields if a delayed/legacy mutation response returns only the
+      // assignment patch; without them the iPhone NavigationView remounts with
+      // no target and the Driver car/route disappears immediately after Accept.
+      setActiveTrip({ ...offeredRideSnapshot, ...(ride || {}) });
       incomingOfferReceivedAtRef.current = null;
       setIncomingRide(null);
       setRideOfferSeconds(DRIVER_OFFER_REVIEW_SECONDS);
@@ -882,6 +887,9 @@ export default function DriverHomeScreen() {
     // Stop on tap, not after the accepted server response. iPhone native
     // playback status can lag the audible request song by a short interval.
     stopIncomingTripAlert(true);
+    // Remove the offer synchronously. The offer/audio effect can otherwise run
+    // once more while respondToOffer is in flight and restart the looped tone.
+    setIncomingRide(null);
     incomingOfferReceivedAtRef.current = null;
     const reconciliationTimers = DRIVER_ACCEPT_RECONCILIATION_DELAYS_MS.map((delay) => setTimeout(() => {
       if (!serverConfirmed) void reconcileAcceptedRide();
