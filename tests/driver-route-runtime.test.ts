@@ -6,8 +6,9 @@ import { build } from 'esbuild';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
-// These execute the actual component's effects and asynchronous bridge calls.
-// The mock supplies road geometry; it does not pretend to test native iOS GPS.
+// These execute the actual component's Android MapView overlay effects and
+// asynchronous bridge calls. iPhone active trips have separate tests because
+// they now render the route directly in Google NavigationView.
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 const requireHere = createRequire(__filename);
 const origin = { lat: 5.7, lng: -0.1 };
@@ -66,7 +67,7 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
       appStateListener = listener;
       return { remove: () => { appStateListener = null; } };
     } },
-    Linking: { openSettings: () => {} }, Platform: { OS: 'ios', select: (v: any) => v.ios },
+    Linking: { openSettings: () => {} }, Platform: { OS: 'android', select: (v: any) => v.android },
     StyleSheet: { create: (v: any) => v, absoluteFillObject: {}, absoluteFill: {} },
   };
   const keepAwake = {

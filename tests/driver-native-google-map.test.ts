@@ -62,8 +62,8 @@ test('the trip screen stays map-first while retaining availability and destinati
   assert.match(driverHomeSource, /Go Offline/);
   assert.match(driverHomeSource, /isOnline && !activeTrip && \(/);
   assert.match(driverHomeSource, /styles\.destFilterBar/);
-  assert.match(nativeMapSource, /The branded MapView never switches at acceptance/);
-  assert.match(nativeMapSource, /The HY3N car is/);
+  assert.match(nativeMapSource, /NavigationView owns the live route/);
+  assert.match(nativeMapSource, /Google owns route replacement/);
   assert.match(driverHomeSource, /activeTripDetails\(incomingRide\)\.bookedFare/);
   assert.match(driverHomeSource, /BOOKED FARE/);
   assert.doesNotMatch(driverHomeSource, /Active Trip Navigation Card/);

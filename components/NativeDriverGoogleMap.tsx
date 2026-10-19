@@ -5,6 +5,8 @@ import {
   AudioGuidance,
   MapColorScheme,
   MapView,
+  NavigationUIEnabledPreference,
+  NavigationView,
   NavigationProvider,
   NavigationSessionStatus,
   RouteStatus,
@@ -12,6 +14,7 @@ import {
   TravelMode,
   useNavigation,
   type MapViewController,
+  type NavigationViewController,
 } from '@googlemaps/react-native-navigation-sdk';
 import {
   DRIVER_REROUTE_ROUTE_REDRAW_DELAYS_MS,
@@ -153,10 +156,10 @@ function DriverActiveNavigationKeepAwake() {
 }
 
 /**
- * A branded map stays visible for the complete Driver journey. Google
- * Navigation runs as the route and voice engine, while HY3N owns the visual
- * vehicle marker, map camera, and route line. This deliberately avoids the
- * NavigationView blue current-location arrow after a ride is accepted.
+ * The idle map remains HY3N-branded. During an iPhone trip, Google
+ * NavigationView owns the live route and navigation vehicle indicator. HY3N
+ * does not redraw a second copy of that route through the React Native bridge.
+ * Android retains its established MapView route presentation.
  */
 function DriverNavigationSurface({
   latitude,
@@ -176,8 +179,10 @@ function DriverNavigationSurface({
     setOnLocationChanged,
   } = useNavigation();
   const [mapViewController, setMapViewController] = useState<MapViewController | null>(null);
+  const [navigationViewIsReady, setNavigationViewIsReady] = useState(false);
   const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
   const diagnostics = useRef(createDriverNavigationDiagnostics()).current;
+  const navigationViewControllerRef = useRef<NavigationViewController | null>(null);
   const nativeLocationRef = useRef<DriverNavigationLocation | null>(null);
   const expoLocationRef = useRef<DriverNavigationLocation | null>(null);
   const confirmedRerouteRef = useRef<{ request: number; origin: { latitude: number; longitude: number }; atMs: number } | null>(null);
@@ -204,11 +209,16 @@ function DriverNavigationSurface({
   const offRouteMonitorRef = useRef(EMPTY_DRIVER_OFF_ROUTE_MONITOR);
   const wrongWayMonitorRef = useRef(EMPTY_DRIVER_WRONG_WAY_MONITOR);
   const forcedRerouteInFlightRef = useRef(false);
+  const handleNavigationViewControllerCreated = useCallback((controller: NavigationViewController) => {
+    navigationViewControllerRef.current = controller;
+    setNavigationViewIsReady(true);
+  }, []);
   const hasDeviceLocation = hasPoint(latitude, longitude);
   const targetLatitude = Number(target?.latitude);
   const targetLongitude = Number(target?.longitude);
   const targetLabel = target?.label?.trim() || (tripStatus === 'dropoff' ? 'Drop-off' : 'Pickup');
   const hasTarget = hasPoint(targetLatitude, targetLongitude);
+  const usesNativeIPhoneRouteRenderer = Platform.OS === 'ios' && hasTarget;
   const targetKey = hasTarget
     ? `${tripStatus || 'target'}:${targetLatitude.toFixed(6)}:${targetLongitude.toFixed(6)}:${targetLabel}`
     : null;
@@ -261,6 +271,9 @@ function DriverNavigationSurface({
   }, []);
 
   const applyVehiclePosition = useCallback((position: DriverMapPosition, followTrip: boolean) => {
+    // Google NavigationView owns the active iPhone vehicle marker and camera.
+    // Drawing HY3N's second car over it would create two competing positions.
+    if (Platform.OS === 'ios' && activeTargetRef.current) return;
     if (!mapViewController) return;
     void mapViewController.addMarker({
       id: DRIVER_VEHICLE_MARKER_ID,
@@ -289,6 +302,7 @@ function DriverNavigationSurface({
   // car uses the device heading where available and only follows positions the
   // Driver app has received; this display layer has no effect on fare or meter.
   useEffect(() => {
+    if (usesNativeIPhoneRouteRenderer) return;
     if (!mapViewController || !hasDeviceLocation) return;
     const next = {
       latitude: Number(latitude),
@@ -314,9 +328,10 @@ function DriverNavigationSurface({
     };
     showFrame();
     return clearVehicleMotion;
-  }, [applyVehiclePosition, clearVehicleMotion, hasDeviceLocation, hasTarget, heading, latitude, longitude, mapViewController]);
+  }, [applyVehiclePosition, clearVehicleMotion, hasDeviceLocation, hasTarget, heading, latitude, longitude, mapViewController, usesNativeIPhoneRouteRenderer]);
 
   const clearRouteLines = useCallback(async () => {
+    if (usesNativeIPhoneRouteRenderer) return;
     if (!mapViewController) return;
 
     // Unlike the native navigation engine, these two branded polylines are
@@ -328,9 +343,10 @@ function DriverNavigationSurface({
       Promise.resolve(mapViewController.removePolyline(DRIVER_ROUTE_ID)),
     ]);
     for (const result of results) if (result.status === 'rejected') diagnostics('polyline.failed', { reason: 'remove', code: navigationErrorCode(result.reason) });
-  }, [diagnostics, mapViewController]);
+  }, [diagnostics, mapViewController, usesNativeIPhoneRouteRenderer]);
 
   const clearRoute = useCallback(() => {
+    if (Platform.OS === 'ios') return Promise.resolve();
     const request = navigationRequestRef.current;
     const work = routeOverlayWorkRef.current.then(async () => {
       if (!mapViewController || navigationRequestRef.current !== request) return;
@@ -343,6 +359,7 @@ function DriverNavigationSurface({
   }, [clearRouteLines, mapViewController]);
 
   const updateRemainingRoute = useCallback(() => {
+    if (Platform.OS === 'ios') return;
     if (arrivedTargetKeyRef.current && arrivedTargetKeyRef.current === activeTargetRef.current?.key) return;
     const request = navigationRequestRef.current;
     const work = routeOverlayWorkRef.current.then(async () => {
@@ -367,6 +384,11 @@ function DriverNavigationSurface({
   }, [clearRouteLines, currentNavigationLocation, diagnostics, mapViewController]);
 
   const drawNavigationRoute = useCallback((isCurrent: () => boolean = () => true) => {
+    // iPhone NavigationView reads and renders the route inside the native
+    // Google session. Never rebuild that line as a JavaScript polyline.
+    if (Platform.OS === 'ios') {
+      return Promise.resolve(Boolean(hasTarget && isCurrent() && arrivedTargetKeyRef.current !== activeTargetRef.current?.key));
+    }
     const work = routeOverlayWorkRef.current.then(async () => {
       if (!mapViewController || !hasTarget || !isCurrent() || arrivedTargetKeyRef.current === activeTargetRef.current?.key) return false;
       let stage: 'geometry' | 'polyline' = 'geometry';
@@ -471,12 +493,23 @@ function DriverNavigationSurface({
   }, [clearRouteLines, currentNavigationLocation, diagnostics, hasTarget, mapViewController, navigationController, targetLabel, targetLatitude, targetLongitude]);
 
   /**
-   * Google owns off-route detection and route choice. HY3N owns the clean map
-   * presentation, so it re-reads the native route after the SDK says a route
-   * changed. A short retry window handles the native callback/geometry race on
-   * iPhone without resetting a destination or disrupting spoken guidance.
+   * On Android, HY3N reads Google geometry and draws the established branded
+   * route line. On iPhone, NavigationView renders its own current route, so a
+   * native route-change event must never start a second JavaScript redraw.
    */
   const refreshBrandedRouteAfterNativeChange = useCallback((offRoute: boolean) => {
+    if (Platform.OS === 'ios') {
+      if (offRoute) {
+        setNavigationMessage('Re-routing from your current road…');
+        if (rerouteMessageTimerRef.current) clearTimeout(rerouteMessageTimerRef.current);
+        rerouteMessageTimerRef.current = setTimeout(() => {
+          setNavigationMessage((message) => message === 'Re-routing from your current road…' ? null : message);
+        }, 900);
+      } else {
+        setNavigationMessage((message) => message === 'Re-routing from your current road…' ? null : message);
+      }
+      return;
+    }
     if (arrivedTargetKeyRef.current && arrivedTargetKeyRef.current === activeTargetRef.current?.key) return;
     clearRouteRefresh();
     const run = routeRefreshRunRef.current + 1;
@@ -524,6 +557,10 @@ function DriverNavigationSurface({
    * asks Google to calculate a replacement to the unchanged destination.
    */
   const requestGpsFallbackReroute = useCallback(() => {
+    // NavigationView monitors iPhone off-route movement and replaces its own
+    // native route. Calling setDestination again from the JavaScript overlay
+    // path would compete with that native reroute and reintroduce a stale race.
+    if (Platform.OS === 'ios') return;
     if (
       forcedRerouteInFlightRef.current
       || !initializedRef.current
@@ -598,6 +635,16 @@ function DriverNavigationSurface({
   ]);
 
   const assessNavigationLocation = useCallback((observedLocation: DriverNavigationLocation | null) => {
+    if (Platform.OS === 'ios') {
+      const usableFix = Boolean(observedLocation
+        && hasFreshNavigationFix(observedLocation.accuracyMeters, observedLocation.time));
+      diagnostics('gps.sample', {
+        valid: usableFix,
+        accuracyMeters: observedLocation?.accuracyMeters ?? null,
+        ageMs: observedLocation?.time != null ? Math.max(0, Date.now() - observedLocation.time) : null,
+      });
+      return;
+    }
     if (
       !hasTarget
       || !targetKey
@@ -614,7 +661,7 @@ function DriverNavigationSurface({
       accuracyMeters: observedLocation?.accuracyMeters ?? null,
       ageMs: observedLocation?.time != null ? Math.max(0, Date.now() - observedLocation.time) : null,
     });
-    if (!observedLocation || (Platform.OS === 'ios' && !usableFix)) {
+    if (!observedLocation) {
       offRouteMonitorRef.current = { ...offRouteMonitorRef.current, consecutiveOffRouteSamples: 0 };
       wrongWayMonitorRef.current = { ...wrongWayMonitorRef.current, previousLocation: null, consecutiveSamples: 0 };
       diagnostics('route.assessment', { shouldReroute: false, reason: 'stale_or_imprecise_gps' });
@@ -718,16 +765,33 @@ function DriverNavigationSurface({
       });
       arrivedTargetKeyRef.current = activeTargetRef.current?.key || null;
       setNavigationMessage('You have reached this stop. Confirm your HY3N trip action below.');
-      const request = navigationRequestRef.current;
-      const work = routeOverlayWorkRef.current.then(async () => {
-        if (navigationRequestRef.current !== request) return;
-        await clearRouteLines();
-      });
-      routeOverlayWorkRef.current = work.catch((error) => {
-        diagnostics('polyline.failed', { request, reason: 'arrival_clear', code: navigationErrorCode(error) });
-      });
+      if (Platform.OS === 'ios') {
+        void runNavigationWork(async () => {
+          try {
+            await navigationViewControllerRef.current?.setNavigationUIEnabled(false);
+            await navigationController.stopGuidance();
+            await navigationController.clearDestinations();
+          } catch (error) {
+            diagnostics('route.response', { status: 'native_clear_failed', code: navigationErrorCode(error) });
+          }
+        });
+      } else {
+        const request = navigationRequestRef.current;
+        const work = routeOverlayWorkRef.current.then(async () => {
+          if (navigationRequestRef.current !== request) return;
+          await clearRouteLines();
+        });
+        routeOverlayWorkRef.current = work.catch((error) => {
+          diagnostics('polyline.failed', { request, reason: 'arrival_clear', code: navigationErrorCode(error) });
+        });
+      }
     });
     setOnRouteChanged(() => {
+      if (Platform.OS === 'ios') {
+        diagnostics('route.native-change', { request: navigationRequestRef.current });
+        refreshBrandedRouteAfterNativeChange(false);
+        return;
+      }
       // The native callback supplies neither a route ID nor route geometry. A
       // read immediately after it can still return the previous current leg.
       // Quarantine that previous plan before any redraw so a stale green/white
@@ -737,6 +801,11 @@ function DriverNavigationSurface({
       refreshBrandedRouteAfterNativeChange(false);
     });
     setOnReroutingRequestedByOffRoute(() => {
+      if (Platform.OS === 'ios') {
+        diagnostics('route.native-change', { request: navigationRequestRef.current });
+        refreshBrandedRouteAfterNativeChange(true);
+        return;
+      }
       staleRoutePlanRef.current = routePointsRef.current.slice();
       refreshBrandedRouteAfterNativeChange(true);
     });
@@ -744,12 +813,13 @@ function DriverNavigationSurface({
       clearRouteRefresh();
       removeAllListeners();
     };
-  }, [applyVehiclePosition, assessNavigationLocation, clearRouteLines, clearRouteRefresh, clearVehicleMotion, currentNavigationLocation, diagnostics, hasTarget, refreshBrandedRouteAfterNativeChange, removeAllListeners, setOnArrival, setOnLocationChanged, setOnRouteChanged, setOnReroutingRequestedByOffRoute]);
+  }, [applyVehiclePosition, assessNavigationLocation, clearRouteLines, clearRouteRefresh, clearVehicleMotion, currentNavigationLocation, diagnostics, hasTarget, navigationController, refreshBrandedRouteAfterNativeChange, removeAllListeners, runNavigationWork, setOnArrival, setOnLocationChanged, setOnRouteChanged, setOnReroutingRequestedByOffRoute]);
 
-  // The branded overlay is not a NavigationView: Google does not update it for
-  // us. A low-frequency single-flight read recovers a dropped native callback;
-  // it never resets the destination or changes trip/fare state.
+  // Android retains the established branded overlay recovery read. iPhone
+  // NavigationView renders the native Google route directly, so it deliberately
+  // has no JavaScript geometry readback or duplicate green/white line.
   useEffect(() => {
+    if (Platform.OS === 'ios') return;
     if (!hasTarget || !targetKey) return;
     let cancelled = false;
     let reading = false;
@@ -778,7 +848,7 @@ function DriverNavigationSurface({
       if (!returning || !initializedRef.current || !targetKey || lastTargetKeyRef.current !== targetKey) return;
       navigationController.setBackgroundLocationUpdatesEnabled(true);
       navigationController.startUpdatingLocation();
-      refreshBrandedRouteAfterNativeChange(false);
+      if (Platform.OS !== 'ios') refreshBrandedRouteAfterNativeChange(false);
     });
     return () => subscription.remove();
   }, [navigationController, refreshBrandedRouteAfterNativeChange, targetKey]);
@@ -815,6 +885,7 @@ function DriverNavigationSurface({
     clearRouteRefresh();
 
     if (!hasTarget || !targetKey) {
+      setNavigationViewIsReady(false);
       lastTargetKeyRef.current = null;
       arrivedTargetKeyRef.current = null;
       routePointsRef.current = [];
@@ -829,6 +900,7 @@ function DriverNavigationSurface({
             if (navigationRequestRef.current !== request) return;
             navigationController.setBackgroundLocationUpdatesEnabled(false);
             navigationController.stopUpdatingLocation();
+            await navigationViewControllerRef.current?.setNavigationUIEnabled(false);
             await navigationController.stopGuidance();
             await navigationController.clearDestinations();
           } catch {
@@ -842,6 +914,11 @@ function DriverNavigationSurface({
 
     if (!hasDeviceLocation) {
       setNavigationMessage('Getting your live location before guidance starts.');
+      return;
+    }
+
+    if (Platform.OS === 'ios' && !navigationViewIsReady) {
+      setNavigationMessage('Preparing HY3N navigation…');
       return;
     }
 
@@ -859,6 +936,15 @@ function DriverNavigationSurface({
     void runNavigationWork(async () => {
       try {
         if (cancelled || navigationRequestRef.current !== request) return;
+        // Do not leave a prior pickup/drop-off route visible while the exact
+        // server-owned target changes. A short blank native route is safer than
+        // a displayed road leading to the previous target.
+        if (Platform.OS === 'ios') {
+          await navigationViewControllerRef.current?.setNavigationUIEnabled(false);
+          await navigationController.stopGuidance();
+          await navigationController.clearDestinations();
+          if (cancelled || navigationRequestRef.current !== request) return;
+        }
         const accepted = await navigationController.showTermsAndConditionsDialog();
         if (cancelled || navigationRequestRef.current !== request) return;
         if (!accepted) {
@@ -912,10 +998,14 @@ function DriverNavigationSurface({
 
         await navigationController.startGuidance();
         if (cancelled || navigationRequestRef.current !== request) return;
+        if (Platform.OS === 'ios') {
+          await navigationViewControllerRef.current?.setNavigationUIEnabled(true);
+          if (cancelled || navigationRequestRef.current !== request) return;
+        }
         const painted = await drawNavigationRoute(() => !cancelled && navigationRequestRef.current === request);
         if (cancelled || navigationRequestRef.current !== request) return;
         lastTargetKeyRef.current = targetKey;
-        setNavigationMessage(painted ? null : 'Re-routing from your current road…');
+        setNavigationMessage(painted || Platform.OS === 'ios' ? null : 'Re-routing from your current road…');
       } catch (error) {
         diagnostics('route.response', { request, status: 'exception', code: navigationErrorCode(error) });
         if (!cancelled && navigationRequestRef.current === request) {
@@ -925,35 +1015,65 @@ function DriverNavigationSurface({
     });
 
     return () => { cancelled = true; };
-  }, [clearRoute, clearRouteRefresh, diagnostics, drawNavigationRoute, hasDeviceLocation, hasTarget, navigationController, runNavigationWork, targetKey, targetLabel, targetLatitude, targetLongitude]);
+  }, [clearRoute, clearRouteRefresh, diagnostics, drawNavigationRoute, hasDeviceLocation, hasTarget, navigationController, navigationViewIsReady, runNavigationWork, targetKey, targetLabel, targetLatitude, targetLongitude]);
 
   return (
     <View style={styles.container}>
       {hasTarget ? <DriverActiveNavigationKeepAwake /> : null}
       {hasDeviceLocation ? (
-        <MapView
-          style={StyleSheet.absoluteFill}
-          initialCameraPosition={{
-            target: { lat: Number(latitude), lng: Number(longitude) },
-            zoom: hasTarget ? 17 : 16,
-            bearing: Number(heading) || 0,
-            tilt: hasTarget ? 42 : 0,
-          }}
-          // The branded MapView never switches at acceptance. The HY3N car is
-          // its only live vehicle marker; the Google blue location arrow stays
-          // disabled while the Navigation SDK remains the voice/route engine.
-          mapColorScheme={MapColorScheme.FOLLOW_SYSTEM}
-          mapStyle={CLEAN_GOOGLE_STYLE}
-          trafficEnabled
-          myLocationEnabled={false}
-          myLocationButtonEnabled={false}
-          compassEnabled
-          indoorEnabled={false}
-          indoorLevelPickerEnabled={false}
-          buildingsEnabled={false}
-          mapToolbarEnabled={false}
-          onMapViewControllerCreated={setMapViewController}
-        />
+        usesNativeIPhoneRouteRenderer ? (
+          <NavigationView
+            style={StyleSheet.absoluteFill}
+            initialCameraPosition={{
+              target: { lat: Number(latitude), lng: Number(longitude) },
+              zoom: 17,
+              bearing: Number(heading) || 0,
+              tilt: 42,
+            }}
+            // Start hidden until the authoritative target is accepted by
+            // Google, then enable native UI. Google owns route replacement,
+            // including off-route and wrong-direction rerouting.
+            navigationUIEnabledPreference={NavigationUIEnabledPreference.DISABLED}
+            onNavigationViewControllerCreated={handleNavigationViewControllerCreated}
+            mapColorScheme={MapColorScheme.FOLLOW_SYSTEM}
+            mapStyle={CLEAN_GOOGLE_STYLE}
+            trafficEnabled
+            headerEnabled={false}
+            footerEnabled={false}
+            recenterButtonEnabled={false}
+            speedometerEnabled={false}
+            speedLimitIconEnabled={false}
+            trafficPromptsEnabled={false}
+            trafficIncidentCardsEnabled={false}
+            indoorEnabled={false}
+            indoorLevelPickerEnabled={false}
+            buildingsEnabled={false}
+            mapToolbarEnabled={false}
+          />
+        ) : (
+          <MapView
+            style={StyleSheet.absoluteFill}
+            initialCameraPosition={{
+              target: { lat: Number(latitude), lng: Number(longitude) },
+              zoom: hasTarget ? 17 : 16,
+              bearing: Number(heading) || 0,
+              tilt: hasTarget ? 42 : 0,
+            }}
+            // Before an iPhone trip and throughout the existing Android path,
+            // HY3N keeps its own quiet map and car marker.
+            mapColorScheme={MapColorScheme.FOLLOW_SYSTEM}
+            mapStyle={CLEAN_GOOGLE_STYLE}
+            trafficEnabled
+            myLocationEnabled={false}
+            myLocationButtonEnabled={false}
+            compassEnabled
+            indoorEnabled={false}
+            indoorLevelPickerEnabled={false}
+            buildingsEnabled={false}
+            mapToolbarEnabled={false}
+            onMapViewControllerCreated={setMapViewController}
+          />
+        )
       ) : (
         <View style={styles.locationGate}>
           <Text style={styles.locationGateTitle}>Getting your live location</Text>

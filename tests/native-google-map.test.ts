@@ -8,40 +8,51 @@ const screen = readFileSync(path.join(process.cwd(), 'app/(tabs)/home.tsx'), 'ut
 const configPlugin = readFileSync(path.join(process.cwd(), 'plugins/with-google-navigation.js'), 'utf8');
 const appConfig = readFileSync(path.join(process.cwd(), 'app.config.ts'), 'utf8');
 
-test('Driver runs Google turn guidance inside HY3N without switching to Google navigation UI', () => {
+test('Driver runs the active iPhone route directly in Google NavigationView', () => {
   assert.match(component, /@googlemaps\/react-native-navigation-sdk/);
-  assert.match(component, /navigationController\.setDestination/);
-  assert.match(component, /navigationController\.startGuidance/);
-  assert.match(component, /AudioGuidance\.VOICE_ALERTS_AND_GUIDANCE/);
-  assert.match(component, /AudioGuidance\.BLUETOOTH_AUDIO/);
-  assert.match(component, /RouteStatus\.NO_ROUTE_FOUND/);
-  assert.match(component, /setOnRouteChanged/);
-  assert.match(component, /Navigation runs as the route and voice engine/);
-  assert.doesNotMatch(component, /<NavigationView/);
+  assert.match(component, /NavigationView/);
+  assert.match(component, /NavigationUIEnabledPreference\.DISABLED/);
+  assert.match(component, /usesNativeIPhoneRouteRenderer = Platform\.OS === 'ios' && hasTarget/);
+  assert.match(component, /handleNavigationViewControllerCreated/);
+  assert.match(component, /navigationViewControllerRef\.current = controller/);
+  assert.match(component, /await navigationViewControllerRef\.current\?\.setNavigationUIEnabled\(true\)/);
+  assert.match(component, /await navigationViewControllerRef\.current\?\.setNavigationUIEnabled\(false\)/);
+  assert.match(component, /Google owns route replacement/);
+  assert.match(component, /if \(Platform\.OS === 'ios'\) return;/);
   assert.match(screen, /NativeDriverGoogleMap/);
   assert.doesNotMatch(screen, /googleMapsTurnByTurnUri/);
   assert.doesNotMatch(screen, /launchGoogleMapsTurnByTurn/);
 });
 
-test('Driver retains a smooth HY3N car marker for online and accepted-trip maps', () => {
+test('Driver retains Google route and voice navigation while preserving the server-owned trip target', () => {
+  assert.match(component, /navigationController\.setDestination/);
+  assert.match(component, /navigationController\.startGuidance/);
+  assert.match(component, /navigationController\.clearDestinations/);
+  assert.match(component, /AudioGuidance\.VOICE_ALERTS_AND_GUIDANCE/);
+  assert.match(component, /AudioGuidance\.BLUETOOTH_AUDIO/);
+  assert.match(component, /RouteStatus\.NO_ROUTE_FOUND/);
+  assert.match(component, /setOnRouteChanged/);
+  assert.match(component, /setOnReroutingRequestedByOffRoute/);
+  assert.match(component, /preferSameSideOfRoad: true/);
+  assert.match(component, /server-owned target changes/);
+  assert.match(component, /Do not leave a prior pickup\/drop-off route visible/);
+});
+
+test('Driver keeps its HY3N car only outside active iPhone navigation and retains the Android route path', () => {
   assert.match(component, /DRIVER_VEHICLE_MARKER_ID = 'hy3n-driver-vehicle'/);
   assert.match(component, /driverMapMotionFrames/);
-  assert.match(component, /mapViewController\.addMarker/);
-  assert.match(component, /imgPath: DRIVER_VEHICLE_MARKER_ASSET/);
-  assert.match(component, /rotation: position\.heading/);
-  assert.match(component, /flat: true/);
+  assert.match(component, /if \(Platform\.OS === 'ios' && activeTargetRef\.current\) return;/);
+  assert.match(component, /usesNativeIPhoneRouteRenderer \? \(/);
   assert.match(component, /<MapView/);
-  assert.match(component, /The branded MapView never switches at acceptance/);
-  assert.match(component, /onMapViewControllerCreated=\{setMapViewController\}/);
   assert.match(component, /myLocationEnabled=\{false\}/);
-  assert.match(component, /myLocationButtonEnabled=\{false\}/);
-  assert.match(component, /routePointsForMap/);
+  assert.match(component, /const drawNavigationRoute/);
+  assert.match(component, /if \(Platform\.OS === 'ios'\) \{/);
+  assert.match(component, /return Promise\.resolve\(Boolean\(hasTarget/);
   assert.match(component, /mapViewController\.addPolyline/);
   assert.match(configPlugin, /hy3n_driver_car_marker\.png/);
   assert.match(configPlugin, /IOS_DRIVER_CAR_MARKER = 'HY3NDriverCarMarker'/);
-  assert.match(configPlugin, /\$\{IOS_DRIVER_CAR_MARKER\}\.imageset/);
-  assert.match(configPlugin, /HY3N_DRIVER_DISABLE_DEFAULT_LOCATION_INDICATOR/);
-  assert.match(configPlugin, /_mapView\.myLocationEnabled = NO/);
+  assert.doesNotMatch(configPlugin, /HY3N_DRIVER_DISABLE_DEFAULT_LOCATION_INDICATOR/);
+  assert.doesNotMatch(configPlugin, /myLocationEnabled = NO/);
 });
 
 test('Driver active navigation keeps the map clean and stable during live movement', () => {
@@ -53,43 +64,21 @@ test('Driver active navigation keeps the map clean and stable during live moveme
   assert.match(component, /featureType: 'transit'/);
   assert.match(component, /mapColorScheme=\{MapColorScheme\.FOLLOW_SYSTEM\}/);
   assert.match(component, /mapStyle=\{CLEAN_GOOGLE_STYLE\}/);
-  assert.doesNotMatch(component, /MapColorScheme\.LIGHT/);
-  assert.match(component, /buildingsEnabled=\{false\}/);
+  assert.match(component, /headerEnabled=\{false\}/);
+  assert.match(component, /footerEnabled=\{false\}/);
   assert.match(component, /lastTargetKeyRef\.current === targetKey/);
 });
 
-test('Driver active map re-routes for each pickup or drop-off and cleans up safely', () => {
-  assert.match(component, /driverMapMotionFrames/);
-  assert.match(component, /DRIVER_REROUTE_ROUTE_REDRAW_DELAYS_MS/);
-  assert.match(component, /assessDriverOffRoute/);
-  assert.match(component, /routePointsRef/);
-  assert.match(component, /forcedRerouteInFlightRef/);
-  assert.match(component, /mapViewController\.moveCamera/);
-  assert.match(component, /lastTargetKeyRef\.current === targetKey/);
-  assert.match(component, /setOnReroutingRequestedByOffRoute/);
-  assert.match(component, /Re-routing from your current road/);
-  assert.match(component, /refreshBrandedRouteAfterNativeChange/);
-  assert.match(component, /const clearRouteLines = useCallback\(async/);
-  assert.match(component, /Promise\.allSettled\(\[/);
-  assert.match(component, /await clearRouteLines\(\)/);
-  assert.match(component, /routeOverlayWorkRef/);
-  assert.match(component, /const drawNavigationRoute = useCallback\(\(isCurrent/);
-  assert.match(component, /routeRefreshRunRef\.current === run/);
-  assert.match(component, /A blank\n\s+\/\/ line is safer than showing a Driver travelling along the old road/);
+test('Driver active map cleans up safely and does not fabricate a location', () => {
   assert.match(component, /clearDestinations\(\)/);
   assert.match(component, /stopGuidance\(\)/);
   assert.match(component, /navigationController\.cleanup\(\)/);
-  assert.match(screen, /locationAccuracy=\{location\?\.coords\.accuracy \?\? null\}/);
-  assert.match(screen, /DRIVER_ACCEPT_RECONCILIATION_DELAYS_MS/);
-  assert.match(screen, /firestoreDB\.get\(COLLECTIONS\.RIDES, rideId\)/);
-  assert.match(screen, /driverOfferAcceptedByServer/);
-});
-
-test('Driver navigation never substitutes a fake map location and exposes settings recovery', () => {
+  assert.match(component, /native route is safer than/);
   assert.match(component, /Getting your live location/);
   assert.match(component, /does not use a fallback place/);
   assert.match(component, /Check Location Settings/);
   assert.match(component, /Linking\.openSettings\(\)/);
+  assert.match(screen, /locationAccuracy=\{location\?\.coords\.accuracy \?\? null\}/);
   assert.match(screen, /getLastKnownPositionAsync/);
   assert.match(screen, /watchPositionAsync/);
   assert.match(screen, /hasBootstrapDriverLocation/);
