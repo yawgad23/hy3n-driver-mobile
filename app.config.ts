@@ -54,9 +54,9 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 103 packages Driver History repairs and the iPhone-only route
-    // safety fallback when Expo has no current GPS fix but Navigation does.
-    buildNumber: "103",
+    // Build 104 replaces the duplicate JavaScript route line with Google’s
+    // native iPhone NavigationView, so Google owns active-trip rerouting.
+    buildNumber: "104",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
