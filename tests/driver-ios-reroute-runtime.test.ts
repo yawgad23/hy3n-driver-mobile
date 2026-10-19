@@ -270,9 +270,36 @@ test('iOS reports current-leg errors and does not silently repaint cached route 
   } finally { await map.dispose(); }
 });
 
+test('iOS keeps the branded line blank when a generic route-change event still returns the previous road', async () => {
+  const map = await mountIos();
+  try {
+    assert.ok(map.lines.has('hy3n-driver-route'), 'the initial road is visible before the native route-change event');
+
+    // The iOS bridge route-change callback contains no route revision. Its
+    // immediate geometry read can still return the previous leg even after
+    // Google Navigation changed direction internally. Keeping this old road
+    // visible could guide the Driver the wrong way, so it must remain blank
+    // until a distinct current leg is available.
+    await map.routeChanged();
+    assert.equal(map.lines.has('hy3n-driver-route'), false,
+      'an unproven old leg must not be painted again after a native route-change event');
+
+    const replacement = [{ lat: 5.703, lng: origin.lng }, { lat: 5.703, lng: -0.102 }, { lat: 5.704, lng: -0.102 }, target];
+    map.currentLeg(replacement);
+    await map.routeChanged();
+    assert.deepEqual(map.lines.get('hy3n-driver-route')?.points[0], replacement[0],
+      'only current replacement geometry may restore the branded line');
+    assert.deepEqual(map.lines.get('hy3n-driver-route')?.points.at(-1), target,
+      'a replacement must keep the unchanged server-owned destination');
+  } finally { await map.dispose(); }
+});
+
 test('iOS identifies a failed native polyline operation without crashing the trip map', async () => {
   const map = await mountIos();
   try {
+    // Give the native callback a valid current leg so this test exercises the
+    // bridge overlay failure, rather than the separate stale-geometry guard.
+    map.currentLeg([{ lat: 5.703, lng: origin.lng }, corner, target]);
     map.overlayFails(true);
     await act(async () => { map.listeners.changed?.(); await Promise.resolve(); });
     await map.flush();

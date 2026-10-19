@@ -403,15 +403,20 @@ function DriverNavigationSurface({
         // genuine new direction. Never erase distinct real-GPS evidence because
         // JSON geometry changed. The next GPS assessment recalculates against
         // this geometry; only a real target change resets the monitors.
-        const remaining = remainingDriverRoute(currentNavigationLocation(), points);
+        const currentLocation = currentNavigationLocation();
+        const remaining = remainingDriverRoute(currentLocation, points);
         // Google can still return the old leg while a reroute is pending.
-        // Retain it for deviation checks but do not repaint a disconnected line.
+        // Retain it for deviation checks but do not repaint it after a native
+        // route-change signal unless its path begins on the latest valid Driver
+        // road. The iOS bridge has no route revision ID, so matching only the
+        // target would allow a just-replaced old road to return to the screen.
         const confirmation = confirmedRerouteRef.current;
         const confirmedFreshStart = iosCurrentLeg && confirmation?.request === navigationRequestRef.current
           && Date.now() - confirmation.atMs <= 30_000
           && driverRouteStartsAtLocation(points, confirmation.origin);
-        if (remaining.length < 2 || (staleRoutePlanRef.current && isSameDriverRoadPlan(points, staleRoutePlanRef.current) && !confirmedFreshStart)) {
-          diagnostics('geometry.rejected', { reason: remaining.length < 2 ? 'not_on_current_road' : 'unconfirmed_shared_road' });
+        const beginsAtCurrentRoad = iosCurrentLeg && driverRouteStartsAtLocation(points, currentLocation);
+        if (remaining.length < 2 || (staleRoutePlanRef.current && isSameDriverRoadPlan(points, staleRoutePlanRef.current) && !confirmedFreshStart && !beginsAtCurrentRoad)) {
+          diagnostics('geometry.rejected', { reason: remaining.length < 2 ? 'not_on_current_road' : 'unconfirmed_previous_road' });
           return false;
         }
         staleRoutePlanRef.current = null;
@@ -723,6 +728,11 @@ function DriverNavigationSurface({
       });
     });
     setOnRouteChanged(() => {
+      // The native callback supplies neither a route ID nor route geometry. A
+      // read immediately after it can still return the previous current leg.
+      // Quarantine that previous plan before any redraw so a stale green/white
+      // road cannot direct the Driver backwards while the new leg is arriving.
+      staleRoutePlanRef.current = routePointsRef.current.slice();
       diagnostics('route.native-change', { request: navigationRequestRef.current });
       refreshBrandedRouteAfterNativeChange(false);
     });
