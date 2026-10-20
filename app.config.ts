@@ -56,7 +56,7 @@ const config: ExpoConfig = {
     bundleIdentifier: env.iosBundleId,
     // Build 104 replaces the duplicate JavaScript route line with Google’s
     // native iPhone NavigationView, so Google owns active-trip rerouting.
-    buildNumber: "104",
+    buildNumber: "105",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
