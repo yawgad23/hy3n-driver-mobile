@@ -19,6 +19,19 @@ test('Driver native navigation keeps route, traffic, voice, and branded map cont
   assert.match(nativeMapSource, /React\.memo\(NativeDriverGoogleMap\)/);
 });
 
+test('active iPhone trips use Google’s centered vehicle navigation presentation', () => {
+  assert.match(nativeMapSource, /navigationUIEnabledPreference=\{NavigationUIEnabledPreference\.AUTOMATIC\}/);
+  assert.match(nativeMapSource, /headerEnabled\n/);
+  assert.match(nativeMapSource, /footerEnabled\n/);
+  assert.match(nativeMapSource, /tripProgressBarEnabled\n/);
+  assert.match(nativeMapSource, /recenterButtonEnabled\n/);
+  assert.match(nativeMapSource, /trafficPromptsEnabled\n/);
+  assert.match(nativeMapSource, /Google owns route replacement/);
+  assert.match(nativeMapSource, /onMapViewControllerCreated=\{setMapViewController\}/);
+  assert.match(nativeMapSource, /imgPath: DRIVER_VEHICLE_MARKER_ASSET/);
+  assert.match(nativeMapSource, /Google's route\/camera\/rerouting engine/);
+});
+
 test('Driver Home uses one server push alert and serializes incoming-offer refreshes', () => {
   assert.match(driverHomeSource, /createSingleFlightDriverOfferRefresher/);
   assert.match(driverHomeSource, /offerRefresherRef\.current\.refresh\(inputs\.refetch\)/);

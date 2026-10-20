@@ -157,7 +157,7 @@ function DriverActiveNavigationKeepAwake() {
 
 /**
  * The idle map remains HY3N-branded. During an iPhone trip, Google
- * NavigationView owns the live route and navigation vehicle indicator. HY3N
+ * NavigationView owns the live route and navigation vehicle indicator. Google owns route replacement and rerouting. HY3N
  * does not redraw a second copy of that route through the React Native bridge.
  * Android retains its established MapView route presentation.
  */
@@ -271,10 +271,10 @@ function DriverNavigationSurface({
   }, []);
 
   const applyVehiclePosition = useCallback((position: DriverMapPosition, followTrip: boolean) => {
-    // Google NavigationView owns the active iPhone vehicle marker and camera.
-    // Drawing HY3N's second car over it would create two competing positions.
-    if (Platform.OS === 'ios' && activeTargetRef.current) return;
     if (!mapViewController) return;
+    // NavigationView exposes the same Google map controller as MapView. Keep
+    // Google's route/camera/rerouting engine, but draw the HY3N car at the
+    // latest road-snapped position instead of leaving the blue arrow visible.
     void mapViewController.addMarker({
       id: DRIVER_VEHICLE_MARKER_ID,
       position: { lat: position.latitude, lng: position.longitude },
@@ -302,7 +302,6 @@ function DriverNavigationSurface({
   // car uses the device heading where available and only follows positions the
   // Driver app has received; this display layer has no effect on fare or meter.
   useEffect(() => {
-    if (usesNativeIPhoneRouteRenderer) return;
     if (!mapViewController || !hasDeviceLocation) return;
     const next = {
       latitude: Number(latitude),
@@ -1030,21 +1029,25 @@ function DriverNavigationSurface({
               bearing: Number(heading) || 0,
               tilt: 42,
             }}
-            // Start hidden until the authoritative target is accepted by
-            // Google, then enable native UI. Google owns route replacement,
-            // including off-route and wrong-direction rerouting.
-            navigationUIEnabledPreference={NavigationUIEnabledPreference.DISABLED}
-            onNavigationViewControllerCreated={handleNavigationViewControllerCreated}
+            // Use Google's native navigation presentation for active trips.
+            // The SDK keeps the vehicle centered and heading-forward while it
+            // moves the map underneath it, owns the route line, and performs
+            // off-route/wrong-direction rerouting. HY3N only supplies the
+            // server-owned destination.
+                navigationUIEnabledPreference={NavigationUIEnabledPreference.AUTOMATIC}
+                onNavigationViewControllerCreated={handleNavigationViewControllerCreated}
+                onMapViewControllerCreated={setMapViewController}
             mapColorScheme={MapColorScheme.FOLLOW_SYSTEM}
             mapStyle={CLEAN_GOOGLE_STYLE}
             trafficEnabled
-            headerEnabled={false}
-            footerEnabled={false}
-            recenterButtonEnabled={false}
+            headerEnabled
+            footerEnabled
+            tripProgressBarEnabled
+            recenterButtonEnabled
             speedometerEnabled={false}
             speedLimitIconEnabled={false}
-            trafficPromptsEnabled={false}
-            trafficIncidentCardsEnabled={false}
+            trafficPromptsEnabled
+            trafficIncidentCardsEnabled
             indoorEnabled={false}
             indoorLevelPickerEnabled={false}
             buildingsEnabled={false}
