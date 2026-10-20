@@ -570,6 +570,11 @@ export default function DriverHomeScreen() {
       return;
     }
 
+    // The offer query can finish after Accept was tapped and still contain the
+    // old lease. Never put that request back into state while the authoritative
+    // accept transaction is in flight; doing so restarts the looping alert.
+    if (tripActionInFlightRef.current) return;
+
     const offers: any[] = availableOffers.data?.offers || [];
     const offeredRide = offers.find((ride: any) => offerMatchesDriverPreferences(ride, prefs));
 
@@ -609,6 +614,10 @@ export default function DriverHomeScreen() {
 
   useEffect(() => {
     const incomingRideId = incomingRide?.id ? String(incomingRide.id) : null;
+    if (tripActionInFlightRef.current) {
+      stopIncomingTripAlert(true);
+      return;
+    }
     if (!shouldPlayIncomingTripAlert({
       isOnline,
       incomingRideId,

@@ -58,6 +58,8 @@ test('accepting an offer removes the request before the async server response an
   assert.match(driverHomeSource, /const offeredRideSnapshot = incomingRide/);
   assert.match(driverHomeSource, /setActiveTrip\(\{ \.\.\.offeredRideSnapshot, \.\.\.\(ride \|\| \{\}\) \}\)/);
   assert.match(driverHomeSource, /stopIncomingTripAlert\(true\);\n    \/\/ Remove the offer synchronously[\s\S]*?setIncomingRide\(null\);/);
+  assert.match(driverHomeSource, /if \(tripActionInFlightRef\.current\) return;[\s\S]*?const offers/);
+  assert.match(driverHomeSource, /if \(tripActionInFlightRef\.current\) \{\n      stopIncomingTripAlert\(true\);\n      return;/);
 });
 
 test('Driver Home shows a prominent Android location disclosure before requesting background tracking', () => {
