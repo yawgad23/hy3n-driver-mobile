@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AppState, Linking, Platform, StyleSheet, Text, TouchableOpacity, View, useColorScheme } from 'react-native';
 import { useKeepAwake } from 'expo-keep-awake';
 import {
   AudioGuidance,
@@ -170,6 +170,8 @@ function DriverNavigationSurface({
   target,
   tripStatus,
 }: Props) {
+  const systemColorScheme = useColorScheme();
+  const nativeMapColorScheme = systemColorScheme === 'dark' ? MapColorScheme.DARK : MapColorScheme.LIGHT;
   const {
     navigationController,
     removeAllListeners,
@@ -179,6 +181,9 @@ function DriverNavigationSurface({
     setOnLocationChanged,
   } = useNavigation();
   const [mapViewController, setMapViewController] = useState<MapViewController | null>(null);
+  const handleMapViewControllerCreated = useCallback((controller: MapViewController) => {
+    setMapViewController(controller);
+  }, []);
   const [navigationViewIsReady, setNavigationViewIsReady] = useState(false);
   const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
   const diagnostics = useRef(createDriverNavigationDiagnostics()).current;
@@ -940,8 +945,13 @@ function DriverNavigationSurface({
         // a displayed road leading to the previous target.
         if (Platform.OS === 'ios') {
           await navigationViewControllerRef.current?.setNavigationUIEnabled(false);
-          await navigationController.stopGuidance();
-          await navigationController.clearDestinations();
+          // On the first accepted ride the Google session is not initialized
+          // yet. Calling these cleanup methods before init() throws on iOS and
+          // becomes the generic “Navigation could not start” error.
+          if (initializedRef.current) {
+            await navigationController.stopGuidance();
+            await navigationController.clearDestinations();
+          }
           if (cancelled || navigationRequestRef.current !== request) return;
         }
         const accepted = await navigationController.showTermsAndConditionsDialog();
@@ -1036,8 +1046,9 @@ function DriverNavigationSurface({
             // server-owned destination.
             navigationUIEnabledPreference={NavigationUIEnabledPreference.AUTOMATIC}
             onNavigationViewControllerCreated={handleNavigationViewControllerCreated}
-            onMapViewControllerCreated={setMapViewController}
-            mapColorScheme={MapColorScheme.FOLLOW_SYSTEM}
+                onMapViewControllerCreated={handleMapViewControllerCreated}
+                mapColorScheme={nativeMapColorScheme}
+                myLocationEnabled={false}
             // Active navigation must look like Google Maps Navigation: retain
             // its roads, labels, POIs, traffic details, and 3D presentation.
             // The HY3N clean style is kept only for the quiet pre-trip map.
@@ -1066,17 +1077,17 @@ function DriverNavigationSurface({
             }}
             // Before an iPhone trip and throughout the existing Android path,
             // HY3N keeps its own quiet map and car marker.
-            mapColorScheme={MapColorScheme.FOLLOW_SYSTEM}
-            mapStyle={CLEAN_GOOGLE_STYLE}
-            trafficEnabled
-            myLocationEnabled={false}
+                mapColorScheme={nativeMapColorScheme}
+                mapStyle={CLEAN_GOOGLE_STYLE}
+                trafficEnabled
+                myLocationEnabled={false}
             myLocationButtonEnabled={false}
             compassEnabled
             indoorEnabled={false}
             indoorLevelPickerEnabled={false}
             buildingsEnabled={false}
             mapToolbarEnabled={false}
-            onMapViewControllerCreated={setMapViewController}
+                onMapViewControllerCreated={handleMapViewControllerCreated}
           />
         )
       ) : (

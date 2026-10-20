@@ -28,6 +28,7 @@ test('Driver retains Google route and voice navigation while preserving the serv
   assert.match(component, /navigationController\.setDestination/);
   assert.match(component, /navigationController\.startGuidance/);
   assert.match(component, /navigationController\.clearDestinations/);
+  assert.match(component, /if \(initializedRef\.current\) \{[\s\S]*navigationController\.stopGuidance\(\)/);
   assert.match(component, /AudioGuidance\.VOICE_ALERTS_AND_GUIDANCE/);
   assert.match(component, /AudioGuidance\.BLUETOOTH_AUDIO/);
   assert.match(component, /RouteStatus\.NO_ROUTE_FOUND/);
@@ -49,6 +50,7 @@ test('Driver keeps its HY3N car only outside active iPhone navigation and retain
   assert.match(component, /if \(Platform\.OS === 'ios'\) \{/);
   assert.match(component, /return Promise\.resolve\(Boolean\(hasTarget/);
   assert.match(component, /mapViewController\.addPolyline/);
+  assert.match(component, /myLocationEnabled=\{false\}/);
   assert.match(configPlugin, /hy3n_driver_car_marker\.png/);
   assert.match(configPlugin, /IOS_DRIVER_CAR_MARKER = 'HY3NDriverCarMarker'/);
   assert.match(configPlugin, /hy3n-driver-navigation-car\.png/);
@@ -63,7 +65,7 @@ test('Driver active navigation keeps the map clean and stable during live moveme
   assert.match(component, /CLEAN_GOOGLE_STYLE/);
   assert.match(component, /featureType: 'poi'/);
   assert.match(component, /featureType: 'transit'/);
-  assert.match(component, /mapColorScheme=\{MapColorScheme\.FOLLOW_SYSTEM\}/);
+  assert.match(component, /nativeMapColorScheme/);
   assert.match(component, /mapStyle=\{CLEAN_GOOGLE_STYLE\}/);
   assert.match(component, /headerEnabled/);
   assert.match(component, /footerEnabled/);
