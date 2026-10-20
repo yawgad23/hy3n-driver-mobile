@@ -11,7 +11,7 @@ const appConfig = readFileSync(path.join(process.cwd(), 'app.config.ts'), 'utf8'
 test('Driver runs the active iPhone route directly in Google NavigationView', () => {
   assert.match(component, /@googlemaps\/react-native-navigation-sdk/);
   assert.match(component, /NavigationView/);
-  assert.match(component, /NavigationUIEnabledPreference\.DISABLED/);
+  assert.match(component, /NavigationUIEnabledPreference\.AUTOMATIC/);
   assert.match(component, /usesNativeIPhoneRouteRenderer = Platform\.OS === 'ios' && hasTarget/);
   assert.match(component, /handleNavigationViewControllerCreated/);
   assert.match(component, /navigationViewControllerRef\.current = controller/);
@@ -41,7 +41,7 @@ test('Driver retains Google route and voice navigation while preserving the serv
 test('Driver keeps its HY3N car only outside active iPhone navigation and retains the Android route path', () => {
   assert.match(component, /DRIVER_VEHICLE_MARKER_ID = 'hy3n-driver-vehicle'/);
   assert.match(component, /driverMapMotionFrames/);
-  assert.match(component, /if \(Platform\.OS === 'ios' && activeTargetRef\.current\) return;/);
+  assert.match(component, /if \(usesNativeIPhoneRouteRenderer\) return;/);
   assert.match(component, /usesNativeIPhoneRouteRenderer \? \(/);
   assert.match(component, /<MapView/);
   assert.match(component, /myLocationEnabled=\{false\}/);
@@ -51,6 +51,7 @@ test('Driver keeps its HY3N car only outside active iPhone navigation and retain
   assert.match(component, /mapViewController\.addPolyline/);
   assert.match(configPlugin, /hy3n_driver_car_marker\.png/);
   assert.match(configPlugin, /IOS_DRIVER_CAR_MARKER = 'HY3NDriverCarMarker'/);
+  assert.match(configPlugin, /hy3n-driver-navigation-car\.png/);
   assert.doesNotMatch(configPlugin, /HY3N_DRIVER_DISABLE_DEFAULT_LOCATION_INDICATOR/);
   assert.doesNotMatch(configPlugin, /myLocationEnabled = NO/);
 });
@@ -64,8 +65,8 @@ test('Driver active navigation keeps the map clean and stable during live moveme
   assert.match(component, /featureType: 'transit'/);
   assert.match(component, /mapColorScheme=\{MapColorScheme\.FOLLOW_SYSTEM\}/);
   assert.match(component, /mapStyle=\{CLEAN_GOOGLE_STYLE\}/);
-  assert.match(component, /headerEnabled=\{false\}/);
-  assert.match(component, /footerEnabled=\{false\}/);
+  assert.match(component, /headerEnabled/);
+  assert.match(component, /footerEnabled/);
   assert.match(component, /lastTargetKeyRef\.current === targetKey/);
 });
 

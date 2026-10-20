@@ -1034,11 +1034,13 @@ function DriverNavigationSurface({
             // moves the map underneath it, owns the route line, and performs
             // off-route/wrong-direction rerouting. HY3N only supplies the
             // server-owned destination.
-                navigationUIEnabledPreference={NavigationUIEnabledPreference.AUTOMATIC}
-                onNavigationViewControllerCreated={handleNavigationViewControllerCreated}
-                onMapViewControllerCreated={setMapViewController}
+            navigationUIEnabledPreference={NavigationUIEnabledPreference.AUTOMATIC}
+            onNavigationViewControllerCreated={handleNavigationViewControllerCreated}
+            onMapViewControllerCreated={setMapViewController}
             mapColorScheme={MapColorScheme.FOLLOW_SYSTEM}
-            mapStyle={CLEAN_GOOGLE_STYLE}
+            // Active navigation must look like Google Maps Navigation: retain
+            // its roads, labels, POIs, traffic details, and 3D presentation.
+            // The HY3N clean style is kept only for the quiet pre-trip map.
             trafficEnabled
             headerEnabled
             footerEnabled

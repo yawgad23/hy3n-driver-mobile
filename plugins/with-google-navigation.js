@@ -12,7 +12,7 @@ const path = require('path');
 
 const PLUGIN_NAME = 'with-google-navigation';
 const DESUGARING_DEPENDENCY = "coreLibraryDesugaring('com.android.tools:desugar_jdk_libs_nio:2.0.4')";
-const DRIVER_CAR_MARKER_SOURCE = path.join('assets', 'images', 'driver-map-car-marker.png');
+const DRIVER_CAR_MARKER_SOURCE = path.join('assets', 'images', 'hy3n-driver-navigation-car.png');
 const ANDROID_DRIVER_CAR_MARKER = 'hy3n_driver_car_marker.png';
 const IOS_DRIVER_CAR_MARKER = 'HY3NDriverCarMarker';
 

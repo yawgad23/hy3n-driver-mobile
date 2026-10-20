@@ -876,9 +876,12 @@ export default function DriverHomeScreen() {
       incomingOfferReceivedAtRef.current = null;
       setIncomingRide(null);
       setRideOfferSeconds(DRIVER_OFFER_REVIEW_SECONDS);
+      // Stop again after the server-confirmed transition. The native player
+      // can finish an already queued seek/play callback after the first stop
+      // made when Accept was tapped.
+      stopIncomingTripAlert(true);
       // Do not leave the Accept button spinning when Firestore confirms the
       // server-owned assignment but a mobile network response is delayed.
-      tripActionInFlightRef.current = false;
       setTripActionPending(false);
     };
     const reconcileAcceptedRide = async () => {
@@ -930,6 +933,9 @@ export default function DriverHomeScreen() {
       }
     } finally {
       reconciliationTimers.forEach((timer) => clearTimeout(timer));
+      // A final forced stop covers delayed native AVPlayer callbacks and keeps
+      // the request tone silent even when the mutation response was late.
+      stopIncomingTripAlert(true);
       tripActionInFlightRef.current = false;
       setTripActionPending(false);
     }
