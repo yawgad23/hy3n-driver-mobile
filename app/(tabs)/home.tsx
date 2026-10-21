@@ -899,6 +899,10 @@ export default function DriverHomeScreen() {
     // Stop on tap, not after the accepted server response. iPhone native
     // playback status can lag the audible request song by a short interval.
     stopIncomingTripAlert(true);
+    // The offer query can return its cached lease after Accept completes. Retire
+    // this exact lease before clearing the card so that stale data cannot put
+    // the request back into state and restart the looping alert.
+    retiredOfferLeaseRef.current = driverOfferLeaseKey(offeredRideSnapshot);
     // Remove the offer synchronously. The offer/audio effect can otherwise run
     // once more while respondToOffer is in flight and restart the looped tone.
     setIncomingRide(null);

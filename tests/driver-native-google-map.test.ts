@@ -56,8 +56,9 @@ test('Driver Home uses one server push alert and serializes incoming-offer refre
 
 test('accepting an offer removes the request before the async server response and preserves its route fields', () => {
   assert.match(driverHomeSource, /const offeredRideSnapshot = incomingRide/);
-  assert.match(driverHomeSource, /setActiveTrip\(\{ \.\.\.offeredRideSnapshot, \.\.\.\(ride \|\| \{\}\) \}\)/);
-  assert.match(driverHomeSource, /stopIncomingTripAlert\(true\);\n    \/\/ Remove the offer synchronously[\s\S]*?setIncomingRide\(null\);/);
+  assert.match(driverHomeSource, /setActiveTrip\(\{ \.\.\.offeredRideSnapshot/);
+  assert.match(driverHomeSource, /retiredOfferLeaseRef\.current = driverOfferLeaseKey\(offeredRideSnapshot\);/);
+  assert.match(driverHomeSource, /stopIncomingTripAlert\(true\);[\s\S]*?setIncomingRide\(null\);/);
   assert.match(driverHomeSource, /if \(tripActionInFlightRef\.current\) return;[\s\S]*?const offers/);
   assert.match(driverHomeSource, /if \(tripActionInFlightRef\.current\) \{\n      stopIncomingTripAlert\(true\);\n      return;/);
 });
