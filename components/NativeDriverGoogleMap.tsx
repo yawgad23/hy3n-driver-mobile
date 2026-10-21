@@ -99,6 +99,7 @@ type DriverNavigationLocation = {
   latitude: number;
   longitude: number;
   accuracyMeters?: number | null;
+  heading?: number | null;
   time?: number | null;
   source: 'expo' | 'ios-navigation';
 };
@@ -593,8 +594,7 @@ function DriverNavigationSurface({
 
   const assessNavigationLocation = useCallback((observedLocation: DriverNavigationLocation | null) => {
     if (
-      !hasDeviceLocation
-      || !hasTarget
+      !hasTarget
       || !targetKey
       || !initializedRef.current
       || lastTargetKeyRef.current !== targetKey
@@ -645,7 +645,6 @@ function DriverNavigationSurface({
     updateRemainingRoute();
   }, [
     diagnostics,
-    hasDeviceLocation,
     hasTarget,
     requestGpsFallbackReroute,
     targetKey,
@@ -659,7 +658,7 @@ function DriverNavigationSurface({
       const point = valid
         ? {
           latitude: location.lat, longitude: location.lng, accuracyMeters: location.accuracy ?? null,
-          time: location.time, source: 'ios-navigation' as const,
+          heading: location.bearing ?? null, time: location.time, source: 'ios-navigation' as const,
         }
         : null;
       const expo = liveLocationRef.current;
@@ -672,7 +671,24 @@ function DriverNavigationSurface({
       if (Platform.OS === 'ios' && point && hasFreshNavigationFix(point.accuracyMeters, point.time)
         && (!previous || Number(point.time) >= Number(previous.time))) {
         nativeLocationRef.current = point;
-        assessNavigationLocation(currentNavigationLocation());
+        const current = currentNavigationLocation();
+        // `onLocationChanged` is iOS's road-snapped provider. It remains a
+        // display-only fallback: it is never used for server presence, trip
+        // meter, fares, or trip state. When Expo is unavailable or older, the
+        // custom HY3N car must nevertheless match the route we draw.
+        if (current?.source === 'ios-navigation' && Number(current.time) === Number(point.time)) {
+          clearVehicleMotion();
+          const vehicle = {
+            latitude: current.latitude,
+            longitude: current.longitude,
+            heading: Number.isFinite(Number(current.heading))
+              ? Number(current.heading)
+              : (vehiclePositionRef.current?.heading ?? 0),
+          };
+          vehiclePositionRef.current = vehicle;
+          applyVehiclePosition(vehicle, hasTarget);
+        }
+        assessNavigationLocation(current);
       }
     });
     setOnArrival((arrivalEvent) => {
@@ -718,7 +734,7 @@ function DriverNavigationSurface({
       clearRouteRefresh();
       removeAllListeners();
     };
-  }, [assessNavigationLocation, clearRouteLines, clearRouteRefresh, currentNavigationLocation, diagnostics, refreshBrandedRouteAfterNativeChange, removeAllListeners, setOnArrival, setOnLocationChanged, setOnRouteChanged, setOnReroutingRequestedByOffRoute]);
+  }, [applyVehiclePosition, assessNavigationLocation, clearRouteLines, clearRouteRefresh, clearVehicleMotion, currentNavigationLocation, diagnostics, hasTarget, refreshBrandedRouteAfterNativeChange, removeAllListeners, setOnArrival, setOnLocationChanged, setOnRouteChanged, setOnReroutingRequestedByOffRoute]);
 
   // The branded overlay is not a NavigationView: Google does not update it for
   // us. A low-frequency single-flight read recovers a dropped native callback;

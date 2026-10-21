@@ -9,6 +9,7 @@ import { useDriverAuth } from '@/lib/driver-auth-context';
 import { useColors } from '@/hooks/use-colors';
 import { trpc } from '@/lib/trpc';
 import { normalizeDriverHistory, type DriverHistoryTrip } from '@/lib/driver-history';
+import { isDriverHistoryThisWeek } from '@/lib/driver-history-periods';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -34,17 +35,6 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 function isToday(d: Date) {
   const now = new Date();
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-}
-
-function isThisWeek(d: Date) {
-  const now = new Date();
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - now.getDay() + 1); // Monday
-  weekStart.setHours(0, 0, 0, 0);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6);
-  weekEnd.setHours(23, 59, 59, 999);
-  return d >= weekStart && d <= weekEnd;
 }
 
 function formatTripDate(iso?: string) {
@@ -247,7 +237,7 @@ export default function DriverHistoryScreen() {
     const d = new Date(t.trip_date || t.created_date || '');
     const matchFilter = (() => {
       if (filter === 'today') return isToday(d);
-      if (filter === 'week') return isThisWeek(d);
+      if (filter === 'week') return isDriverHistoryThisWeek(d);
       if (filter === 'completed') return t.status === 'completed';
       if (filter === 'cancelled') return t.status === 'cancelled';
       return true;
@@ -269,7 +259,7 @@ export default function DriverHistoryScreen() {
     .filter(t => isToday(new Date(t.trip_date || t.created_date || '')))
     .reduce((s, t) => s + getFare(t), 0);
   const weekEarnings = completedTrips
-    .filter(t => isThisWeek(new Date(t.trip_date || t.created_date || '')))
+    .filter(t => isDriverHistoryThisWeek(new Date(t.trip_date || t.created_date || '')))
     .reduce((s, t) => s + getFare(t), 0);
 
   return (
@@ -381,7 +371,9 @@ const styles = StyleSheet.create({
   summaryLabel: { fontSize: 10, color: MUTED, textAlign: 'center' },
   searchWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: CARD, borderRadius: 12, margin: 16, marginBottom: 8, paddingHorizontal: 12, height: 44, borderWidth: 1, borderColor: BORDER },
   searchInput: { flex: 1, color: TEXT, fontSize: 14 },
-  filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 4, flexWrap: 'nowrap' },
+  // Five filter chips do not fit across a narrow iPhone. Wrap onto a second
+  // row instead of clipping the Cancelled control beyond the screen edge.
+  filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 4, flexWrap: 'wrap' },
   filterBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: CARD, borderWidth: 1, borderColor: BORDER },
   filterBtnActive: { backgroundColor: GOLD + '20', borderColor: GOLD },
   filterText: { color: MUTED, fontSize: 12, fontWeight: '600' },

@@ -19,6 +19,7 @@ async function mountIos(options: { initialNetworkFailure?: boolean; platform?: '
   let props: any = { latitude: 5.703, longitude: origin.lng, locationTimestamp: Date.now(), locationAccuracy: 5,
     target: { latitude: target.lat, longitude: target.lng, label: 'Drop-off' }, tripStatus: 'dropoff' };
   const lines = new Map<string, any>();
+  const markers = new Map<string, any>();
   const calls: any[] = [];
   const logs: any[] = [];
   const listeners: Record<string, ((value?: any) => void) | null> = {};
@@ -28,7 +29,8 @@ async function mountIos(options: { initialNetworkFailure?: boolean; platform?: '
   let overlayFails = false;
   let newRoadOnRequest: typeof initialRoad | null = null;
   const mapController = {
-    addMarker: async () => ({}), removeMarker: async () => {}, moveCamera: async () => {},
+    addMarker: async (marker: any) => { markers.set(marker.id, marker); return marker; },
+    removeMarker: async (id: string) => { markers.delete(id); }, moveCamera: async () => {},
     addPolyline: async (line: any) => { if (overlayFails) throw { code: 'NO_VIEW_CONTROLLER' }; lines.set(line.id, line); return line; },
     removePolyline: async (id: string) => { lines.delete(id); },
     getPolylines: async () => [...lines.values()],
@@ -80,7 +82,7 @@ async function mountIos(options: { initialNetworkFailure?: boolean; platform?: '
   const flush = async () => { for (let i = 0; i < 25; i++) await Promise.resolve(); };
   await act(async () => { tree = create(React.createElement(Component, props)); await flush(); });
   await act(async () => { await flush(); });
-  return { lines, calls, logs, listeners, currentLegReads: () => currentLegReads,
+  return { lines, markers, calls, logs, listeners, currentLegReads: () => currentLegReads,
     rendered: () => JSON.stringify(tree.toJSON()),
     arrival: async (event: any) => { await act(async () => { listeners.arrival?.(event); await flush(); }); },
     routeChanged: async () => { await act(async () => { listeners.changed?.(); await flush(); }); },
@@ -160,6 +162,29 @@ test('iOS clears the old branded line and replaces it when Navigation moves but 
     assert.deepEqual(map.lines.get('hy3n-driver-route')?.points[0], nativeLater,
       'the visible line must begin on the current native road, not the stale Expo point');
     assert.deepEqual(map.lines.get('hy3n-driver-route')?.points.at(-1), target);
+  } finally { await map.dispose(); }
+});
+
+test('iOS reroutes from fresh Navigation GPS when the Expo foreground watcher has no current fix', async () => {
+  const map = await mountIos();
+  try {
+    // A real iPhone can keep Google Navigation's CLLocation callbacks alive
+    // while Expo's foreground watcher has stopped or failed. The branded
+    // overlay must use the current validated native fix; retaining the passed
+    // line simply because Expo is absent would direct a Driver from an old road.
+    await map.update({ latitude: undefined, longitude: undefined, locationTimestamp: null, locationAccuracy: null });
+    const nativeStart = { lat: 5.702, lng: -0.102 };
+    const nativeLater = { lat: 5.7022, lng: -0.102 };
+    map.nextRoute([nativeLater, { lat: 5.704, lng: -0.102 }, corner, target]);
+    await map.nativeLocation({ ...nativeStart, time: Date.now() + 1, accuracy: 5 });
+    await map.nativeLocation({ ...nativeLater, time: Date.now() + 2, accuracy: 5 });
+
+    assert.equal(map.calls.length, 2, 'fresh native iOS movement must still request one safe replacement route');
+    assert.deepEqual(map.calls.at(-1).point.position, target, 'native-only GPS may not change the server-owned destination');
+    assert.deepEqual(map.lines.get('hy3n-driver-route')?.points[0], nativeLater,
+      'the old green/white road must be replaced even when Expo currently has no fix');
+    assert.deepEqual(map.markers.get('hy3n-driver-vehicle')?.position, { lat: nativeLater.lat, lng: nativeLater.lng },
+      'the branded car must not remain at the last Expo point when Navigation has the current valid iPhone fix');
   } finally { await map.dispose(); }
 });
 
