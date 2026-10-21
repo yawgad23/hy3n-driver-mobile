@@ -54,9 +54,9 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 104 replaces the duplicate JavaScript route line with Google’s
-    // native iPhone NavigationView, so Google owns active-trip rerouting.
-    buildNumber: "105",
+    // Build 106 includes the guarded NavigationView startup, dark map, car
+    // marker, and request-audio acceptance fixes.
+    buildNumber: "106",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
