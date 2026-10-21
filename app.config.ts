@@ -54,9 +54,8 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 106 includes the guarded NavigationView startup, dark map, car
-    // marker, and request-audio acceptance fixes.
-    buildNumber: "106",
+    // Build 107 restores the compact 64px native navigation car marker.
+    buildNumber: "107",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
