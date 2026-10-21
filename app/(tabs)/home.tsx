@@ -74,7 +74,7 @@ import {
 } from '@/lib/driver-navigation-fallback';
 import { shouldPlayIncomingTripAlert } from '@/lib/incoming-trip-alert';
 import { createDriverRequestAudio } from '@/lib/driver-request-audio';
-import { offerMatchesDriverPreferences } from '@/lib/driver-offer-preferences';
+
 const GOLD = '#D4AF37';
 const GREEN = '#22C55E';
 const RED = '#EF4444';
@@ -186,7 +186,6 @@ export default function DriverHomeScreen() {
   const offerSwipeX = useRef(new Animated.Value(0)).current;
   const offerRefresherRef = useRef(createSingleFlightDriverOfferRefresher());
   const tripActionInFlightRef = useRef(false);
-  const acceptRideRef = useRef<() => void>(() => {});
   const ratingSubmitInFlightRef = useRef(false);
   const backgroundLocationDisclosureDecisionRef = useRef<DriverBackgroundLocationDisclosureDecision>('unseen');
   const backgroundLocationRequestStateRef = useRef<DriverBackgroundLocationRequestState>('ready');
@@ -570,13 +569,13 @@ export default function DriverHomeScreen() {
       return;
     }
 
-    // The offer query can finish after Accept was tapped and still contain the
-    // old lease. Never put that request back into state while the authoritative
-    // accept transaction is in flight; doing so restarts the looping alert.
-    if (tripActionInFlightRef.current) return;
-
     const offers: any[] = availableOffers.data?.offers || [];
-    const offeredRide = offers.find((ride: any) => offerMatchesDriverPreferences(ride, prefs));
+    const offeredRide = offers.find((ride: any) => {
+      const estimatedDistance = Number(ride.distance_km || ride.estimated_distance_km || 0);
+      const eligibleForLongTrip = !prefs.longTripsOnly || estimatedDistance >= 8;
+      const eligibleForRating = !prefs.preferHighRated || Number(ride.rider_rating || 5) >= 4.5;
+      return eligibleForLongTrip && eligibleForRating;
+    });
 
     if (!offeredRide) {
       const expiresAtMs = incomingRide
@@ -610,14 +609,10 @@ export default function DriverHomeScreen() {
       setRideOfferSeconds(DRIVER_OFFER_REVIEW_SECONDS);
       setIncomingRide(offeredRide);
     }
-  }, [user?.uid, isOnline, hasCurrentLocation, activeTrip, incomingRide, availableOffers.data?.offers, prefs]);
+  }, [user?.uid, isOnline, hasCurrentLocation, activeTrip, incomingRide, availableOffers.data?.offers, prefs.longTripsOnly, prefs.preferHighRated]);
 
   useEffect(() => {
     const incomingRideId = incomingRide?.id ? String(incomingRide.id) : null;
-    if (tripActionInFlightRef.current) {
-      stopIncomingTripAlert(true);
-      return;
-    }
     if (!shouldPlayIncomingTripAlert({
       isOnline,
       incomingRideId,
@@ -689,7 +684,7 @@ export default function DriverHomeScreen() {
 
   useEffect(() => {
     if (!incomingRide || activeTrip || !prefs.autoAccept) return;
-    const timer = setTimeout(() => acceptRideRef.current(), 2500);
+    const timer = setTimeout(() => handleAcceptRide(), 2500);
     return () => clearTimeout(timer);
   }, [incomingRide, activeTrip, prefs.autoAccept]);
 
@@ -864,24 +859,16 @@ export default function DriverHomeScreen() {
   const handleAcceptRide = async () => {
     if (!incomingRide || !user?.uid || tripActionInFlightRef.current) return;
     const rideId = String(incomingRide.id);
-    const offeredRideSnapshot = incomingRide;
     let serverConfirmed = false;
     const showAcceptedRide = (ride: any) => {
       serverConfirmed = true;
-      // The offer already contains the server-owned pickup/destination. Keep
-      // those fields if a delayed/legacy mutation response returns only the
-      // assignment patch; without them the iPhone NavigationView remounts with
-      // no target and the Driver car/route disappears immediately after Accept.
-      setActiveTrip({ ...offeredRideSnapshot, ...(ride || {}) });
+      setActiveTrip(ride);
       incomingOfferReceivedAtRef.current = null;
       setIncomingRide(null);
       setRideOfferSeconds(DRIVER_OFFER_REVIEW_SECONDS);
-      // Stop again after the server-confirmed transition. The native player
-      // can finish an already queued seek/play callback after the first stop
-      // made when Accept was tapped.
-      stopIncomingTripAlert(true);
       // Do not leave the Accept button spinning when Firestore confirms the
       // server-owned assignment but a mobile network response is delayed.
+      tripActionInFlightRef.current = false;
       setTripActionPending(false);
     };
     const reconcileAcceptedRide = async () => {
@@ -899,13 +886,6 @@ export default function DriverHomeScreen() {
     // Stop on tap, not after the accepted server response. iPhone native
     // playback status can lag the audible request song by a short interval.
     stopIncomingTripAlert(true);
-    // The offer query can return its cached lease after Accept completes. Retire
-    // this exact lease before clearing the card so that stale data cannot put
-    // the request back into state and restart the looping alert.
-    retiredOfferLeaseRef.current = driverOfferLeaseKey(offeredRideSnapshot);
-    // Remove the offer synchronously. The offer/audio effect can otherwise run
-    // once more while respondToOffer is in flight and restart the looped tone.
-    setIncomingRide(null);
     incomingOfferReceivedAtRef.current = null;
     const reconciliationTimers = DRIVER_ACCEPT_RECONCILIATION_DELAYS_MS.map((delay) => setTimeout(() => {
       if (!serverConfirmed) void reconcileAcceptedRide();
@@ -937,16 +917,10 @@ export default function DriverHomeScreen() {
       }
     } finally {
       reconciliationTimers.forEach((timer) => clearTimeout(timer));
-      // A final forced stop covers delayed native AVPlayer callbacks and keeps
-      // the request tone silent even when the mutation response was late.
-      stopIncomingTripAlert(true);
       tripActionInFlightRef.current = false;
       setTripActionPending(false);
     }
   };
-  // Settings can change while Home is mounted. The timer always invokes the
-  // newest authenticated accept callback instead of an older render closure.
-  acceptRideRef.current = () => { void handleAcceptRide(); };
 
   const handleAcceptQueuedRide = async () => {
     if (!nextRide || !activeTrip || !user?.uid) return;

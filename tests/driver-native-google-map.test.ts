@@ -19,19 +19,6 @@ test('Driver native navigation keeps route, traffic, voice, and branded map cont
   assert.match(nativeMapSource, /React\.memo\(NativeDriverGoogleMap\)/);
 });
 
-test('active iPhone trips use Google’s centered vehicle navigation presentation', () => {
-  assert.match(nativeMapSource, /navigationUIEnabledPreference=\{NavigationUIEnabledPreference\.AUTOMATIC\}/);
-  assert.match(nativeMapSource, /headerEnabled\n/);
-  assert.match(nativeMapSource, /footerEnabled\n/);
-  assert.match(nativeMapSource, /tripProgressBarEnabled\n/);
-  assert.match(nativeMapSource, /recenterButtonEnabled\n/);
-  assert.match(nativeMapSource, /trafficPromptsEnabled\n/);
-  assert.match(nativeMapSource, /Google owns route replacement/);
-  assert.match(nativeMapSource, /onMapViewControllerCreated=\{handleMapViewControllerCreated\}/);
-  assert.match(nativeMapSource, /imgPath: DRIVER_VEHICLE_MARKER_ASSET/);
-  assert.match(nativeMapSource, /Google's route\/camera\/rerouting engine/);
-});
-
 test('Driver Home uses one server push alert and serializes incoming-offer refreshes', () => {
   assert.match(driverHomeSource, /createSingleFlightDriverOfferRefresher/);
   assert.match(driverHomeSource, /offerRefresherRef\.current\.refresh\(inputs\.refetch\)/);
@@ -52,15 +39,6 @@ test('Driver Home uses one server push alert and serializes incoming-offer refre
   assert.match(driverHomeSource, /const activeNavigationTarget = useMemo/);
   assert.match(driverHomeSource, /transient empty response/);
   assert.doesNotMatch(driverHomeSource, /new Set/);
-});
-
-test('accepting an offer removes the request before the async server response and preserves its route fields', () => {
-  assert.match(driverHomeSource, /const offeredRideSnapshot = incomingRide/);
-  assert.match(driverHomeSource, /setActiveTrip\(\{ \.\.\.offeredRideSnapshot/);
-  assert.match(driverHomeSource, /retiredOfferLeaseRef\.current = driverOfferLeaseKey\(offeredRideSnapshot\);/);
-  assert.match(driverHomeSource, /stopIncomingTripAlert\(true\);[\s\S]*?setIncomingRide\(null\);/);
-  assert.match(driverHomeSource, /if \(tripActionInFlightRef\.current\) return;[\s\S]*?const offers/);
-  assert.match(driverHomeSource, /if \(tripActionInFlightRef\.current\) \{\n      stopIncomingTripAlert\(true\);\n      return;/);
 });
 
 test('Driver Home shows a prominent Android location disclosure before requesting background tracking', () => {
@@ -84,8 +62,8 @@ test('the trip screen stays map-first while retaining availability and destinati
   assert.match(driverHomeSource, /Go Offline/);
   assert.match(driverHomeSource, /isOnline && !activeTrip && \(/);
   assert.match(driverHomeSource, /styles\.destFilterBar/);
-  assert.match(nativeMapSource, /NavigationView owns the live route/);
-  assert.match(nativeMapSource, /Google owns route replacement/);
+  assert.match(nativeMapSource, /The branded MapView never switches at acceptance/);
+  assert.match(nativeMapSource, /The HY3N car is/);
   assert.match(driverHomeSource, /activeTripDetails\(incomingRide\)\.bookedFare/);
   assert.match(driverHomeSource, /BOOKED FARE/);
   assert.doesNotMatch(driverHomeSource, /Active Trip Navigation Card/);

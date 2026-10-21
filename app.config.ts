@@ -54,7 +54,7 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 107 restores the compact 64px native navigation car marker.
+    // Build 100 packages the validated iPhone route-safety correction.
     buildNumber: "107",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
@@ -73,10 +73,9 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    // 57012 packages the current Driver source for existing Internal testers,
-    // including the corrected History view. The iPhone-only route fallback
-    // remains isolated from Android's established route path.
-    versionCode: 57012,
+    // 57011 packages the embedded Navigation SDK corrections and map-app
+    // chooser for existing Internal testers.
+    versionCode: 57011,
     googleServicesFile: "./firebase/google-services.json",
     permissions: ["POST_NOTIFICATIONS", "ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_LOCATION"],
     // Driver request alerts use the operating system notification sound. HY3N
