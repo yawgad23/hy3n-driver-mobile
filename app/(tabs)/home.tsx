@@ -75,6 +75,12 @@ import {
 import { shouldPlayIncomingTripAlert } from '@/lib/incoming-trip-alert';
 import { createDriverRequestAudio } from '@/lib/driver-request-audio';
 import { offerMatchesDriverPreferences } from '@/lib/driver-offer-preferences';
+
+// These guards live at module scope so an Expo Router Home remount cannot
+// reopen the same Android location prompt during one online session.
+let backgroundLocationDisclosureShownForOnlineSession = false;
+let backgroundLocationWarningShownForOnlineSession = false;
+
 const GOLD = '#D4AF37';
 const GREEN = '#22C55E';
 const RED = '#EF4444';
@@ -495,6 +501,8 @@ export default function DriverHomeScreen() {
       backgroundLocationDisclosureDecisionRef.current = 'unseen';
       backgroundLocationRequestStateRef.current = 'ready';
       backgroundLocationWarningShownRef.current = false;
+      backgroundLocationDisclosureShownForOnlineSession = false;
+      backgroundLocationWarningShownForOnlineSession = false;
       stopDriverBackgroundLocationUpdates().catch(() => {});
       return;
     }
@@ -514,8 +522,11 @@ export default function DriverHomeScreen() {
         // A denied Android permission can be returned again after a render or
         // activity resume. Warn once, then require an intentional offline/
         // online restart before another background-location request.
-        if (!shouldShowDriverBackgroundLocationWarning(result) || backgroundLocationWarningShownRef.current) return;
+        if (!shouldShowDriverBackgroundLocationWarning(result)
+          || backgroundLocationWarningShownRef.current
+          || backgroundLocationWarningShownForOnlineSession) return;
         backgroundLocationWarningShownRef.current = true;
+        backgroundLocationWarningShownForOnlineSession = true;
         if (result.reason === 'background_denied') {
           Alert.alert(
             'Background location needed',
@@ -531,15 +542,17 @@ export default function DriverHomeScreen() {
       });
     };
 
-    if (shouldShowDriverBackgroundLocationDisclosure({
-      platform: Platform.OS,
-      shouldTrack,
-      decision: backgroundLocationDisclosureDecisionRef.current,
-    })) {
+    if (!backgroundLocationDisclosureShownForOnlineSession
+      && shouldShowDriverBackgroundLocationDisclosure({
+        platform: Platform.OS,
+        shouldTrack,
+        decision: backgroundLocationDisclosureDecisionRef.current,
+      })) {
       // Mark the disclosure as shown before opening the modal. React effect
       // replay/remounts can otherwise see `unseen` again while the first
       // Alert is still visible and present the same prompt twice.
       backgroundLocationDisclosureDecisionRef.current = 'accepted';
+      backgroundLocationDisclosureShownForOnlineSession = true;
       Alert.alert(
         DRIVER_BACKGROUND_LOCATION_DISCLOSURE.title,
         DRIVER_BACKGROUND_LOCATION_DISCLOSURE.message,
