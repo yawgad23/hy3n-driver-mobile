@@ -727,8 +727,13 @@ function DriverNavigationSurface({
       refreshBrandedRouteAfterNativeChange(false);
     });
     setOnReroutingRequestedByOffRoute(() => {
+      // Google has detected a deviation, but the iOS bridge can report this
+      // callback without making fresh replacement geometry available to the
+      // branded overlay. Preserve the old road only for diagnosis, explicitly
+      // request a new route from the newest verified GPS fix, then redraw from
+      // the confirmed native route instead of repeatedly painting the old line.
       staleRoutePlanRef.current = routePointsRef.current.slice();
-      refreshBrandedRouteAfterNativeChange(true);
+      requestGpsFallbackReroute();
     });
     return () => {
       clearRouteRefresh();
