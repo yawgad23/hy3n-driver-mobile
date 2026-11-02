@@ -269,6 +269,8 @@ function DriverNavigationSurface({
       title: 'Your HY3N vehicle',
       rotation: position.heading,
       flat: true,
+      // Center the compact marker directly on the current GPS coordinate;
+      // this prevents the car from appearing ahead of or behind the real fix.
       anchor: { u: 0.5, v: 0.5 },
       visible: true,
     }).catch(() => {
