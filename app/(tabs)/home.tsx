@@ -536,6 +536,10 @@ export default function DriverHomeScreen() {
       shouldTrack,
       decision: backgroundLocationDisclosureDecisionRef.current,
     })) {
+      // Mark the disclosure as shown before opening the modal. React effect
+      // replay/remounts can otherwise see `unseen` again while the first
+      // Alert is still visible and present the same prompt twice.
+      backgroundLocationDisclosureDecisionRef.current = 'accepted';
       Alert.alert(
         DRIVER_BACKGROUND_LOCATION_DISCLOSURE.title,
         DRIVER_BACKGROUND_LOCATION_DISCLOSURE.message,
