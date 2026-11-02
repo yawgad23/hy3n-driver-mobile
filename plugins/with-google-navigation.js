@@ -12,7 +12,7 @@ const path = require('path');
 
 const PLUGIN_NAME = 'with-google-navigation';
 const DESUGARING_DEPENDENCY = "coreLibraryDesugaring('com.android.tools:desugar_jdk_libs_nio:2.0.4')";
-const DRIVER_CAR_MARKER_SOURCE = path.join('assets', 'images', 'driver-map-car-marker.png');
+const DRIVER_CAR_MARKER_SOURCE = path.join('assets', 'images', 'hy3n-comfort-car-3d.png');
 const ANDROID_DRIVER_CAR_MARKER = 'hy3n_driver_car_marker.png';
 const IOS_DRIVER_CAR_MARKER = 'HY3NDriverCarMarker';
 const IOS_NAVIGATION_VIEW_CONTROLLER_SOURCE = path.join(
@@ -106,7 +106,7 @@ function addIosNavigationApiKey(config, iosApiKey) {
 /**
  * NavigationView exposes Google Maps' native marker controller. Its custom
  * image contract uses Android app assets and iOS asset-catalog names rather
- * than Metro's runtime image URI. Copy the existing HY3N vehicle marker to
+ * than Metro's runtime image URI. Copy the HY3N 3D-rendered vehicle asset to
  * both native locations whenever Expo generates a fresh native project.
  */
 function addDriverCarMarkerAssets(config) {
