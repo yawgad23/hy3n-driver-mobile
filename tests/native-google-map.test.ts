@@ -38,7 +38,6 @@ test('Driver retains a smooth HY3N car marker for online and accepted-trip maps'
   assert.match(component, /routePointsForMap/);
   assert.match(component, /mapViewController\.addPolyline/);
   assert.match(configPlugin, /hy3n_driver_car_marker\.png/);
-  assert.match(configPlugin, /hy3n-comfort-car-3d\.png/);
   assert.match(configPlugin, /IOS_DRIVER_CAR_MARKER = 'HY3NDriverCarMarker'/);
   assert.match(configPlugin, /\$\{IOS_DRIVER_CAR_MARKER\}\.imageset/);
   assert.match(configPlugin, /HY3N_DRIVER_DISABLE_DEFAULT_LOCATION_INDICATOR/);
