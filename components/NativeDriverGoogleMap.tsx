@@ -16,6 +16,7 @@ import {
 import {
   DRIVER_REROUTE_ROUTE_REDRAW_DELAYS_MS,
   driverMapMotionFrames,
+  driverMapMotionDurationMs,
   distanceBetweenPositionsMetres,
   routePointsForMap,
   type DriverMapPosition,
@@ -186,6 +187,7 @@ function DriverNavigationSurface({
   const navigationWorkRef = useRef<Promise<void>>(Promise.resolve());
   const lastTargetKeyRef = useRef<string | null>(null);
   const vehiclePositionRef = useRef<DriverMapPosition | null>(null);
+  const vehiclePositionTimestampRef = useRef<number | null>(null);
   const vehicleMotionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const vehicleMotionRunRef = useRef(0);
   const routeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -307,11 +309,18 @@ function DriverNavigationSurface({
         ? Number(navigationFix.heading)
         : heading === null || heading === undefined ? Number.NaN : Number(heading),
     };
-    const frames = driverMapMotionFrames(vehiclePositionRef.current, next);
+    const sampleTimestamp = navigationFix?.time ?? locationTimestamp ?? null;
+    const currentTimestamp = typeof sampleTimestamp === 'number' && Number.isFinite(sampleTimestamp)
+      ? sampleTimestamp
+      : null;
+    const durationMs = driverMapMotionDurationMs(vehiclePositionTimestampRef.current, currentTimestamp);
+    const frames = driverMapMotionFrames(vehiclePositionRef.current, next, durationMs);
+    if (currentTimestamp !== null) vehiclePositionTimestampRef.current = currentTimestamp;
     const run = vehicleMotionRunRef.current + 1;
     clearVehicleMotion();
     vehicleMotionRunRef.current = run;
     let index = 0;
+    const frameIntervalMs = frames.length > 0 ? durationMs / frames.length : 110;
 
     const showFrame = () => {
       if (vehicleMotionRunRef.current !== run) return;
@@ -319,7 +328,7 @@ function DriverNavigationSurface({
       if (!frame) return;
       vehiclePositionRef.current = frame;
       applyVehiclePosition(frame, hasTarget);
-      if (index < frames.length) vehicleMotionTimerRef.current = setTimeout(showFrame, 110);
+      if (index < frames.length) vehicleMotionTimerRef.current = setTimeout(showFrame, frameIntervalMs);
     };
     showFrame();
     return clearVehicleMotion;
