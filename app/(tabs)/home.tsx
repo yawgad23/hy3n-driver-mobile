@@ -184,6 +184,8 @@ export default function DriverHomeScreen() {
   const incomingTripAlertStatus = useAudioPlayerStatus(incomingTripAlertPlayer);
   const incomingTripAudioRuntimeRef = useRef(createDriverRequestAudio());
   const incomingOfferReceivedAtRef = useRef<number | null>(null);
+  // Once Accept is tapped, suppress this offer's sound immediately while the server confirms assignment.
+  const acceptedOfferAudioSuppressionRef = useRef<string | null>(null);
   const retiredOfferLeaseRef = useRef<string | null>(null);
   const lastTripLocationRef = useRef<ExpoLocation.LocationObject | null>(null);
   const lastTripMeterPublishedAtRef = useRef(0);
@@ -626,7 +628,7 @@ export default function DriverHomeScreen() {
 
   useEffect(() => {
     const incomingRideId = incomingRide?.id ? String(incomingRide.id) : null;
-    if (!shouldPlayIncomingTripAlert({
+    if (acceptedOfferAudioSuppressionRef.current === incomingRideId || !shouldPlayIncomingTripAlert({
       isOnline,
       incomingRideId,
       activeTripId: activeTrip?.id || null,
@@ -896,6 +898,7 @@ export default function DriverHomeScreen() {
     };
     tripActionInFlightRef.current = true;
     setTripActionPending(true);
+    acceptedOfferAudioSuppressionRef.current = rideId;
     // Stop on tap, not after the accepted server response. iPhone native
     // playback status can lag the audible request song by a short interval.
     stopIncomingTripAlert(true);
@@ -920,6 +923,8 @@ export default function DriverHomeScreen() {
       showAcceptedRide(result.ride);
     } catch (err: any) {
       if (!await reconcileAcceptedRide()) {
+        // Acceptance failed and the offer is still on screen: allow its alert again.
+        if (String(incomingRide?.id || '') === rideId) acceptedOfferAudioSuppressionRef.current = null;
         const message = String(err?.message || '');
         if (/no longer available|already been accepted|has expired/i.test(message)) {
           setIncomingRide(null);
