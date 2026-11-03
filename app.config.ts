@@ -54,9 +54,8 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 110 follows the completed Build 109 artifact, which was rejected
-    // by App Store Connect because its build number had already been used.
-    buildNumber: "110",
+    // Build 112 follows the completed Build 111 artifact.
+    buildNumber: "112",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
