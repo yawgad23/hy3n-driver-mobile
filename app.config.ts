@@ -54,8 +54,8 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 112 follows the completed Build 111 artifact.
-    buildNumber: "112",
+    // Build 113 follows the completed Build 112 artifact.
+    buildNumber: "113",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
