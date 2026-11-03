@@ -323,7 +323,7 @@ function DriverNavigationSurface({
     };
     showFrame();
     return clearVehicleMotion;
-  }, [applyVehiclePosition, clearVehicleMotion, hasDeviceLocation, hasTarget, heading, latitude, longitude, mapViewController]);
+  }, [applyVehiclePosition, clearVehicleMotion, currentNavigationLocation, hasDeviceLocation, hasTarget, heading, latitude, locationAccuracy, locationTimestamp, longitude, mapViewController]);
 
   const clearRouteLines = useCallback(async () => {
     if (!mapViewController) return;
