@@ -542,6 +542,12 @@ function DriverNavigationSurface({
     const request = navigationRequestRef.current;
     const stillCurrent = () => navigationRequestRef.current === request && lastTargetKeyRef.current === targetKey;
     forcedRerouteInFlightRef.current = true;
+    // Invalidate any delayed redraw of the old route immediately. Clear both
+    // branded polylines through the same queue used for drawing so a late
+    // callback cannot repaint the obsolete green line behind the vehicle.
+    clearRouteRefresh();
+    const clearOldRoute = routeOverlayWorkRef.current.then(() => clearRouteLines());
+    routeOverlayWorkRef.current = clearOldRoute.catch(() => {});
     confirmedRerouteRef.current = null;
     staleRoutePlanRef.current = routePointsRef.current.slice();
     setNavigationMessage('Re-routing from your current road…');
@@ -591,6 +597,8 @@ function DriverNavigationSurface({
       }
     });
   }, [
+    clearRouteLines,
+    clearRouteRefresh,
     diagnostics,
     currentNavigationLocation,
     hasTarget,
@@ -601,6 +609,7 @@ function DriverNavigationSurface({
     targetLabel,
     targetLatitude,
     targetLongitude,
+    routeOverlayWorkRef,
   ]);
 
   const assessNavigationLocation = useCallback((observedLocation: DriverNavigationLocation | null) => {
@@ -689,6 +698,7 @@ function DriverNavigationSurface({
         // custom HY3N car must nevertheless match the route we draw.
         if (current?.source === 'ios-navigation' && Number(current.time) === Number(point.time)) {
           clearVehicleMotion();
+          const run = vehicleMotionRunRef.current;
           const vehicle = {
             latitude: current.latitude,
             longitude: current.longitude,
@@ -697,7 +707,7 @@ function DriverNavigationSurface({
               : (vehiclePositionRef.current?.heading ?? 0),
           };
           vehiclePositionRef.current = vehicle;
-          applyVehiclePosition(vehicle, hasTarget);
+          void applyVehiclePosition(vehicle, hasTarget, () => vehicleMotionRunRef.current === run);
         }
         assessNavigationLocation(current);
       }
