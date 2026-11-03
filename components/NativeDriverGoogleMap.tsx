@@ -290,13 +290,22 @@ function DriverNavigationSurface({
   // Driver app has received; this display layer has no effect on fare or meter.
   useEffect(() => {
     if (!mapViewController || !hasDeviceLocation) return;
+    // On iOS, prefer Google's fresh road-snapped navigation fix for the
+    // displayed vehicle when available. Previously every Expo GPS render
+    // animated the marker back to raw GPS coordinates immediately after the
+    // native callback snapped it to the road, making the car appear off-road
+    // or in the wrong place. Expo remains the fallback and the only source for
+    // server presence, trip distance, and fare calculations.
+    const navigationFix = Platform.OS === 'ios' ? currentNavigationLocation() : null;
     const next = {
-      latitude: Number(latitude),
-      longitude: Number(longitude),
-      // Expo reports an unavailable compass heading as null. Preserve that
-      // absence so the motion helper can derive direction from movement rather
-      // than incorrectly turning the HY3N car to north.
-      heading: heading === null || heading === undefined ? Number.NaN : Number(heading),
+      latitude: navigationFix?.latitude ?? Number(latitude),
+      longitude: navigationFix?.longitude ?? Number(longitude),
+      // Prefer the native road bearing when it is the selected position.
+      // Otherwise preserve an unavailable Expo compass heading as NaN so the
+      // motion helper derives direction from movement instead of north.
+      heading: navigationFix?.source === 'ios-navigation' && Number.isFinite(Number(navigationFix.heading))
+        ? Number(navigationFix.heading)
+        : heading === null || heading === undefined ? Number.NaN : Number(heading),
     };
     const frames = driverMapMotionFrames(vehiclePositionRef.current, next);
     const run = vehicleMotionRunRef.current + 1;
@@ -314,7 +323,7 @@ function DriverNavigationSurface({
     };
     showFrame();
     return clearVehicleMotion;
-  }, [applyVehiclePosition, clearVehicleMotion, hasDeviceLocation, hasTarget, heading, latitude, longitude, mapViewController]);
+  }, [applyVehiclePosition, clearVehicleMotion, currentNavigationLocation, hasDeviceLocation, hasTarget, heading, latitude, locationAccuracy, locationTimestamp, longitude, mapViewController]);
 
   const clearRouteLines = useCallback(async () => {
     if (!mapViewController) return;
