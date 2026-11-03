@@ -56,7 +56,7 @@ const config: ExpoConfig = {
     bundleIdentifier: env.iosBundleId,
     // Build 103 packages Driver History repairs and the iPhone-only route
     // safety fallback when Expo has no current GPS fix but Navigation does.
-    buildNumber: "109",
+    buildNumber: "111",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
