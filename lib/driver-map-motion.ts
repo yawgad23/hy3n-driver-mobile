@@ -12,7 +12,12 @@ type RouteSegmentLike = {
 
 const EARTH_RADIUS_METRES = 6_371_000;
 const MAX_SMOOTH_MOVE_METRES = 1_200;
-const FRAME_COUNT = 12;
+const DEFAULT_DRIVER_MOTION_DURATION_MS = 1_320;
+export const DRIVER_INITIAL_MOTION_DURATION_MS = 1_800;
+export const DRIVER_MAX_MOTION_DURATION_MS = 9_000;
+export const DRIVER_MOTION_COMPLETION_RATIO = 0.88;
+const MOTION_FRAME_INTERVAL_MS = 110;
+const MAX_MOTION_FRAMES = Math.ceil(DRIVER_MAX_MOTION_DURATION_MS / MOTION_FRAME_INTERVAL_MS);
 
 // The native Navigation SDK reports a route-change event before every platform
 // has made the replacement route geometry readable. Re-read it a few times so
@@ -61,12 +66,25 @@ function interpolateHeading(from: number, to: number, progress: number) {
   return normalisedHeading(from + delta * progress);
 }
 
+/** Align visual movement with the actual interval between trusted GPS samples. */
+export function driverMapMotionDurationMs(previousTimestampMs: number | null, currentTimestampMs: number | null) {
+  if (previousTimestampMs === null || currentTimestampMs === null) return DRIVER_INITIAL_MOTION_DURATION_MS;
+  const intervalMs = currentTimestampMs - previousTimestampMs;
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) return DRIVER_INITIAL_MOTION_DURATION_MS;
+  return Math.max(1, Math.min(DRIVER_MAX_MOTION_DURATION_MS, Math.round(intervalMs * DRIVER_MOTION_COMPLETION_RATIO)));
+}
+
 /**
- * Turns genuine Driver GPS updates into a short sequence of native marker
- * positions. It never fabricates a route and avoids animating a suspiciously
- * large GPS jump across the city.
+ * Turns genuine Driver GPS updates into interpolated native marker positions.
+ * The caller chooses a duration based on the GPS cadence, so a healthy stream
+ * reaches each point before the next update can supersede it. It never fabricates
+ * a route and avoids animating a suspiciously large GPS jump across the city.
  */
-export function driverMapMotionFrames(previous: DriverMapPosition | null, incoming: DriverMapPosition): DriverMapPosition[] {
+export function driverMapMotionFrames(
+  previous: DriverMapPosition | null,
+  incoming: DriverMapPosition,
+  durationMs = DEFAULT_DRIVER_MOTION_DURATION_MS,
+): DriverMapPosition[] {
   if (!finiteCoordinate(incoming.latitude, incoming.longitude)) return [];
   const next = {
     latitude: incoming.latitude,
@@ -80,8 +98,10 @@ export function driverMapMotionFrames(previous: DriverMapPosition | null, incomi
 
   const derivedHeading = bearingBetweenPositions(previous, next);
   const nextHeading = Number.isFinite(Number(incoming.heading)) ? next.heading : derivedHeading;
-  return Array.from({ length: FRAME_COUNT }, (_, index) => {
-    const progress = (index + 1) / FRAME_COUNT;
+  const safeDuration = Math.max(1, Math.min(DRIVER_MAX_MOTION_DURATION_MS, durationMs));
+  const frameCount = Math.max(1, Math.min(MAX_MOTION_FRAMES, Math.ceil(safeDuration / MOTION_FRAME_INTERVAL_MS)));
+  return Array.from({ length: frameCount }, (_, index) => {
+    const progress = (index + 1) / frameCount;
     return {
       latitude: previous.latitude + (next.latitude - previous.latitude) * progress,
       longitude: previous.longitude + (next.longitude - previous.longitude) * progress,
