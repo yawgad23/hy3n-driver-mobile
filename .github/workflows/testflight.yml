@@ -1,0 +1,70 @@
+name: HY3N Driver iOS TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_paid_build:
+        description: "Start a paid EAS iOS build and submit it to TestFlight"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install EAS CLI
+        run: npm install --global eas-cli
+
+      - name: Verify Expo authentication
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::GitHub Actions secret EXPO_TOKEN is missing or empty."
+            exit 1
+          fi
+          eas whoami
+
+      - name: Show configured EAS profiles (no build)
+        run: |
+          node -e "const e=require('./eas.json'); if (!e.build?.testflight) process.exit(1); if (!e.submit?.production?.ios?.ascAppId) process.exit(1); console.log('TestFlight build profile and iOS submission app ID are present. No build was started.')"
+
+  build-and-submit:
+    if: ${{ inputs.start_paid_build == true }}
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install EAS CLI
+        run: npm install --global eas-cli
+
+      - name: Build iOS app
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas build --platform ios --profile testflight --non-interactive
+
+      - name: Submit latest iOS build to TestFlight
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas submit --platform ios --profile production --latest --non-interactive
