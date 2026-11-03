@@ -260,31 +260,39 @@ function DriverNavigationSurface({
     rerouteMessageTimerRef.current = null;
   }, []);
 
-  const applyVehiclePosition = useCallback((position: DriverMapPosition, followTrip: boolean) => {
-    if (!mapViewController) return;
-    void mapViewController.addMarker({
-      id: DRIVER_VEHICLE_MARKER_ID,
-      position: { lat: position.latitude, lng: position.longitude },
-      imgPath: DRIVER_VEHICLE_MARKER_ASSET,
-      title: 'Your HY3N vehicle',
-      rotation: position.heading,
-      flat: true,
-      // Center the compact marker directly on the current GPS coordinate;
-      // this prevents the car from appearing ahead of or behind the real fix.
-      anchor: { u: 0.5, v: 0.5 },
-      visible: true,
-    }).catch(() => {
-      // A route remains usable even if a device cannot load the optional art.
+  const vehicleMapWorkRef = useRef<Promise<void>>(Promise.resolve());
+
+  // Serialize native marker/camera writes. Fire-and-forget writes for every
+  // animation frame can finish out of order on the iOS bridge, leaving the car
+  // behind its latest GPS fix or making the camera appear to jump.
+  const applyVehiclePosition = useCallback((position: DriverMapPosition, followTrip: boolean, isCurrent: () => boolean) => {
+    const work = vehicleMapWorkRef.current.then(async () => {
+      if (!mapViewController || !isCurrent()) return;
+      try {
+        await mapViewController.addMarker({
+          id: DRIVER_VEHICLE_MARKER_ID,
+          position: { lat: position.latitude, lng: position.longitude },
+          imgPath: DRIVER_VEHICLE_MARKER_ASSET,
+          title: 'Your HY3N vehicle',
+          rotation: position.heading,
+          flat: true,
+          // Center the compact marker directly on the current GPS coordinate.
+          anchor: { u: 0.5, v: 0.5 },
+          visible: true,
+        });
+      } catch {
+        // Keep navigation usable if the optional vehicle artwork fails to load.
+      }
+      if (!isCurrent()) return;
+      mapViewController.moveCamera({
+        target: { lat: position.latitude, lng: position.longitude },
+        bearing: followTrip ? position.heading : 0,
+        tilt: followTrip ? 42 : 0,
+        zoom: followTrip ? 17 : 16,
+      });
     });
-    // The native SDK animates this camera update; keeping its target aligned
-    // with each interpolated vehicle point makes the car follow the road rather
-    // than jump to a stale screen position.
-    mapViewController.moveCamera({
-      target: { lat: position.latitude, lng: position.longitude },
-      bearing: followTrip ? position.heading : 0,
-      tilt: followTrip ? 42 : 0,
-      zoom: followTrip ? 17 : 16,
-    });
+    vehicleMapWorkRef.current = work.catch(() => {});
+    return work;
   }, [mapViewController]);
 
   // Interpolate each real GPS observation into small native-map updates. The
@@ -306,15 +314,16 @@ function DriverNavigationSurface({
     vehicleMotionRunRef.current = run;
     let index = 0;
 
-    const showFrame = () => {
+    const showFrame = async () => {
       if (vehicleMotionRunRef.current !== run) return;
       const frame = frames[index++];
       if (!frame) return;
       vehiclePositionRef.current = frame;
-      applyVehiclePosition(frame, hasTarget);
-      if (index < frames.length) vehicleMotionTimerRef.current = setTimeout(showFrame, 110);
+      await applyVehiclePosition(frame, hasTarget, () => vehicleMotionRunRef.current === run);
+      if (vehicleMotionRunRef.current !== run) return;
+      if (index < frames.length) vehicleMotionTimerRef.current = setTimeout(() => { void showFrame(); }, 85);
     };
-    showFrame();
+    void showFrame();
     return clearVehicleMotion;
   }, [applyVehiclePosition, clearVehicleMotion, hasDeviceLocation, hasTarget, heading, latitude, longitude, mapViewController]);
 
