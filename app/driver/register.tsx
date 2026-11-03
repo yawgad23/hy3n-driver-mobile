@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as ImagePicker from 'expo-image-picker';
 import { useDriverAuth } from '@/lib/driver-auth-context';
-import { auth as firebaseAuthObj, firebaseAuth } from '@/lib/firebase';
+import { auth as firebaseAuthObj, firebaseAuth, firebaseStorage } from '@/lib/firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { openDriverSupportWhatsApp } from '@/lib/support-whatsapp';
 
@@ -343,6 +343,20 @@ export default function DriverRegisterScreen() {
     if (!vehicleMake.trim() || !vehicleModel.trim() || !vehiclePlate.trim()) {
       setError('Please fill in all vehicle details.'); return;
     }
+    const requiredDocuments = [
+      ['Ghana Card (Front)', ghanaCardFront],
+      ['Ghana Card (Back)', ghanaCardBack],
+      ["Driver's License (Front)", licenseFront],
+      ["Driver's License (Back)", licenseBack],
+      ['Your Photo (Selfie)', driverPhoto],
+      ['Vehicle Photo', vehiclePhoto],
+    ] as const;
+    const missingDocuments = requiredDocuments.filter(([, uri]) => !uri.trim()).map(([label]) => label);
+    if (missingDocuments.length > 0) {
+      setStep(4);
+      setError(`Please upload the required documents before submitting: ${missingDocuments.join(', ')}.`);
+      return;
+    }
     setError('');
     setLoading(true);
     try {
@@ -352,6 +366,24 @@ export default function DriverRegisterScreen() {
       const defaultCats = serviceType === 'okada' ? ['okada'] : serviceType === 'delivery' ? ['express_delivery'] : ['standard'];
       const rideCategories = selectedCategories.length > 0 ? selectedCategories : defaultCats;
 
+      const uploadDocument = async (uri: string, key: string) => {
+        if (!uri) return '';
+        if (!uri.startsWith('file://') && !uri.startsWith('content://')) return uri;
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        return firebaseStorage.uploadFile(blob, `drivers/${user.uid}/applications/${key}.jpg`);
+      };
+      const uploadedDocuments = await Promise.all([
+        uploadDocument(ghanaCardFront, 'ghana-card-front'),
+        uploadDocument(ghanaCardBack, 'ghana-card-back'),
+        uploadDocument(licenseFront, 'drivers-license-front'),
+        uploadDocument(licenseBack, 'drivers-license-back'),
+        uploadDocument(driverPhoto, 'profile-photo'),
+        uploadDocument(vehiclePhoto, 'vehicle-photo'),
+        uploadDocument(insurancePhoto, 'insurance'),
+        uploadDocument(roadworthyPhoto, 'roadworthy'),
+      ]);
+      const [uploadedGhanaCardFront, uploadedGhanaCardBack, uploadedLicenseFront, uploadedLicenseBack, uploadedDriverPhoto, uploadedVehiclePhoto, uploadedInsurance, uploadedRoadworthy] = uploadedDocuments;
       await firebaseAuth.submitDriverProfile({
         fullName,
         email: email || user.email || '',
@@ -366,14 +398,14 @@ export default function DriverRegisterScreen() {
         vehicleColor,
         vehicleYear: vehicleFullModel,
         documents: {
-          ghanaCardFront,
-          ghanaCardBack,
-          licenseFront,
-          licenseBack,
-          profilePhoto: driverPhoto,
-          vehiclePhoto,
-          insurance: insurancePhoto,
-          roadworthy: roadworthyPhoto,
+          ghanaCardFront: uploadedGhanaCardFront,
+          ghanaCardBack: uploadedGhanaCardBack,
+          licenseFront: uploadedLicenseFront,
+          licenseBack: uploadedLicenseBack,
+          profilePhoto: uploadedDriverPhoto,
+          vehiclePhoto: uploadedVehiclePhoto,
+          insurance: uploadedInsurance,
+          roadworthy: uploadedRoadworthy,
         },
       });
       setStep(5);
