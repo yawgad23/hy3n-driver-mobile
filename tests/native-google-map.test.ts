@@ -67,8 +67,14 @@ test('Driver active map re-routes for each pickup or drop-off and cleans up safe
   assert.match(component, /mapViewController\.moveCamera/);
   assert.match(component, /lastTargetKeyRef\.current === targetKey/);
   assert.match(component, /setOnReroutingRequestedByOffRoute/);
+  assert.match(component, /setOnReroutingRequestedByOffRoute\(\(\) => \{[\s\S]*?requestGpsFallbackReroute\(\);/);
   assert.match(component, /Re-routing from your current road/);
   assert.match(component, /refreshBrandedRouteAfterNativeChange/);
+  assert.match(component, /const vehicleMapWorkRef = useRef<Promise<void>\(Promise\.resolve\(\)\)\);/);
+  assert.match(component, /Serialize native marker\/camera writes/);
+  assert.match(component, /await applyVehiclePosition\(frame, hasTarget, \(\) => vehicleMotionRunRef\.current === run\)/);
+  assert.match(component, /Invalidate any delayed redraw of the old route immediately/);
+  assert.match(component, /const clearOldRoute = routeOverlayWorkRef\.current\.then\(\(\) => clearRouteLines\(\)\)/);
   assert.match(component, /const clearRouteLines = useCallback\(async/);
   assert.match(component, /Promise\.allSettled\(\[/);
   assert.match(component, /await clearRouteLines\(\)/);

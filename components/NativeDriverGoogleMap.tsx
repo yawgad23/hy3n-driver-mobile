@@ -260,29 +260,39 @@ function DriverNavigationSurface({
     rerouteMessageTimerRef.current = null;
   }, []);
 
-  const applyVehiclePosition = useCallback((position: DriverMapPosition, followTrip: boolean) => {
-    if (!mapViewController) return;
-    void mapViewController.addMarker({
-      id: DRIVER_VEHICLE_MARKER_ID,
-      position: { lat: position.latitude, lng: position.longitude },
-      imgPath: DRIVER_VEHICLE_MARKER_ASSET,
-      title: 'Your HY3N vehicle',
-      rotation: position.heading,
-      flat: true,
-      anchor: { u: 0.5, v: 0.5 },
-      visible: true,
-    }).catch(() => {
-      // A route remains usable even if a device cannot load the optional art.
+  const vehicleMapWorkRef = useRef<Promise<void>>(Promise.resolve());
+
+  // Serialize native marker/camera writes. Fire-and-forget writes for every
+  // animation frame can finish out of order on the iOS bridge, leaving the car
+  // behind its latest GPS fix or making the camera appear to jump.
+  const applyVehiclePosition = useCallback((position: DriverMapPosition, followTrip: boolean, isCurrent: () => boolean) => {
+    const work = vehicleMapWorkRef.current.then(async () => {
+      if (!mapViewController || !isCurrent()) return;
+      try {
+        await mapViewController.addMarker({
+          id: DRIVER_VEHICLE_MARKER_ID,
+          position: { lat: position.latitude, lng: position.longitude },
+          imgPath: DRIVER_VEHICLE_MARKER_ASSET,
+          title: 'Your HY3N vehicle',
+          rotation: position.heading,
+          flat: true,
+          // Center the compact marker directly on the current GPS coordinate.
+          anchor: { u: 0.5, v: 0.5 },
+          visible: true,
+        });
+      } catch {
+        // Keep navigation usable if the optional vehicle artwork fails to load.
+      }
+      if (!isCurrent()) return;
+      mapViewController.moveCamera({
+        target: { lat: position.latitude, lng: position.longitude },
+        bearing: followTrip ? position.heading : 0,
+        tilt: followTrip ? 42 : 0,
+        zoom: followTrip ? 17 : 16,
+      });
     });
-    // The native SDK animates this camera update; keeping its target aligned
-    // with each interpolated vehicle point makes the car follow the road rather
-    // than jump to a stale screen position.
-    mapViewController.moveCamera({
-      target: { lat: position.latitude, lng: position.longitude },
-      bearing: followTrip ? position.heading : 0,
-      tilt: followTrip ? 42 : 0,
-      zoom: followTrip ? 17 : 16,
-    });
+    vehicleMapWorkRef.current = work.catch(() => {});
+    return work;
   }, [mapViewController]);
 
   // Interpolate each real GPS observation into small native-map updates. The
@@ -304,15 +314,16 @@ function DriverNavigationSurface({
     vehicleMotionRunRef.current = run;
     let index = 0;
 
-    const showFrame = () => {
+    const showFrame = async () => {
       if (vehicleMotionRunRef.current !== run) return;
       const frame = frames[index++];
       if (!frame) return;
       vehiclePositionRef.current = frame;
-      applyVehiclePosition(frame, hasTarget);
-      if (index < frames.length) vehicleMotionTimerRef.current = setTimeout(showFrame, 110);
+      await applyVehiclePosition(frame, hasTarget, () => vehicleMotionRunRef.current === run);
+      if (vehicleMotionRunRef.current !== run) return;
+      if (index < frames.length) vehicleMotionTimerRef.current = setTimeout(() => { void showFrame(); }, 85);
     };
-    showFrame();
+    void showFrame();
     return clearVehicleMotion;
   }, [applyVehiclePosition, clearVehicleMotion, hasDeviceLocation, hasTarget, heading, latitude, longitude, mapViewController]);
 
@@ -531,6 +542,12 @@ function DriverNavigationSurface({
     const request = navigationRequestRef.current;
     const stillCurrent = () => navigationRequestRef.current === request && lastTargetKeyRef.current === targetKey;
     forcedRerouteInFlightRef.current = true;
+    // Invalidate any delayed redraw of the old route immediately. Clear both
+    // branded polylines through the same queue used for drawing so a late
+    // callback cannot repaint the obsolete green line behind the vehicle.
+    clearRouteRefresh();
+    const clearOldRoute = routeOverlayWorkRef.current.then(() => clearRouteLines());
+    routeOverlayWorkRef.current = clearOldRoute.catch(() => {});
     confirmedRerouteRef.current = null;
     staleRoutePlanRef.current = routePointsRef.current.slice();
     setNavigationMessage('Re-routing from your current road…');
@@ -580,6 +597,8 @@ function DriverNavigationSurface({
       }
     });
   }, [
+    clearRouteLines,
+    clearRouteRefresh,
     diagnostics,
     currentNavigationLocation,
     hasTarget,
@@ -590,6 +609,7 @@ function DriverNavigationSurface({
     targetLabel,
     targetLatitude,
     targetLongitude,
+    routeOverlayWorkRef,
   ]);
 
   const assessNavigationLocation = useCallback((observedLocation: DriverNavigationLocation | null) => {
@@ -678,6 +698,7 @@ function DriverNavigationSurface({
         // custom HY3N car must nevertheless match the route we draw.
         if (current?.source === 'ios-navigation' && Number(current.time) === Number(point.time)) {
           clearVehicleMotion();
+          const run = vehicleMotionRunRef.current;
           const vehicle = {
             latitude: current.latitude,
             longitude: current.longitude,
@@ -686,7 +707,7 @@ function DriverNavigationSurface({
               : (vehiclePositionRef.current?.heading ?? 0),
           };
           vehiclePositionRef.current = vehicle;
-          applyVehiclePosition(vehicle, hasTarget);
+          void applyVehiclePosition(vehicle, hasTarget, () => vehicleMotionRunRef.current === run);
         }
         assessNavigationLocation(current);
       }
@@ -727,8 +748,13 @@ function DriverNavigationSurface({
       refreshBrandedRouteAfterNativeChange(false);
     });
     setOnReroutingRequestedByOffRoute(() => {
+      // Google has detected a deviation, but the iOS bridge can report this
+      // callback without making fresh replacement geometry available to the
+      // branded overlay. Preserve the old road only for diagnosis, explicitly
+      // request a new route from the newest verified GPS fix, then redraw from
+      // the confirmed native route instead of repeatedly painting the old line.
       staleRoutePlanRef.current = routePointsRef.current.slice();
-      refreshBrandedRouteAfterNativeChange(true);
+      requestGpsFallbackReroute();
     });
     return () => {
       clearRouteRefresh();
