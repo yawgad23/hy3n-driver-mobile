@@ -54,9 +54,9 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 103 packages Driver History repairs and the iPhone-only route
-    // safety fallback when Expo has no current GPS fix but Navigation does.
-    buildNumber: "109",
+    // Build 110 follows the completed Build 109 artifact, which was rejected
+    // by App Store Connect because its build number had already been used.
+    buildNumber: "110",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
