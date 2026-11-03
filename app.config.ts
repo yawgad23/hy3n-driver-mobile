@@ -73,8 +73,8 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    // 57013 packages the restored Build 103 source for Android closed testing.
-    versionCode: 57013,
+    // 57014 packages the current Driver source for Android closed testing.
+    versionCode: 57014,
     googleServicesFile: "./firebase/google-services.json",
     permissions: ["POST_NOTIFICATIONS", "ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_LOCATION"],
     // Driver request alerts use the operating system notification sound. HY3N

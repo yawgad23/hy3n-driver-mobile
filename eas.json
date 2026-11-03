@@ -76,6 +76,12 @@
     }
   },
   "submit": {
+    "android-testers": {
+      "android": {
+        "serviceAccountKeyPath": "./google-play-service-account.json",
+        "track": "alpha"
+      }
+    },
     "production": {
       "ios": {
         "appleId": "nanayawgad23@gmail.com",
