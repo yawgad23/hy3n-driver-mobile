@@ -26,7 +26,7 @@ function GoogleIcon() {
 }
 
 export default function DriverLoginScreen() {
-  const { signIn, startPhoneSignIn, confirmPhoneSignIn, signInWithGoogle } = useDriverAuth();
+  const { signIn, startPhoneSignIn, confirmPhoneSignIn, signInWithGoogle, signInWithApple } = useDriverAuth();
   const [loginMode, setLoginMode] = useState<'phone' | 'email'>('phone');
   const [phone, setPhone] = useState('');
   const [verificationId, setVerificationId] = useState<string | null>(null);
@@ -38,6 +38,7 @@ export default function DriverLoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [emailLoading, setEmailLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
 
   const handleSendPhoneCode = async () => {
     setPhoneLoading(true);
@@ -100,6 +101,20 @@ export default function DriverLoginScreen() {
       }
     } finally {
       setGoogleLoading(false);
+    }
+  };
+
+  const handleAppleLogin = async () => {
+    setAppleLoading(true);
+    try {
+      await signInWithApple();
+      router.replace('/home');
+    } catch (err: any) {
+      if (err?.code !== 'ERR_REQUEST_CANCELED' && err?.code !== 'auth/popup-closed-by-user') {
+        Alert.alert('Apple Sign-In Failed', err?.message || 'Could not sign in with Apple. Please try again.');
+      }
+    } finally {
+      setAppleLoading(false);
     }
   };
 
@@ -174,6 +189,11 @@ export default function DriverLoginScreen() {
               <TouchableOpacity style={styles.googleBtn} onPress={handleGoogleLogin} disabled={googleLoading} activeOpacity={0.8}>
                 {googleLoading ? <ActivityIndicator size="small" color={TEXT} /> : <><GoogleIcon /><Text style={styles.googleText}>Continue with Google</Text></>}
               </TouchableOpacity>
+              {Platform.OS === 'ios' && (
+                <TouchableOpacity style={styles.appleBtn} onPress={handleAppleLogin} disabled={appleLoading} activeOpacity={0.8}>
+                  {appleLoading ? <ActivityIndicator size="small" color="#fff" /> : <><Text style={styles.appleLogo}></Text><Text style={styles.appleText}>Continue with Apple</Text></>}
+                </TouchableOpacity>
+              )}
               <View style={styles.dividerRow}><View style={styles.dividerLine} /><Text style={styles.dividerText}>or</Text><View style={styles.dividerLine} /></View>
               <Text style={styles.label}>Email</Text>
               <View style={styles.inputWrap}>
@@ -258,6 +278,13 @@ const styles = StyleSheet.create({
   },
   googleIconText: { fontSize: 14, fontWeight: '700' },
   googleText: { color: TEXT, fontSize: 15, fontWeight: '600' },
+  appleBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#000', borderWidth: 1, borderColor: '#444', borderRadius: 12,
+    height: 48, gap: 10, marginBottom: 16,
+  },
+  appleLogo: { color: '#fff', fontSize: 25, lineHeight: 27 },
+  appleText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   dividerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, gap: 8 },
   dividerLine: { flex: 1, height: 1, backgroundColor: BORDER },
   dividerText: { color: MUTED, fontSize: 12 },
