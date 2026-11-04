@@ -27,6 +27,7 @@ import {
   type DriverRoutePoint,
 } from '@/lib/driver-off-route-reroute';
 import {
+  projectDriverOnRoute,
   remainingDriverRoute,
   assessDriverWrongWay,
   EMPTY_DRIVER_WRONG_WAY_MONITOR,
@@ -299,16 +300,35 @@ function DriverNavigationSurface({
     // or in the wrong place. Expo remains the fallback and the only source for
     // server presence, trip distance, and fare calculations.
     const navigationFix = Platform.OS === 'ios' ? currentNavigationLocation() : null;
+    const reportedHeading = navigationFix?.source === 'ios-navigation' && Number.isFinite(Number(navigationFix.heading))
+      ? Number(navigationFix.heading)
+      : heading === null || heading === undefined ? Number.NaN : Number(heading);
     const next = {
       latitude: navigationFix?.latitude ?? Number(latitude),
       longitude: navigationFix?.longitude ?? Number(longitude),
       // Prefer the native road bearing when it is the selected position.
       // Otherwise preserve an unavailable Expo compass heading as NaN so the
       // motion helper derives direction from movement instead of north.
-      heading: navigationFix?.source === 'ios-navigation' && Number.isFinite(Number(navigationFix.heading))
-        ? Number(navigationFix.heading)
-        : heading === null || heading === undefined ? Number.NaN : Number(heading),
+      // A negative heading means "no valid course" (for example when the car
+      // is stopped); treating it as 359 degrees made the car and camera spin.
+      heading: reportedHeading < 0 ? Number.NaN : reportedHeading,
     };
+    // iOS already receives Google's road-snapped fix. On Android the car used
+    // the raw GPS point and could drift beside the green route line. While the
+    // Driver is genuinely on the route (within 20 m), draw the car on the road
+    // and face it along the road. Beyond that it shows the real GPS position,
+    // so a missed turn is still visible and still triggers the reroute checks.
+    if (Platform.OS !== 'ios' && routePointsRef.current.length >= 2) {
+      const onRoad = projectDriverOnRoute(
+        { latitude: next.latitude, longitude: next.longitude },
+        routePointsRef.current,
+      );
+      if (onRoad && onRoad.distanceMeters <= 20) {
+        next.latitude = onRoad.point.lat;
+        next.longitude = onRoad.point.lng;
+        if (!Number.isFinite(next.heading)) next.heading = onRoad.bearing;
+      }
+    }
     const sampleTimestamp = navigationFix?.time ?? locationTimestamp ?? null;
     const currentTimestamp = typeof sampleTimestamp === 'number' && Number.isFinite(sampleTimestamp)
       ? sampleTimestamp
@@ -1024,3 +1044,4 @@ const styles = StyleSheet.create({
   },
   navigationMessageText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', lineHeight: 18, textAlign: 'center' },
 });
+
