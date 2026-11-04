@@ -52,19 +52,37 @@ export function createDriverRequestAudio() {
       }
     },
     stop(player: DriverRequestAudioPlayer, options: { force?: boolean } = {}) {
+      // Invalidate an in-flight configure/seek before touching the native player,
+      // so its continuation cannot start the ringtone after Accept was tapped.
       generation++;
       pendingRide = null;
-      // iOS replays a looping AVPlayer from its end observer. Disable that
-      // path and silence only this request player before pausing, so a stale
-      // JavaScript `playing` status or queued end event cannot revive the song.
-      try {
-        player.loop = false;
-        player.muted = true;
-        player.volume = 0;
-        if (options.force || player.playing) player.pause();
-      } catch {
-        // useAudioPlayer may already have released this shared native object.
+
+      // Pause first. Previously loop/mute/volume writes and the pause lived in
+      // one try block: if any native property setter threw, execution skipped
+      // pause entirely and the looping AVPlayer kept ringing after Accept.
+      // Keep every native operation isolated so one failed setter cannot block
+      // the critical stop command.
+      let shouldPause = options.force === true;
+      if (!shouldPause) {
+        try {
+          shouldPause = player.playing;
+        } catch {
+          // A stale/released status is not reliable; best-effort pause below.
+          shouldPause = true;
+        }
       }
+
+      if (shouldPause) {
+        try {
+          player.pause();
+        } catch {
+          // Continue silencing the player even if pause itself fails.
+        }
+      }
+
+      try { player.loop = false; } catch {}
+      try { player.muted = true; } catch {}
+      try { player.volume = 0; } catch {}
     },
   };
 }

@@ -87,3 +87,36 @@ test('foreground request audio uses playback/speaker options without recording o
   assert.equal(DRIVER_REQUEST_AUDIO_MODE.allowsRecording, false);
   assert.equal(DRIVER_REQUEST_AUDIO_MODE.shouldPlayInBackground, false);
 });
+
+
+test('Accept still pauses immediately when a native loop setter throws', () => {
+  const runtime = createDriverRequestAudio();
+  const p = player();
+  const calls: string[] = [];
+  p.pause = () => { calls.push('pause'); };
+  Object.defineProperty(p, 'loop', {
+    configurable: true,
+    get: () => true,
+    set: () => { throw new Error('native loop setter failed'); },
+  });
+
+  assert.doesNotThrow(() => runtime.stop(p, { force: true }));
+  assert.deepEqual(calls, ['pause']);
+  assert.equal(p.muted, true);
+  assert.equal(p.volume, 0);
+});
+
+test('Accept force-stop pauses before attempting native audio property setters', () => {
+  const runtime = createDriverRequestAudio();
+  const p = player();
+  const calls: string[] = [];
+  p.pause = () => { calls.push('pause'); };
+  Object.defineProperty(p, 'loop', {
+    configurable: true,
+    get: () => true,
+    set: () => { calls.push('loop-set'); throw new Error('native loop setter failed'); },
+  });
+
+  runtime.stop(p, { force: true });
+  assert.deepEqual(calls, ['pause', 'loop-set']);
+});
