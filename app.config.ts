@@ -54,8 +54,8 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 113 follows the completed Build 112 artifact.
-    buildNumber: "113",
+    // Build 114 contains the Driver Sign in with Apple implementation.
+    buildNumber: "114",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
