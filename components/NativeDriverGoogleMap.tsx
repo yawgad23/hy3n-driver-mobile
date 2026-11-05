@@ -303,7 +303,7 @@ function DriverNavigationSurface({
     }
     const markerWork = vehicleMarkerWorkRef.current.then(async () => {
       if (lastVehicleMarkerAssetRef.current !== vehicleMarkerAsset) {
-        await mapViewController.removeMarker(DRIVER_VEHICLE_MARKER_ID).catch(() => undefined);
+        await Promise.resolve(mapViewController.removeMarker(DRIVER_VEHICLE_MARKER_ID)).catch(() => undefined);
         lastVehicleMarkerAssetRef.current = vehicleMarkerAsset;
       }
       await mapViewController.addMarker(marker);
