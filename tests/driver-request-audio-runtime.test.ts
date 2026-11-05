@@ -116,7 +116,7 @@ test('audio stop still pauses playback if a native audio property setter throws'
     seekTo: async () => {}, play: () => {}, loop: true };
   Object.defineProperty(player, 'muted', { set() { throw new Error('native muted setter failed'); } });
   Object.defineProperty(player, 'volume', { set() { throw new Error('native volume setter failed'); } });
-  audioModule.createDriverRequestAudio().stop(player, { force: true });
+  createDriverRequestAudio().stop(player, { force: true });
   assert.equal(paused, true, 'native property failures must not prevent pause');
 });
 
