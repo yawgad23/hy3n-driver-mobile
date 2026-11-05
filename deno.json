@@ -1,0 +1,15 @@
+{
+  "lint": {
+    "exclude": [
+      "app/",
+      "components/",
+      "hooks/",
+      "lib/",
+      "constants/",
+      "plugins/",
+      "scripts/",
+      "assets/",
+      "web/"
+    ]
+  }
+}
