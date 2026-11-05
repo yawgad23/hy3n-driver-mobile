@@ -54,8 +54,8 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 114 contains the Driver Sign in with Apple implementation.
-    buildNumber: "114",
+    // Build 115 contains the Driver Sign in with Apple implementation.
+    buildNumber: "115",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
@@ -73,8 +73,8 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    // 57014 packages the current Driver source for Android closed testing.
-    versionCode: 57014,
+    // 57015 packages the current Driver source for Android closed testing.
+    versionCode: 57015,
     googleServicesFile: "./firebase/google-services.json",
     permissions: ["POST_NOTIFICATIONS", "ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_LOCATION"],
     // Driver request alerts use the operating system notification sound. HY3N

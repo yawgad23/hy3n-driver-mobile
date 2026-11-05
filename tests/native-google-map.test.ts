@@ -23,11 +23,12 @@ test('Driver runs Google turn guidance inside HY3N without switching to Google n
   assert.doesNotMatch(screen, /launchGoogleMapsTurnByTurn/);
 });
 
-test('Driver retains a smooth HY3N car marker for online and accepted-trip maps', () => {
+test('Driver retains a smooth HY3N service marker for online and accepted-trip maps', () => {
   assert.match(component, /DRIVER_VEHICLE_MARKER_ID = 'hy3n-driver-vehicle'/);
   assert.match(component, /driverMapMotionFrames/);
   assert.match(component, /mapViewController\.addMarker/);
-  assert.match(component, /imgPath: DRIVER_VEHICLE_MARKER_ASSET/);
+  assert.match(component, /imgPath: driverVehicleMarkerAsset\(serviceType/);
+  assert.match(component, /driverVehicleMarkerAsset/);
   assert.match(component, /rotation: position\.heading/);
   assert.match(component, /flat: true/);
   assert.match(component, /<MapView/);
@@ -38,8 +39,11 @@ test('Driver retains a smooth HY3N car marker for online and accepted-trip maps'
   assert.match(component, /routePointsForMap/);
   assert.match(component, /mapViewController\.addPolyline/);
   assert.match(configPlugin, /hy3n_driver_car_marker\.png/);
-  assert.match(configPlugin, /IOS_DRIVER_CAR_MARKER = 'HY3NDriverCarMarker'/);
-  assert.match(configPlugin, /\$\{IOS_DRIVER_CAR_MARKER\}\.imageset/);
+  assert.match(configPlugin, /hy3n_driver_okada_marker\.png/);
+  assert.match(configPlugin, /hy3n_driver_delivery_marker\.png/);
+  assert.match(configPlugin, /HY3NDriverCarMarker/);
+  assert.match(configPlugin, /HY3NDriverOkadaMarker/);
+  assert.match(configPlugin, /HY3NDriverDeliveryMarker/);
   assert.match(configPlugin, /HY3N_DRIVER_DISABLE_DEFAULT_LOCATION_INDICATOR/);
   assert.match(configPlugin, /_mapView\.myLocationEnabled = NO/);
 });

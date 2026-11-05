@@ -12,9 +12,23 @@ const path = require('path');
 
 const PLUGIN_NAME = 'with-google-navigation';
 const DESUGARING_DEPENDENCY = "coreLibraryDesugaring('com.android.tools:desugar_jdk_libs_nio:2.0.4')";
-const DRIVER_CAR_MARKER_SOURCE = path.join('assets', 'images', 'driver-map-car-marker.png');
-const ANDROID_DRIVER_CAR_MARKER = 'hy3n_driver_car_marker.png';
-const IOS_DRIVER_CAR_MARKER = 'HY3NDriverCarMarker';
+const DRIVER_VEHICLE_MARKER_ASSETS = [
+  {
+    source: path.join('assets', 'images', 'driver-map-car-marker.png'),
+    android: 'hy3n_driver_car_marker.png',
+    ios: 'HY3NDriverCarMarker',
+  },
+  {
+    source: path.join('assets', 'images', 'driver-map-okada-marker.png'),
+    android: 'hy3n_driver_okada_marker.png',
+    ios: 'HY3NDriverOkadaMarker',
+  },
+  {
+    source: path.join('assets', 'images', 'driver-map-delivery-marker.png'),
+    android: 'hy3n_driver_delivery_marker.png',
+    ios: 'HY3NDriverDeliveryMarker',
+  },
+];
 const IOS_NAVIGATION_VIEW_CONTROLLER_SOURCE = path.join(
   'node_modules',
   '@googlemaps',
@@ -109,42 +123,45 @@ function addIosNavigationApiKey(config, iosApiKey) {
  * than Metro's runtime image URI. Copy the existing HY3N vehicle marker to
  * both native locations whenever Expo generates a fresh native project.
  */
-function addDriverCarMarkerAssets(config) {
+function addDriverVehicleMarkerAssets(config) {
   config = withDangerousMod(config, ['android', async (androidConfig) => {
-    const source = path.join(androidConfig.modRequest.projectRoot, DRIVER_CAR_MARKER_SOURCE);
-    const destination = path.join(
+    const destinationDirectory = path.join(
       androidConfig.modRequest.platformProjectRoot,
       'app',
       'src',
       'main',
       'assets',
-      ANDROID_DRIVER_CAR_MARKER,
     );
-    if (!fs.existsSync(source)) {
-      throw new Error(`HY3N Driver vehicle marker is missing: ${source}`);
+    fs.mkdirSync(destinationDirectory, { recursive: true });
+    for (const asset of DRIVER_VEHICLE_MARKER_ASSETS) {
+      const source = path.join(androidConfig.modRequest.projectRoot, asset.source);
+      if (!fs.existsSync(source)) {
+        throw new Error(`HY3N Driver vehicle marker is missing: ${source}`);
+      }
+      fs.copyFileSync(source, path.join(destinationDirectory, asset.android));
     }
-    fs.mkdirSync(path.dirname(destination), { recursive: true });
-    fs.copyFileSync(source, destination);
     return androidConfig;
   }]);
 
   return withDangerousMod(config, ['ios', async (iosConfig) => {
-    const source = path.join(iosConfig.modRequest.projectRoot, DRIVER_CAR_MARKER_SOURCE);
     const assetCatalog = path.join(
       iosConfig.modRequest.platformProjectRoot,
       iosConfig.modRequest.projectName,
       'Images.xcassets',
     );
-    const imageSet = path.join(assetCatalog, `${IOS_DRIVER_CAR_MARKER}.imageset`);
-    if (!fs.existsSync(source)) {
-      throw new Error(`HY3N Driver vehicle marker is missing: ${source}`);
+    for (const asset of DRIVER_VEHICLE_MARKER_ASSETS) {
+      const source = path.join(iosConfig.modRequest.projectRoot, asset.source);
+      const imageSet = path.join(assetCatalog, `${asset.ios}.imageset`);
+      if (!fs.existsSync(source)) {
+        throw new Error(`HY3N Driver vehicle marker is missing: ${source}`);
+      }
+      fs.mkdirSync(imageSet, { recursive: true });
+      fs.copyFileSync(source, path.join(imageSet, `${asset.ios}.png`));
+      fs.writeFileSync(path.join(imageSet, 'Contents.json'), JSON.stringify({
+        images: [{ filename: `${asset.ios}.png`, idiom: 'universal', scale: '1x' }],
+        info: { author: 'xcode', version: 1 },
+      }, null, 2));
     }
-    fs.mkdirSync(imageSet, { recursive: true });
-    fs.copyFileSync(source, path.join(imageSet, `${IOS_DRIVER_CAR_MARKER}.png`));
-    fs.writeFileSync(path.join(imageSet, 'Contents.json'), JSON.stringify({
-      images: [{ filename: `${IOS_DRIVER_CAR_MARKER}.png`, idiom: 'universal', scale: '1x' }],
-      info: { author: 'xcode', version: 1 },
-    }, null, 2));
     return iosConfig;
   }]);
 }
@@ -190,7 +207,7 @@ function disableIosDefaultLocationIndicator(config) {
 }
 
 function withGoogleNavigation(config, options = {}) {
-  config = addDriverCarMarkerAssets(config);
+  config = addDriverVehicleMarkerAssets(config);
   config = addAndroidNavigationApiKey(config, String(options.androidApiKey || '').trim());
   config = enableAndroidNavigationBuildSupport(config);
   config = addIosNavigationApiKey(config, String(options.iosApiKey || '').trim());

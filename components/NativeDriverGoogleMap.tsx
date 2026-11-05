@@ -36,6 +36,7 @@ import {
 } from '@/lib/driver-route-progress';
 import { createDriverNavigationDiagnostics, driverNavigationDiagnosticsEnabled, navigationErrorCode } from '@/lib/driver-navigation-diagnostics';
 import { validateDriverNavigationArrival } from '@/lib/driver-navigation-arrival';
+import { driverVehicleMarkerAsset } from '@/lib/driver-vehicle-marker';
 
 type MapTarget = { latitude: number; longitude: number; label: string };
 type Props = {
@@ -46,6 +47,7 @@ type Props = {
   heading?: number | null;
   target?: MapTarget | null;
   tripStatus?: 'pickup' | 'dropoff' | null;
+  serviceType?: 'car' | 'okada' | 'delivery' | string | null;
 };
 
 const GREEN = '#008C5A';
@@ -63,13 +65,6 @@ const CLEAN_GOOGLE_STYLE = JSON.stringify([
   { featureType: 'administrative.land_parcel', stylers: [{ visibility: 'off' }] },
   { featureType: 'road.local', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
 ]);
-// These names are installed by plugins/with-google-navigation.js. The Google
-// Navigation SDK requires native asset names here, not a Metro asset URI.
-const DRIVER_VEHICLE_MARKER_ASSET = Platform.select({
-  android: 'hy3n_driver_car_marker.png',
-  ios: 'HY3NDriverCarMarker',
-  default: 'hy3n_driver_car_marker.png',
-});
 // NavigationProvider builds the native routing engine from these options. Keep
 // the reference stable across GPS renders so an iPhone never rebuilds a route
 // session just because the Driver vehicle moved.
@@ -167,6 +162,7 @@ function DriverNavigationSurface({
   heading,
   target,
   tripStatus,
+  serviceType,
 }: Props) {
   const {
     navigationController,
@@ -267,7 +263,7 @@ function DriverNavigationSurface({
     void mapViewController.addMarker({
       id: DRIVER_VEHICLE_MARKER_ID,
       position: { lat: position.latitude, lng: position.longitude },
-      imgPath: DRIVER_VEHICLE_MARKER_ASSET,
+      imgPath: driverVehicleMarkerAsset(serviceType, Platform.OS === 'ios' ? 'ios' : 'android'),
       title: 'Your HY3N vehicle',
       rotation: position.heading,
       flat: true,
@@ -285,7 +281,7 @@ function DriverNavigationSurface({
       tilt: followTrip ? 42 : 0,
       zoom: followTrip ? 17 : 16,
     });
-  }, [mapViewController]);
+  }, [mapViewController, serviceType]);
 
   // Interpolate each real GPS observation into small native-map updates. The
   // car uses the device heading where available and only follows positions the
