@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DriverMapLifecycle, type DriverMapStatus } from '../lib/driver-map-lifecycle';
@@ -155,4 +157,10 @@ test('tile failures show a network warning but never remount or alter Driver onl
     assert.equal(h.statuses.at(-1), 'ready');
     h.map.dispose();
   } finally { clock.uninstall(); }
+});
+
+test('Driver home does not retain a stale fixed window-height snapshot', () => {
+  const home = readFileSync(path.join(process.cwd(), 'app/(tabs)/home.tsx'), 'utf8');
+  assert.doesNotMatch(home, /Dimensions\.get\(['\"]window['\"]\)/);
+  assert.doesNotMatch(home, /const \{ height \} = Dimensions/);
 });
