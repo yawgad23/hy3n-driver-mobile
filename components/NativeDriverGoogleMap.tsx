@@ -322,7 +322,8 @@ function DriverNavigationSurface({
             }
             // A newer frame may have arrived during removeMarker. Prefer it
             // before writing an already-outdated native marker position.
-            if (pendingVehicleMarkerRef.current?.controller === pending.controller) continue;
+            const newerPending = pendingVehicleMarkerRef.current as { controller: MapViewController; marker: any; asset: string } | null;
+            if (newerPending && newerPending.controller === pending.controller) continue;
             await pending.controller.addMarker(pending.marker);
           }
         } catch (error) {
