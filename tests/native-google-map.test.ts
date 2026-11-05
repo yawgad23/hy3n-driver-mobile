@@ -82,6 +82,9 @@ test('Driver active map re-routes for each pickup or drop-off and cleans up safe
   assert.match(component, /lastTargetKeyRef\.current === targetKey/);
   assert.match(component, /setOnReroutingRequestedByOffRoute/);
   assert.match(component, /Re-routing from your current road/);
+  assert.match(component, /Invalidate delayed redraws of the old road immediately/);
+  assert.match(component, /const clearOldRoute = routeOverlayWorkRef\.current\.then\(\(\) => clearRouteLines\(\)\)/);
+  assert.match(component, /clearRouteRefresh\(\);[\s\S]*?const clearOldRoute/);
   assert.match(component, /refreshBrandedRouteAfterNativeChange/);
   assert.match(component, /const clearRouteLines = useCallback\(async/);
   assert.match(component, /Promise\.allSettled\(\[/);
