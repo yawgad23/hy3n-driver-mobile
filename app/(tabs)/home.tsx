@@ -4,7 +4,7 @@ import { useDriverPreferences } from '@/hooks/use-driver-preferences';
 import { RIDE_CATEGORIES, FREE_WAITING_MINUTES, POPULAR_DESTINATIONS } from '@/constants/rides';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView,
-  Dimensions, Alert, ActivityIndicator, Animated, Image, Platform, PanResponder,
+  Alert, ActivityIndicator, Animated, Image, Platform, PanResponder,
   Modal, TextInput, StatusBar, AppState
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -93,8 +93,6 @@ function formatPassengerFare(value: unknown) {
   const whole = Math.floor(amount);
   return `GH₵${whole + (amount - whole > 0.5 ? 1 : 0)}`;
 }
-
-const { height } = Dimensions.get('window');
 
 // These service cues describe the category the Rider actually booked. They
 // do not change matching, fare, or eligibility; those remain server-owned.
