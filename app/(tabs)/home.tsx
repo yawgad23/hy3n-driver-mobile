@@ -1377,6 +1377,7 @@ export default function DriverHomeScreen() {
           heading={location?.coords.heading}
           target={activeNavigationTarget}
           tripStatus={activeTrip ? (activeTrip.status === 'in_progress' ? 'dropoff' : 'pickup') : null}
+          serviceType={driverProfile?.service_type ?? 'car'}
         />
       ) : (
         <View style={styles.offlineBg}>
