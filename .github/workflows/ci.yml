@@ -2,7 +2,7 @@ name: Driver app CI
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "audit/**"]
   pull_request:
     branches: ["main"]
 
@@ -10,9 +10,9 @@ permissions:
   contents: read
 
 jobs:
-  typecheck:
+  quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,3 +33,6 @@ jobs:
 
       - name: TypeScript check
         run: pnpm check
+
+      - name: Unit tests
+        run: pnpm test

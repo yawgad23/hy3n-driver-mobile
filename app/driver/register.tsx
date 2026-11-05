@@ -25,7 +25,7 @@ const ALL_CATEGORIES = [
   { id: 'kantanka',         label: 'Kantanka',           description: 'Mini SUVs (Kantanka Hyen, etc.)',        icon: 'directions-car' as const },
   { id: 'car_delivery',     label: 'Car Delivery',       description: 'Deliver parcels using your car',          icon: 'local-shipping' as const },
   { id: 'okada',            label: 'Okada',              description: 'Fast motorbike rides',                   icon: 'two-wheeler' as const },
-  { id: 'express_delivery', label: 'Express Delivery',   description: 'Package and parcel deliveries',          icon: 'inventory' as const },
+  { id: 'express_delivery', label: 'Delivery',   description: 'Package and parcel deliveries',          icon: 'inventory' as const },
 ];
 
 const CATEGORIES_BY_SERVICE: Record<string, string[]> = {
@@ -38,7 +38,7 @@ const SERVICE_TYPES = [
   {
     id: 'car',
     label: 'Car Driver',
-    description: 'Standard, Comfort, Kantanka or Executive rides',
+    description: 'Standard, Comfort, Kantanka or Car Delivery rides',
     icon: 'directions-car' as const,
     vehicleLabel: 'Car',
     vehiclePlaceholder: 'e.g. Toyota Camry 2022',
