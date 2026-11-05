@@ -3,6 +3,7 @@ import test from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
+import { createDriverRequestAudio } from '../lib/driver-request-audio';
 
 // Execute the actual Home callback, not a regex assertion that an API name exists.
 function actualHomeCallback(extra: Record<string, any> = {}) {
@@ -66,7 +67,6 @@ test('actual Home does not consume the looping request alert before the audio is
 
 
 const homeSource = fs.readFileSync(path.join(__dirname, '../app/(tabs)/home.tsx'), 'utf8');
-const audioModule = await import('../lib/driver-request-audio');
 
 function homeHandlerBody(name: 'handleAcceptRide' | 'handleDeclineRide') {
   const tree = ts.createSourceFile('home.tsx', homeSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -101,7 +101,7 @@ test('stopping while audio configuration is pending prevents a late ringtone sta
   let plays = 0;
   const player = { isLoaded: true, playing: false, muted: false, volume: 0, loop: true,
     pause: () => {}, seekTo: async () => {}, play: () => { plays++; } };
-  const runtime = audioModule.createDriverRequestAudio();
+  const runtime = createDriverRequestAudio();
   const pending = runtime.play('ride-accepting', player, () => new Promise<void>((resolve) => { releaseConfigure = resolve; }));
   await flush();
   runtime.stop(player, { force: true });
