@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 import {
   driverVehicleMarkerAsset,
@@ -21,4 +23,13 @@ test('selects platform-native marker assets for every service type', () => {
   assert.equal(driverVehicleMarkerAsset('car', 'ios'), 'HY3NDriverCarMarker');
   assert.equal(driverVehicleMarkerAsset('okada', 'ios'), 'HY3NDriverOkadaMarker');
   assert.equal(driverVehicleMarkerAsset('delivery', 'ios'), 'HY3NDriverDeliveryMarker');
+});
+
+test('keeps every Driver native marker at the compact 64px map footprint', () => {
+  for (const asset of ['driver-map-car-marker.png', 'driver-map-okada-marker.png', 'driver-map-delivery-marker.png']) {
+    const png = readFileSync(path.join(process.cwd(), 'assets/images', asset));
+    assert.equal(png.toString('ascii', 1, 4), 'PNG');
+    assert.equal(png.readUInt32BE(16), 64, `${asset} width`);
+    assert.equal(png.readUInt32BE(20), 64, `${asset} height`);
+  }
 });
