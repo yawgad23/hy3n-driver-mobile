@@ -13,8 +13,11 @@ const path = require('path');
 const PLUGIN_NAME = 'with-google-navigation';
 const DESUGARING_DEPENDENCY = "coreLibraryDesugaring('com.android.tools:desugar_jdk_libs_nio:2.0.4')";
 const DRIVER_CAR_MARKER_SOURCE = path.join('assets', 'images', 'driver-map-car-marker.png');
+const DRIVER_MOTORCYCLE_MARKER_SOURCE = path.join('assets', 'images', 'driver-map-motorcycle-marker.png');
 const ANDROID_DRIVER_CAR_MARKER = 'hy3n_driver_car_marker.png';
+const ANDROID_DRIVER_MOTORCYCLE_MARKER = 'hy3n_driver_motorcycle_marker.png';
 const IOS_DRIVER_CAR_MARKER = 'HY3NDriverCarMarker';
+const IOS_DRIVER_MOTORCYCLE_MARKER = 'HY3NDriverMotorcycleMarker';
 const IOS_NAVIGATION_VIEW_CONTROLLER_SOURCE = path.join(
   'node_modules',
   '@googlemaps',
@@ -125,6 +128,9 @@ function addDriverCarMarkerAssets(config) {
     }
     fs.mkdirSync(path.dirname(destination), { recursive: true });
     fs.copyFileSync(source, destination);
+    const motorcycleSource = path.join(androidConfig.modRequest.projectRoot, DRIVER_MOTORCYCLE_MARKER_SOURCE);
+    if (!fs.existsSync(motorcycleSource)) throw new Error('HY3N Driver motorcycle marker is missing: ' + motorcycleSource);
+    fs.copyFileSync(motorcycleSource, path.join(androidConfig.modRequest.platformProjectRoot, 'app', 'src', 'main', 'assets', ANDROID_DRIVER_MOTORCYCLE_MARKER));
     return androidConfig;
   }]);
 
@@ -143,6 +149,15 @@ function addDriverCarMarkerAssets(config) {
     fs.copyFileSync(source, path.join(imageSet, `${IOS_DRIVER_CAR_MARKER}.png`));
     fs.writeFileSync(path.join(imageSet, 'Contents.json'), JSON.stringify({
       images: [{ filename: `${IOS_DRIVER_CAR_MARKER}.png`, idiom: 'universal', scale: '1x' }],
+      info: { author: 'xcode', version: 1 },
+    }, null, 2));
+    const motorcycleSource = path.join(iosConfig.modRequest.projectRoot, DRIVER_MOTORCYCLE_MARKER_SOURCE);
+    if (!fs.existsSync(motorcycleSource)) throw new Error('HY3N Driver motorcycle marker is missing: ' + motorcycleSource);
+    const motorcycleImageSet = path.join(assetCatalog, `${IOS_DRIVER_MOTORCYCLE_MARKER}.imageset`);
+    fs.mkdirSync(motorcycleImageSet, { recursive: true });
+    fs.copyFileSync(motorcycleSource, path.join(motorcycleImageSet, `${IOS_DRIVER_MOTORCYCLE_MARKER}.png`));
+    fs.writeFileSync(path.join(motorcycleImageSet, 'Contents.json'), JSON.stringify({
+      images: [{ filename: `${IOS_DRIVER_MOTORCYCLE_MARKER}.png`, idiom: 'universal', scale: '1x' }],
       info: { author: 'xcode', version: 1 },
     }, null, 2));
     return iosConfig;
