@@ -71,7 +71,7 @@ const DRIVER_VEHICLE_MARKER_ASSETS = {
   car: Platform.select({ android: 'hy3n_driver_car_marker.png', ios: 'HY3NDriverCarMarker', default: 'hy3n_driver_car_marker.png' }),
   car_delivery: Platform.select({ android: 'hy3n_driver_car_marker.png', ios: 'HY3NDriverCarMarker', default: 'hy3n_driver_car_marker.png' }),
   okada: Platform.select({ android: 'hy3n_driver_motorcycle_marker.png', ios: 'HY3NDriverMotorcycleMarker', default: 'hy3n_driver_motorcycle_marker.png' }),
-  delivery: Platform.select({ android: 'hy3n_driver_motorcycle_marker.png', ios: 'HY3NDriverMotorcycleMarker', default: 'hy3n_driver_motorcycle_marker.png' }),
+  delivery: Platform.select({ android: 'hy3n_driver_delivery_marker.png', ios: 'HY3NDriverDeliveryMarker', default: 'hy3n_driver_delivery_marker.png' }),
 } as const;
 // NavigationProvider builds the native routing engine from these options. Keep
 // the reference stable across GPS renders so an iPhone never rebuilds a route
