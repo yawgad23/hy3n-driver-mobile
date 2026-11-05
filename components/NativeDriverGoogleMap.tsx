@@ -47,7 +47,7 @@ type Props = {
   heading?: number | null;
   target?: MapTarget | null;
   tripStatus?: 'pickup' | 'dropoff' | null;
-  serviceType?: 'car' | 'okada' | 'delivery' | null;
+  serviceType?: 'car' | 'car_delivery' | 'okada' | 'delivery' | null;
 };
 
 const GREEN = '#008C5A';
@@ -69,6 +69,7 @@ const CLEAN_GOOGLE_STYLE = JSON.stringify([
 // Navigation SDK requires native asset names here, not a Metro asset URI.
 const DRIVER_VEHICLE_MARKER_ASSETS = {
   car: Platform.select({ android: 'hy3n_driver_car_marker.png', ios: 'HY3NDriverCarMarker', default: 'hy3n_driver_car_marker.png' }),
+  car_delivery: Platform.select({ android: 'hy3n_driver_car_marker.png', ios: 'HY3NDriverCarMarker', default: 'hy3n_driver_car_marker.png' }),
   okada: Platform.select({ android: 'hy3n_driver_motorcycle_marker.png', ios: 'HY3NDriverMotorcycleMarker', default: 'hy3n_driver_motorcycle_marker.png' }),
   delivery: Platform.select({ android: 'hy3n_driver_motorcycle_marker.png', ios: 'HY3NDriverMotorcycleMarker', default: 'hy3n_driver_motorcycle_marker.png' }),
 } as const;
@@ -210,7 +211,7 @@ function DriverNavigationSurface({
   const wrongWayMonitorRef = useRef(EMPTY_DRIVER_WRONG_WAY_MONITOR);
   const forcedRerouteInFlightRef = useRef(false);
   const hasDeviceLocation = hasPoint(latitude, longitude);
-  const vehicleMarkerAsset = DRIVER_VEHICLE_MARKER_ASSETS[serviceType === 'okada' || serviceType === 'delivery' ? serviceType : 'car'];
+  const vehicleMarkerAsset = DRIVER_VEHICLE_MARKER_ASSETS[serviceType === 'okada' || serviceType === 'delivery' || serviceType === 'car_delivery' ? serviceType : 'car'];
   const targetLatitude = Number(target?.latitude);
   const targetLongitude = Number(target?.longitude);
   const targetLabel = target?.label?.trim() || (tripStatus === 'dropoff' ? 'Drop-off' : 'Pickup');
