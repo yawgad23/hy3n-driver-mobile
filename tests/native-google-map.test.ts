@@ -27,7 +27,10 @@ test('Driver map distinguishes Okada, Express Delivery, and Car Delivery markers
   assert.match(component, /okada: Platform\.select\(\{ android: 'hy3n_driver_motorcycle_marker\.png'/);
   assert.match(component, /delivery: Platform\.select\(\{ android: 'hy3n_driver_delivery_marker\.png'/);
   assert.match(component, /car_delivery: Platform\.select\(\{ android: 'hy3n_driver_car_marker\.png'/);
-  assert.match(component, /serviceType=\{driverProfile\?\.service_type \?\? 'car'\}/);
+  assert.match(component, /normalizeDriverMapServiceType/);
+  assert.match(component, /removeMarker\(DRIVER_VEHICLE_MARKER_ID\)/);
+  assert.match(screen, /driverProfile as any/);
+  assert.match(screen, /accepted_categories/);
   assert.match(configPlugin, /DRIVER_MOTORCYCLE_MARKER_SOURCE/);
   assert.match(configPlugin, /DRIVER_DELIVERY_MARKER_SOURCE/);
   assert.match(configPlugin, /ANDROID_DRIVER_DELIVERY_MARKER/);
