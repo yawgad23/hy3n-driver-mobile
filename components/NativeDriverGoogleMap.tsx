@@ -226,7 +226,9 @@ function DriverNavigationSurface({
   const vehicleMarkerAsset = DRIVER_VEHICLE_MARKER_ASSETS[normalizedServiceType];
   const lastVehicleMarkerAssetRef = useRef<string | null>(null);
   const vehicleMarkerControllerRef = useRef<MapViewController | null>(null);
-  const vehicleMarkerWorkRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingVehicleMarkerRef = useRef<{ controller: MapViewController; marker: any; asset: string } | null>(null);
+  const vehicleMarkerWorkerRunningRef = useRef(false);
+  const lastVehicleCameraUpdateAtRef = useRef(0);
   const targetLatitude = Number(target?.latitude);
   const targetLongitude = Number(target?.longitude);
   const targetLabel = target?.label?.trim() || (tripStatus === 'dropoff' ? 'Drop-off' : 'Pickup');
@@ -301,25 +303,58 @@ function DriverNavigationSurface({
       vehicleMarkerControllerRef.current = mapViewController;
       lastVehicleMarkerAssetRef.current = null;
     }
-    const markerWork = vehicleMarkerWorkRef.current.then(async () => {
-      if (lastVehicleMarkerAssetRef.current !== vehicleMarkerAsset) {
-        await Promise.resolve(mapViewController.removeMarker(DRIVER_VEHICLE_MARKER_ID)).catch(() => undefined);
-        lastVehicleMarkerAssetRef.current = vehicleMarkerAsset;
-      }
-      await mapViewController.addMarker(marker);
-    });
-    vehicleMarkerWorkRef.current = markerWork.catch((error) => {
-      console.warn('[HY3N] Could not update the live vehicle marker.', error);
-    });
-    // The native SDK animates this camera update; keeping its target aligned
-    // with each interpolated vehicle point makes the car follow the road rather
-    // than jump to a stale screen position.
-    mapViewController.moveCamera({
-      target: { lat: position.latitude, lng: position.longitude },
-      bearing: followTrip ? position.heading : 0,
-      tilt: followTrip ? 42 : 0,
-      zoom: followTrip ? 17 : 16,
-    });
+    // The native bridge can take longer than one animation frame. Keep only
+    // the newest marker position instead of chaining every obsolete GPS frame
+    // into a Promise queue. One native marker write runs at a time.
+    pendingVehicleMarkerRef.current = { controller: mapViewController, marker, asset: vehicleMarkerAsset };
+    if (!vehicleMarkerWorkerRunningRef.current) {
+      vehicleMarkerWorkerRunningRef.current = true;
+      void (async () => {
+        try {
+          while (pendingVehicleMarkerRef.current) {
+            const pending = pendingVehicleMarkerRef.current;
+            pendingVehicleMarkerRef.current = null;
+            if (vehicleMarkerControllerRef.current !== pending.controller) continue;
+            if (lastVehicleMarkerAssetRef.current !== pending.asset) {
+              await Promise.resolve(pending.controller.removeMarker(DRIVER_VEHICLE_MARKER_ID)).catch(() => undefined);
+              if (vehicleMarkerControllerRef.current !== pending.controller) continue;
+              lastVehicleMarkerAssetRef.current = pending.asset;
+            }
+            // A newer frame may have arrived during removeMarker. Prefer it
+            // before writing an already-outdated native marker position.
+            if (pendingVehicleMarkerRef.current?.controller === pending.controller) continue;
+            await pending.controller.addMarker(pending.marker);
+          }
+        } catch (error) {
+          console.warn('[HY3N] Could not update the live vehicle marker.', error);
+        } finally {
+          vehicleMarkerWorkerRunningRef.current = false;
+          // Close the race where a frame arrives as the worker is finishing.
+          if (pendingVehicleMarkerRef.current) {
+            const latest = pendingVehicleMarkerRef.current;
+            pendingVehicleMarkerRef.current = null;
+            applyVehiclePosition(
+              { latitude: latest.marker.position.lat, longitude: latest.marker.position.lng, heading: latest.marker.rotation },
+              followTrip,
+            );
+          }
+        }
+      })();
+    }
+
+    // Camera movement is deliberately rate-limited separately from marker
+    // interpolation. Sending a camera command for every 110ms marker frame
+    // floods the native Navigation SDK bridge and can make the viewport stutter.
+    const now = Date.now();
+    if (now - lastVehicleCameraUpdateAtRef.current >= 180 || !lastVehicleCameraUpdateAtRef.current) {
+      lastVehicleCameraUpdateAtRef.current = now;
+      mapViewController.moveCamera({
+        target: { lat: position.latitude, lng: position.longitude },
+        bearing: followTrip ? position.heading : 0,
+        tilt: followTrip ? 42 : 0,
+        zoom: followTrip ? 17 : 16,
+      });
+    }
   }, [mapViewController, vehicleMarkerAsset]);
 
   // Interpolate each real GPS observation into small native-map updates. The
