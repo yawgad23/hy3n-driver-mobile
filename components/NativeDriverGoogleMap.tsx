@@ -73,6 +73,17 @@ const DRIVER_VEHICLE_MARKER_ASSETS = {
   okada: Platform.select({ android: 'hy3n_driver_motorcycle_marker.png', ios: 'HY3NDriverMotorcycleMarker', default: 'hy3n_driver_motorcycle_marker.png' }),
   delivery: Platform.select({ android: 'hy3n_driver_delivery_marker.png', ios: 'HY3NDriverDeliveryMarker', default: 'hy3n_driver_delivery_marker.png' }),
 } as const;
+
+// Older Driver records can use camelCase fields or legacy motorcycle labels.
+// Normalize them before choosing a native asset so an Okada account never
+// silently falls back to the car marker just because its stored value differs.
+function normalizeDriverMapServiceType(value: unknown): keyof typeof DRIVER_VEHICLE_MARKER_ASSETS {
+  const normalized = String(value ?? '').trim().toLowerCase().replace(/[\\s-]+/g, '_');
+  if (['okada', 'motorcycle', 'motorbike', 'bike', 'two_wheeler'].includes(normalized)) return 'okada';
+  if (['delivery', 'express_delivery', 'expressdelivery'].includes(normalized)) return 'delivery';
+  if (normalized === 'car_delivery') return 'car_delivery';
+  return 'car';
+}
 // NavigationProvider builds the native routing engine from these options. Keep
 // the reference stable across GPS renders so an iPhone never rebuilds a route
 // session just because the Driver vehicle moved.
@@ -211,7 +222,11 @@ function DriverNavigationSurface({
   const wrongWayMonitorRef = useRef(EMPTY_DRIVER_WRONG_WAY_MONITOR);
   const forcedRerouteInFlightRef = useRef(false);
   const hasDeviceLocation = hasPoint(latitude, longitude);
-  const vehicleMarkerAsset = DRIVER_VEHICLE_MARKER_ASSETS[serviceType === 'okada' || serviceType === 'delivery' || serviceType === 'car_delivery' ? serviceType : 'car'];
+  const normalizedServiceType = normalizeDriverMapServiceType(serviceType);
+  const vehicleMarkerAsset = DRIVER_VEHICLE_MARKER_ASSETS[normalizedServiceType];
+  const lastVehicleMarkerAssetRef = useRef<string | null>(null);
+  const vehicleMarkerControllerRef = useRef<MapViewController | null>(null);
+  const vehicleMarkerWorkRef = useRef<Promise<void>>(Promise.resolve());
   const targetLatitude = Number(target?.latitude);
   const targetLongitude = Number(target?.longitude);
   const targetLabel = target?.label?.trim() || (tripStatus === 'dropoff' ? 'Drop-off' : 'Pickup');
@@ -269,17 +284,32 @@ function DriverNavigationSurface({
 
   const applyVehiclePosition = useCallback((position: DriverMapPosition, followTrip: boolean) => {
     if (!mapViewController) return;
-    void mapViewController.addMarker({
+    const marker = {
       id: DRIVER_VEHICLE_MARKER_ID,
       position: { lat: position.latitude, lng: position.longitude },
       imgPath: vehicleMarkerAsset,
-      title: 'Your HY3N vehicle',
+      title: normalizedServiceType === 'okada' ? 'Your HY3N motorcycle' : normalizedServiceType === 'delivery' ? 'Your HY3N delivery motorcycle' : 'Your HY3N vehicle',
       rotation: position.heading,
       flat: true,
       anchor: { u: 0.5, v: 0.5 },
       visible: true,
-    }).catch(() => {
-      // A route remains usable even if a device cannot load the optional art.
+    };
+    // The Navigation SDK does not reliably replace the image of an existing
+    // marker when addMarker is called again with the same ID. Remove it once
+    // when the service asset changes, then recreate it with the correct image.
+    if (vehicleMarkerControllerRef.current !== mapViewController) {
+      vehicleMarkerControllerRef.current = mapViewController;
+      lastVehicleMarkerAssetRef.current = null;
+    }
+    const markerWork = vehicleMarkerWorkRef.current.then(async () => {
+      if (lastVehicleMarkerAssetRef.current !== vehicleMarkerAsset) {
+        await mapViewController.removeMarker(DRIVER_VEHICLE_MARKER_ID).catch(() => undefined);
+        lastVehicleMarkerAssetRef.current = vehicleMarkerAsset;
+      }
+      await mapViewController.addMarker(marker);
+    });
+    vehicleMarkerWorkRef.current = markerWork.catch((error) => {
+      console.warn('[HY3N] Could not update the live vehicle marker.', error);
     });
     // The native SDK animates this camera update; keeping its target aligned
     // with each interpolated vehicle point makes the car follow the road rather
