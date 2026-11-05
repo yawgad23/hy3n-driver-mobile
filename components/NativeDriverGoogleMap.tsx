@@ -78,7 +78,7 @@ const DRIVER_VEHICLE_MARKER_ASSETS = {
 // Normalize them before choosing a native asset so an Okada account never
 // silently falls back to the car marker just because its stored value differs.
 function normalizeDriverMapServiceType(value: unknown): keyof typeof DRIVER_VEHICLE_MARKER_ASSETS {
-  const normalized = String(value ?? '').trim().toLowerCase().replace(/[\\s-]+/g, '_');
+  const normalized = String(value ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
   if (['okada', 'motorcycle', 'motorbike', 'bike', 'two_wheeler'].includes(normalized)) return 'okada';
   if (['delivery', 'express_delivery', 'expressdelivery'].includes(normalized)) return 'delivery';
   if (normalized === 'car_delivery') return 'car_delivery';
