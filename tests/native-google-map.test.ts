@@ -23,11 +23,22 @@ test('Driver runs Google turn guidance inside HY3N without switching to Google n
   assert.doesNotMatch(screen, /launchGoogleMapsTurnByTurn/);
 });
 
+test('Driver map distinguishes Okada, Express Delivery, and Car Delivery markers', () => {
+  assert.match(component, /okada: Platform\.select\(\{ android: 'hy3n_driver_motorcycle_marker\.png'/);
+  assert.match(component, /delivery: Platform\.select\(\{ android: 'hy3n_driver_delivery_marker\.png'/);
+  assert.match(component, /car_delivery: Platform\.select\(\{ android: 'hy3n_driver_car_marker\.png'/);
+  assert.match(component, /serviceType=\{driverProfile\?\.service_type \?\? 'car'\}/);
+  assert.match(configPlugin, /DRIVER_MOTORCYCLE_MARKER_SOURCE/);
+  assert.match(configPlugin, /DRIVER_DELIVERY_MARKER_SOURCE/);
+  assert.match(configPlugin, /ANDROID_DRIVER_DELIVERY_MARKER/);
+  assert.match(configPlugin, /IOS_DRIVER_DELIVERY_MARKER/);
+});
+
 test('Driver retains a smooth HY3N car marker for online and accepted-trip maps', () => {
   assert.match(component, /DRIVER_VEHICLE_MARKER_ID = 'hy3n-driver-vehicle'/);
   assert.match(component, /driverMapMotionFrames/);
   assert.match(component, /mapViewController\.addMarker/);
-  assert.match(component, /imgPath: DRIVER_VEHICLE_MARKER_ASSET/);
+  assert.match(component, /imgPath: vehicleMarkerAsset/);
   assert.match(component, /rotation: position\.heading/);
   assert.match(component, /flat: true/);
   assert.match(component, /<MapView/);
