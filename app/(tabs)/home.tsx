@@ -1375,7 +1375,7 @@ export default function DriverHomeScreen() {
           heading={location?.coords.heading}
           target={activeNavigationTarget}
           tripStatus={activeTrip ? (activeTrip.status === 'in_progress' ? 'dropoff' : 'pickup') : null}
-          serviceType={driverProfile?.service_type ?? 'car'}
+          serviceType={(driverProfile as any)?.service_type ?? (driverProfile as any)?.serviceType ?? ((driverProfile as any)?.accepted_categories?.includes?.('okada') ? 'okada' : (driverProfile as any)?.accepted_categories?.includes?.('express_delivery') ? 'delivery' : 'car')}
         />
       ) : (
         <View style={styles.offlineBg}>
