@@ -67,6 +67,8 @@ import { activeTripDetails } from '@/lib/driver-active-trip-details';
 import { activeTripNavigationTarget, tripNavigationDestination } from '@/lib/driver-turn-navigation';
 import {
   driverGoogleMapsAppUri,
+  driverWazeAppUri,
+  driverWazeWebFallbackUri,
   driverMapAppNavigationUri,
   driverMapAppWebFallbackUri,
   driverOtherAndroidMapsUri,
@@ -339,7 +341,7 @@ export default function DriverHomeScreen() {
     }
     setShowNavigationChooser(true);
   };
-  const openSelectedTripNavigation = (choice: 'apple' | 'google' | 'other') => {
+  const openSelectedTripNavigation = (choice: 'apple' | 'google' | 'waze' | 'other') => {
     if (!activeTrip) return;
     const phase = activeTrip.status === 'in_progress' ? 'dropoff' : 'pickup';
     const destination = tripNavigationDestination(activeTrip, phase);
@@ -349,8 +351,12 @@ export default function DriverHomeScreen() {
       ? driverMapAppNavigationUri(destination, 'ios')
       : choice === 'google'
         ? driverGoogleMapsAppUri(destination, platform)
-        : driverOtherAndroidMapsUri(destination);
-    const webFallbackUri = driverMapAppWebFallbackUri(destination);
+        : choice === 'waze'
+          ? driverWazeAppUri(destination)
+          : driverOtherAndroidMapsUri(destination);
+    const webFallbackUri = choice === 'waze'
+      ? driverWazeWebFallbackUri(destination)
+      : driverMapAppWebFallbackUri(destination);
     if (!mapAppUri) return;
     setShowNavigationChooser(false);
 
@@ -358,12 +364,12 @@ export default function DriverHomeScreen() {
     // falls back to the official web directions page; "Other map app" never
     // redirects to Google Maps behind the Driver's back.
     void Linking.openURL(mapAppUri).catch(() => {
-      if (choice !== 'google' || !webFallbackUri) {
+      if ((choice !== 'google' && choice !== 'waze') || !webFallbackUri) {
         Alert.alert('Unable to open navigation', 'The selected maps app is not available on this phone.');
         return;
       }
       return Linking.openURL(webFallbackUri).catch(() => {
-        Alert.alert('Unable to open navigation', 'Google Maps could not be opened on this phone.');
+        Alert.alert('Unable to open navigation', choice === 'waze' ? 'Waze could not be opened on this phone.' : 'Google Maps could not be opened on this phone.');
       });
     });
   };
@@ -1577,7 +1583,7 @@ export default function DriverHomeScreen() {
                 onPress={openTripNavigation}
                 accessibilityRole="button"
                 accessibilityLabel="Choose navigation app"
-                accessibilityHint="Choose Apple Maps, Google Maps, or another map app for this trip"
+                accessibilityHint="Choose Apple Maps, Google Maps, Waze, or another map app for this trip"
               >
                 <MaterialIcons name="navigation" size={22} color="#FFF" />
               </TouchableOpacity>
@@ -1802,7 +1808,7 @@ export default function DriverHomeScreen() {
           <View style={[styles.navigationChooser, dynamicStyles.card]}>
             <Text style={[styles.navigationChooserTitle, dynamicStyles.text]}>Choose navigation app</Text>
             <Text style={[styles.navigationChooserText, dynamicStyles.muted]}>
-              Open directions for this {activeTrip?.status === 'in_progress' ? 'drop-off' : 'pickup'}.
+              Open directions for this {activeTrip?.status === 'in_progress' ? 'drop-off' : 'pickup'}. HY3N will keep tracking the trip on its map.
             </Text>
             {Platform.OS === 'ios' && (
               <TouchableOpacity style={[styles.navigationChoice, { backgroundColor: '#111827' }]} onPress={() => openSelectedTripNavigation('apple')}>
@@ -1813,6 +1819,10 @@ export default function DriverHomeScreen() {
             <TouchableOpacity style={[styles.navigationChoice, { backgroundColor: '#075985' }]} onPress={() => openSelectedTripNavigation('google')}>
               <MaterialIcons name="navigation" size={21} color="#FFF" />
               <Text style={styles.navigationChoiceText}>Google Maps</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.navigationChoice, { backgroundColor: '#16A34A' }]} onPress={() => openSelectedTripNavigation('waze')}>
+              <MaterialIcons name="near-me" size={21} color="#FFF" />
+              <Text style={styles.navigationChoiceText}>Waze</Text>
             </TouchableOpacity>
             {Platform.OS === 'android' && (
               <TouchableOpacity style={[styles.navigationChoice, { backgroundColor: '#475569' }]} onPress={() => openSelectedTripNavigation('other')}>
