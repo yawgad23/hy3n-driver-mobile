@@ -51,7 +51,7 @@ test('derives the car heading from movement when the device reports no compass h
     { latitude: 5.6037, longitude: -0.187, heading: 0 },
     { latitude: 5.6037, longitude: -0.1866, heading: Number.NaN },
   );
-  assert.equal(frames.length, 12);
+  assert.equal(frames.length, 27);
   assert.ok(Math.abs((frames.at(-1)?.heading || 0) - 90) < 10);
 });
 
