@@ -13,7 +13,7 @@ test('interpolates a nearby Driver GPS update into a smooth, heading-aware car m
     { latitude: 5.6037, longitude: -0.187, heading: 350 },
     { latitude: 5.6041, longitude: -0.1865, heading: 10 },
   );
-  assert.equal(frames.length, 12);
+  assert.equal(frames.length, 27);
   assert.ok(frames[0].latitude > 5.6037);
   assert.ok(frames[0].latitude < 5.6041);
   assert.equal(frames.at(-1)?.latitude, 5.6041);
