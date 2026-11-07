@@ -13,7 +13,7 @@ test('interpolates a nearby Driver GPS update into a smooth, heading-aware car m
     { latitude: 5.6037, longitude: -0.187, heading: 350 },
     { latitude: 5.6041, longitude: -0.1865, heading: 10 },
   );
-  assert.equal(frames.length, 12);
+  assert.equal(frames.length, 27);
   assert.ok(frames[0].latitude > 5.6037);
   assert.ok(frames[0].latitude < 5.6041);
   assert.equal(frames.at(-1)?.latitude, 5.6041);
@@ -25,8 +25,8 @@ test('interpolates a nearby Driver GPS update into a smooth, heading-aware car m
 
 test('matches marker animation duration to the observed GPS cadence like the Rider map', () => {
   assert.equal(driverMapMotionDurationMs(null, 1_000), 1_800);
-  assert.equal(driverMapMotionDurationMs(1_000, 3_000), 1_760);
-  assert.equal(driverMapMotionDurationMs(1_000, 1_500), 440);
+  assert.equal(driverMapMotionDurationMs(1_000, 3_000), 1_940);
+  assert.equal(driverMapMotionDurationMs(1_000, 1_500), 485);
   assert.equal(driverMapMotionDurationMs(2_000, 2_000), 1_800);
   assert.equal(driverMapMotionDurationMs(1_000, 30_000), 9_000);
 });
@@ -34,8 +34,8 @@ test('matches marker animation duration to the observed GPS cadence like the Rid
 test('uses a cadence-matched number of interpolation frames', () => {
   const previous = { latitude: 5.6037, longitude: -0.187, heading: 90 };
   const incoming = { latitude: 5.6041, longitude: -0.1865, heading: 90 };
-  assert.equal(driverMapMotionFrames(previous, incoming, 880).length, 8);
-  assert.equal(driverMapMotionFrames(previous, incoming, 1_800).length, 17);
+  assert.equal(driverMapMotionFrames(previous, incoming, 880).length, 18);
+  assert.equal(driverMapMotionFrames(previous, incoming, 1_800).length, 36);
 });
 
 test('does not animate a stale cross-city GPS jump', () => {
@@ -51,7 +51,7 @@ test('derives the car heading from movement when the device reports no compass h
     { latitude: 5.6037, longitude: -0.187, heading: 0 },
     { latitude: 5.6037, longitude: -0.1866, heading: Number.NaN },
   );
-  assert.equal(frames.length, 12);
+  assert.equal(frames.length, 27);
   assert.ok(Math.abs((frames.at(-1)?.heading || 0) - 90) < 10);
 });
 
