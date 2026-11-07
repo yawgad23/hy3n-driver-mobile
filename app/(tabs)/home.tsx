@@ -1583,7 +1583,7 @@ export default function DriverHomeScreen() {
                 onPress={openTripNavigation}
                 accessibilityRole="button"
                 accessibilityLabel="Choose navigation app"
-                accessibilityHint="Choose Apple Maps, Google Maps, Waze, or another map app for this trip"
+                accessibilityHint={Platform.OS === 'ios' ? 'Choose Apple Maps, Google Maps, or Waze for this trip' : 'Choose Google Maps, Waze, or another installed map app for this trip'}
               >
                 <MaterialIcons name="navigation" size={22} color="#FFF" />
               </TouchableOpacity>
