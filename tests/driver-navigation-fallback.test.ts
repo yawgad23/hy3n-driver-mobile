@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   driverGoogleMapsAppUri,
+  driverWazeAppUri,
+  driverWazeWebFallbackUri,
   driverMapAppNavigationLabel,
   driverMapAppNavigationUri,
   driverMapAppWebFallbackUri,
@@ -51,3 +53,14 @@ test('Driver navigation fallback refuses an invalid destination', () => {
   assert.equal(driverOtherAndroidMapsUri({ latitude: 0, longitude: 181 }), null);
   assert.equal(driverMapAppWebFallbackUri({ latitude: 0, longitude: 181 }), null);
 });
+
+test('Driver can open Waze navigation on both iOS and Android with the active trip destination', () => {
+  expectWazeUris();
+});
+
+function expectWazeUris() {
+  assert.equal(driverWazeAppUri(destination), 'waze://?ll=5.6037%2C-0.187&navigate=yes');
+  assert.equal(driverWazeWebFallbackUri(destination), 'https://waze.com/ul?ll=5.6037%2C-0.187&navigate=yes');
+  assert.equal(driverWazeAppUri({ latitude: 91, longitude: 0 }), null);
+  assert.equal(driverWazeWebFallbackUri({ latitude: 0, longitude: 181 }), null);
+}

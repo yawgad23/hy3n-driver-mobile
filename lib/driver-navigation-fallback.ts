@@ -6,26 +6,21 @@ import {
 } from '@/lib/driver-turn-navigation';
 
 export type DriverNavigationPlatform = 'android' | 'ios';
+export type DriverNavigationChoice = 'apple' | 'google' | 'waze' | 'other';
 
 function encodedDestination(destination: TurnByTurnDestination) {
   return encodeURIComponent(`${destination.latitude},${destination.longitude}`);
 }
 
-/**
- * Use the server-derived ride coordinates rather than a user-editable address
- * when embedded Google Navigation is unavailable. Android opens the installed
- * Google Maps navigation app; iOS opens Apple Maps with driving directions.
- */
+/** Native default map: Apple Maps on iOS and Google Maps on Android. */
 export function driverMapAppNavigationUri(
   destination: TurnByTurnDestination,
   platform: DriverNavigationPlatform,
 ) {
   if (!isTurnByTurnDestination(destination)) return null;
-
   if (platform === 'ios') {
     return `https://maps.apple.com/?daddr=${encodedDestination(destination)}&dirflg=d`;
   }
-
   return googleMapsTurnByTurnUri(destination);
 }
 
@@ -42,6 +37,20 @@ export function driverGoogleMapsAppUri(
   return googleMapsTurnByTurnUri(destination);
 }
 
+/** Waze deep link on both platforms, using the server-verified trip coordinate. */
+export function driverWazeAppUri(destination: TurnByTurnDestination) {
+  if (!isTurnByTurnDestination(destination)) return null;
+  const coordinate = `${destination.latitude},${destination.longitude}`;
+  return `waze://?ll=${encodeURIComponent(coordinate)}&navigate=yes`;
+}
+
+/** Official Waze universal link opens Waze or its web/app handoff if installed. */
+export function driverWazeWebFallbackUri(destination: TurnByTurnDestination) {
+  if (!isTurnByTurnDestination(destination)) return null;
+  const coordinate = `${destination.latitude},${destination.longitude}`;
+  return `https://waze.com/ul?ll=${encodeURIComponent(coordinate)}&navigate=yes`;
+}
+
 /** Android's generic geo intent lets another installed maps app handle the route. */
 export function driverOtherAndroidMapsUri(destination: TurnByTurnDestination) {
   if (!isTurnByTurnDestination(destination)) return null;
@@ -49,7 +58,6 @@ export function driverOtherAndroidMapsUri(destination: TurnByTurnDestination) {
   return `geo:0,0?q=${encodeURIComponent(coordinate)}&mode=d`;
 }
 
-/** A universal Google Maps URL is available if Android has no Maps app. */
 export function driverMapAppWebFallbackUri(destination: TurnByTurnDestination) {
   return googleMapsNavigationFallbackUrl(destination);
 }
