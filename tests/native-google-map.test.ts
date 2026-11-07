@@ -126,7 +126,7 @@ test('Driver presents a map-app choice when Navigate is tapped during a trip', (
   assert.match(screen, /Google Maps/);
   assert.match(screen, /Other map app/);
   assert.match(screen, /style=\{\[styles\.navigateTripIconBtn, \{ backgroundColor: '#075985' \}\]\}/);
-  assert.match(screen, /accessibilityHint="Choose Apple Maps, Google Maps, Waze, or another map app for this trip"/);
+  assert.match(screen, /accessibilityHint=\{Platform\.OS === 'ios' \? 'Choose Apple Maps, Google Maps, or Waze for this trip' : 'Choose Google Maps, Waze, or another installed map app for this trip'\}/);
   assert.match(screen, /<MaterialIcons name="navigation" size=\{22\} color="#FFF" \/>/);
   assert.doesNotMatch(screen, /<Text style=\{styles\.actionBtnText\}>Navigate<\/Text>/);
   assert.match(screen, /navigateTripIconBtn: \{ alignItems: 'center', borderRadius: 12, height: 48, justifyContent: 'center', width: 48 \}/);
