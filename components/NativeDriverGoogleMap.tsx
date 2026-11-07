@@ -639,6 +639,12 @@ function DriverNavigationSurface({
     const request = navigationRequestRef.current;
     const stillCurrent = () => navigationRequestRef.current === request && lastTargetKeyRef.current === targetKey;
     forcedRerouteInFlightRef.current = true;
+    // Invalidate delayed redraws of the old road immediately. Queue removal
+    // ahead of all future branded-route writes so a late callback cannot put
+    // the obsolete green line back on the map while Google recalculates.
+    clearRouteRefresh();
+    const clearOldRoute = routeOverlayWorkRef.current.then(() => clearRouteLines());
+    routeOverlayWorkRef.current = clearOldRoute.catch(() => {});
     confirmedRerouteRef.current = null;
     staleRoutePlanRef.current = routePointsRef.current.slice();
     setNavigationMessage('Re-routing from your current road…');
@@ -688,12 +694,15 @@ function DriverNavigationSurface({
       }
     });
   }, [
+    clearRouteLines,
+    clearRouteRefresh,
     diagnostics,
     currentNavigationLocation,
     hasTarget,
     navigationController,
     refreshBrandedRouteAfterNativeChange,
     runNavigationWork,
+    routeOverlayWorkRef,
     targetKey,
     targetLabel,
     targetLatitude,
