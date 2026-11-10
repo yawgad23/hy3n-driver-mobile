@@ -54,10 +54,10 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
     return React.createElement('map');
   };
   const sdk = {
-    useNavigation, MapView, NavigationProvider: ({ children }: any) => children,
+    useNavigation, MapView, NavigationView: MapView, NavigationProvider: ({ children }: any) => children,
     AudioGuidance: { VOICE_ALERTS_AND_GUIDANCE: 1, BLUETOOTH_AUDIO: 2 },
     MapColorScheme: { FOLLOW_SYSTEM: 0 }, NavigationSessionStatus: { OK: 0 },
-    RouteStatus: { OK: 0 }, TaskRemovedBehavior: { CONTINUE_SERVICE: 0 },
+    RouteStatus: { OK: 0 }, NavigationUIEnabledPreference: { AUTOMATIC: 0 }, TaskRemovedBehavior: { CONTINUE_SERVICE: 0 },
     TravelMode: { DRIVING: 0 },
   };
   const native = {

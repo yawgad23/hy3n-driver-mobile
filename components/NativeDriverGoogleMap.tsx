@@ -4,7 +4,8 @@ import { useKeepAwake } from 'expo-keep-awake';
 import {
   AudioGuidance,
   MapColorScheme,
-  MapView,
+  NavigationView,
+  NavigationUIEnabledPreference,
   NavigationProvider,
   NavigationSessionStatus,
   RouteStatus,
@@ -168,10 +169,9 @@ function DriverActiveNavigationKeepAwake() {
 }
 
 /**
- * A branded map stays visible for the complete Driver journey. Google
- * Navigation runs as the route and voice engine, while HY3N owns the visual
- * vehicle marker, map camera, and route line. This deliberately avoids the
- * NavigationView blue current-location arrow after a ride is accepted.
+ * Google NavigationView stays visible for the active Driver journey so the
+ * SDK owns turn cards, route guidance, recentering, and voice. HY3N retains
+ * its map styling and branded overlays around that native navigation surface.
  */
 function DriverNavigationSurface({
   latitude,
@@ -1025,7 +1025,7 @@ function DriverNavigationSurface({
     <View style={styles.container}>
       {hasTarget ? <DriverActiveNavigationKeepAwake /> : null}
       {hasDeviceLocation ? (
-        <MapView
+        <NavigationView
           style={StyleSheet.absoluteFill}
           initialCameraPosition={{
             target: { lat: Number(latitude), lng: Number(longitude) },
@@ -1038,6 +1038,12 @@ function DriverNavigationSurface({
           // disabled while the Navigation SDK remains the voice/route engine.
           mapColorScheme={MapColorScheme.FOLLOW_SYSTEM}
           mapStyle={CLEAN_GOOGLE_STYLE}
+          navigationUIEnabledPreference={NavigationUIEnabledPreference.AUTOMATIC}
+          headerEnabled
+          footerEnabled
+          recenterButtonEnabled
+          speedometerEnabled
+          reportIncidentButtonEnabled={false}
           trafficEnabled
           myLocationEnabled={false}
           myLocationButtonEnabled={false}

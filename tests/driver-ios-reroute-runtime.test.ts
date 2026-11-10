@@ -58,9 +58,11 @@ async function mountIos(options: { initialNetworkFailure?: boolean; platform?: '
   }), []);
   const sdk = { useNavigation,
     MapView: ({ onMapViewControllerCreated }: any) => { React.useEffect(() => onMapViewControllerCreated(mapController), [onMapViewControllerCreated]); return React.createElement('map'); },
+    NavigationView: ({ onMapViewControllerCreated }: any) => { React.useEffect(() => onMapViewControllerCreated(mapController), [onMapViewControllerCreated]); return React.createElement('map'); },
     NavigationProvider: ({ children }: any) => children,
     AudioGuidance: { VOICE_ALERTS_AND_GUIDANCE: 1, BLUETOOTH_AUDIO: 2 }, MapColorScheme: { FOLLOW_SYSTEM: 0 },
     NavigationSessionStatus: { OK: 'ok', NETWORK_ERROR: 'networkError', NOT_AUTHORIZED: 'notAuthorized', LOCATION_PERMISSION_MISSING: 'locationPermissionMissing' },
+    NavigationUIEnabledPreference: { AUTOMATIC: 0 },
     RouteStatus: { OK: 'OK', NETWORK_ERROR: 'NETWORK_ERROR', LOCATION_UNKNOWN: 'LOCATION_UNKNOWN', LOCATION_DISABLED: 'LOCATION_DISABLED', NO_ROUTE_FOUND: 'NO_ROUTE_FOUND' },
     TaskRemovedBehavior: { CONTINUE_SERVICE: 0 }, TravelMode: { DRIVING: 0 },
   };
