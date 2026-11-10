@@ -20,13 +20,14 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
   let onDestination: ((point: any) => Promise<number>) | null = null;
   const polylines = new Map<string, any>();
   const destinationCalls: any[] = [];
+  const cameraCalls: any[] = [];
   const listeners: Record<string, (() => void) | null> = {};
   const backgroundLocationCalls: boolean[] = [];
   const keepAwakeCalls: string[] = [];
   let locationStarts = 0;
   let appStateListener: ((state: string) => void) | null = null;
   const controller = {
-    addMarker: async () => ({}), removeMarker: async () => {}, moveCamera: () => {},
+    addMarker: async () => ({}), removeMarker: async () => {}, moveCamera: (camera: any) => { cameraCalls.push(camera); },
     addPolyline: async (line: any) => { polylines.set(line.id, line); return line; },
     removePolyline: async (id: string) => { polylines.delete(id); },
   };
@@ -99,7 +100,7 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
   // The map controller arrives after the first effect has been scheduled.
   await act(async () => { await flush(); });
   return {
-    polylines, destinationCalls, listeners,
+    polylines, destinationCalls, cameraCalls, listeners,
     backgroundLocationCalls, keepAwakeCalls,
     locationStarts: () => locationStarts,
     appState: async (state: string) => { await act(async () => { appStateListener?.(state); await flush(); }); },
@@ -116,6 +117,15 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
     dispose: async () => { await act(async () => { tree!.unmount(); await flush(); }); },
   };
 }
+
+test('manual Driver map zoom is not overridden by subsequent GPS updates', async () => {
+  const map = await mountMap();
+  try {
+    await map.update({ latitude: 5.701, longitude: -0.1, locationTimestamp: 2 });
+    await map.update({ latitude: 5.702, longitude: -0.1, locationTimestamp: 3 });
+    assert.equal(map.cameraCalls.length, 0, 'GPS updates must not snap the viewport back to the car');
+  } finally { await map.dispose(); }
+});
 
 test('real Driver component erases the passed road after a new GPS sample', async () => {
   const map = await mountMap();
