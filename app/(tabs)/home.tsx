@@ -476,7 +476,23 @@ export default function DriverHomeScreen() {
     const refreshPresence = async () => {
       try {
         const freshLocation = await ExpoLocation.getCurrentPositionAsync({ accuracy: ExpoLocation.Accuracy.Balanced });
-        if (!disposed && hasUsableDriverLocation(freshLocation)) setLocation(freshLocation);
+        if (!disposed && hasUsableDriverLocation(freshLocation)) {
+          setLocation(freshLocation);
+          // A parked Driver may receive the same Core Location timestamp.
+          // Refresh server receipt freshness without allowing that cached fix
+          // to replace a newer GPS sample in the ordered publisher.
+          if (user?.uid) {
+            void driverLocationPublisher.publishHeartbeat({
+              latitude: freshLocation.coords.latitude,
+              longitude: freshLocation.coords.longitude,
+              heading: freshLocation.coords.heading === null ? undefined : freshLocation.coords.heading,
+              speedKmh: freshLocation.coords.speed === null || freshLocation.coords.speed === undefined
+                ? undefined
+                : Math.max(0, Number((freshLocation.coords.speed * 3.6).toFixed(1))),
+              recordedAt: new Date(freshLocation.timestamp || Date.now()).toISOString(),
+            }).catch(() => {});
+          }
+        }
       } catch {
         // The normal watch and background task keep running independently.
       }

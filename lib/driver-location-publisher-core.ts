@@ -19,6 +19,11 @@ type PublisherDependencies = {
   baseUrl: string;
 };
 
+type QueuedSample = {
+  sample: DriverLocationSample;
+  heartbeat: boolean;
+};
+
 /** Core Location uses -1 when the compass heading is unavailable. */
 export function publishableDriverHeading(value: number | null | undefined): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 360
@@ -42,7 +47,7 @@ export function createDriverLocationPublisher({ getToken, post, baseUrl }: Publi
   let newestAcceptedAt = 0;
   let newestQueuedAt = 0;
   let inFlight: Promise<void> | null = null;
-  let pending: DriverLocationSample | null = null;
+  let pending: QueuedSample | null = null;
   let sessionGeneration = 0;
 
   /**
@@ -57,7 +62,7 @@ export function createDriverLocationPublisher({ getToken, post, baseUrl }: Publi
     newestQueuedAt = 0;
   };
 
-  const send = async (sample: DriverLocationSample, generation: number) => {
+  const send = async (sample: DriverLocationSample, generation: number, heartbeat = false) => {
     if (generation !== sessionGeneration) return false;
     const recordedAt = new Date(sample.recordedAt).getTime();
     const token = await getToken();
@@ -83,31 +88,34 @@ export function createDriverLocationPublisher({ getToken, post, baseUrl }: Publi
     });
     if (generation !== sessionGeneration) return false;
     if (!response.ok) throw new Error(`Driver location update failed (${response.status}).`);
-    newestAcceptedAt = Math.max(newestAcceptedAt, recordedAt);
+    if (!heartbeat) newestAcceptedAt = Math.max(newestAcceptedAt, recordedAt);
     return true;
   };
 
-  const publish = async (sample: DriverLocationSample): Promise<boolean> => {
+  const enqueue = async (sample: DriverLocationSample, heartbeat: boolean): Promise<boolean> => {
     const recordedAt = new Date(sample.recordedAt).getTime();
-    if (!Number.isFinite(recordedAt) || recordedAt < newestAcceptedAt || recordedAt < newestQueuedAt) return false;
-    newestQueuedAt = Math.max(newestQueuedAt, recordedAt);
+    if (!Number.isFinite(recordedAt)) return false;
+    if (!heartbeat) {
+      if (recordedAt < newestAcceptedAt || recordedAt < newestQueuedAt) return false;
+      newestQueuedAt = Math.max(newestQueuedAt, recordedAt);
+    }
 
     // When mobile data is slow, retaining every GPS sample makes lifecycle
     // actions queue behind obsolete uploads. Keep the newest point only; an
     // equal timestamp is deliberately retained as a stationary heartbeat.
     if (inFlight) {
-      pending = sample;
+      pending = { sample, heartbeat };
       return true;
     }
 
     const generation = sessionGeneration;
     const operation = (async () => {
-      let next: DriverLocationSample | null = sample;
+      let next: QueuedSample | null = { sample, heartbeat };
       while (next && generation === sessionGeneration) {
-        const current = next;
+        const current = next.sample;
         pending = null;
         try {
-          if (!await send(current, generation)) break;
+          if (!await send(current, generation, next.heartbeat)) break;
         } catch (error) {
           if (generation === sessionGeneration) newestQueuedAt = newestAcceptedAt;
           throw error;
@@ -124,5 +132,11 @@ export function createDriverLocationPublisher({ getToken, post, baseUrl }: Publi
     }
   };
 
-  return { publish, clear };
+  const publish = (sample: DriverLocationSample) => enqueue(sample, false);
+  // A foreground app obtaining a stationary/cached fix is an active presence
+  // heartbeat. The backend refreshes receipt freshness, while the original
+  // device timestamp remains untouched for GPS ordering.
+  const publishHeartbeat = (sample: DriverLocationSample) => enqueue(sample, true);
+
+  return { publish, publishHeartbeat, clear };
 }
