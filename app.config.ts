@@ -54,8 +54,8 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 122 contains the latest Driver navigation changes.
-    buildNumber: "122",
+    // Build 123 contains the latest Driver navigation changes.
+    buildNumber: "123",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     "infoPlist": {
