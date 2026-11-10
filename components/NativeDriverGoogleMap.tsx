@@ -477,11 +477,23 @@ function DriverNavigationSurface({
         // fix. HY3N sets one active stop at a time, so this is the entire leg we
         // must display. Do not silently substitute cached full legs on failure.
         const iosCurrentLeg = Platform.OS === 'ios';
-        const segments = iosCurrentLeg
+        const firstSegments = iosCurrentLeg
           ? [await navigationController.getCurrentRouteSegment()]
           : await navigationController.getRouteSegments();
-        const points = routePointsForMap(segments);
-        const targetMatches = driverRouteReachesTarget(points, { lat: targetLatitude, lng: targetLongitude });
+        let points = routePointsForMap(firstSegments);
+        let targetMatches = driverRouteReachesTarget(points, { lat: targetLatitude, lng: targetLongitude });
+        // iOS can return only the current native segment immediately after
+        // guidance starts. That segment is valid geometry but may end before
+        // the destination, so rejecting it leaves the HY3N line blank. Ask
+        // Google for the complete route before treating the geometry as bad.
+        if (iosCurrentLeg && !targetMatches) {
+          const completeSegments = await navigationController.getRouteSegments();
+          const completePoints = routePointsForMap(completeSegments);
+          if (completePoints.length > points.length) {
+            points = completePoints;
+            targetMatches = driverRouteReachesTarget(points, { lat: targetLatitude, lng: targetLongitude });
+          }
+        }
         diagnostics('geometry.received', { request: navigationRequestRef.current, points: points.length, targetMatches, source: iosCurrentLeg ? 'ios-current-leg' : 'route-legs' });
         if (!isCurrent() || points.length < 2 || !targetMatches) {
           diagnostics('geometry.rejected', { reason: !isCurrent() ? 'stale_request' : points.length < 2 ? 'invalid_points' : 'wrong_target' });

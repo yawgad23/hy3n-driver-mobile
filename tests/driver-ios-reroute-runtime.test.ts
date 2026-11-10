@@ -13,9 +13,9 @@ const corner = { lat: 5.704, lng: -0.1 };
 const target = { lat: 5.704, lng: -0.096 };
 const initialRoad = [origin, corner, target];
 
-async function mountIos(options: { initialNetworkFailure?: boolean; platform?: 'ios' | 'android' } = {}) {
+async function mountIos(options: { initialNetworkFailure?: boolean; partialCurrentLeg?: boolean; platform?: 'ios' | 'android' } = {}) {
   let route = initialRoad;
-  let currentLeg = initialRoad;
+  let currentLeg = options.partialCurrentLeg ? [origin, corner] : initialRoad;
   let props: any = { latitude: 5.703, longitude: origin.lng, locationTimestamp: Date.now(), locationAccuracy: 5,
     target: { latitude: target.lat, longitude: target.lng, label: 'Drop-off' }, tripStatus: 'dropoff' };
   const lines = new Map<string, any>();
@@ -116,6 +116,14 @@ test('iOS accepts a successful same-road reroute whose fresh current leg begins 
     assert.deepEqual(shown?.[0], newOrigin, 'provider-confirmed remaining route must not be quarantined merely for using the same road');
     assert.deepEqual(shown?.at(-1), target);
     assert.ok(map.currentLegReads() > 0, 'iOS must inspect the live currentRouteLeg, not only the complete leg array');
+  } finally { await map.dispose(); }
+});
+
+test('iOS falls back to complete route geometry when the first current segment is partial', async () => {
+  const map = await mountIos({ partialCurrentLeg: true });
+  try {
+    assert.ok(map.lines.has('hy3n-driver-route'), 'complete fallback route polyline exists');
+    assert.deepEqual(map.lines.get('hy3n-driver-route')?.points.at(-1), target);
   } finally { await map.dispose(); }
 });
 
