@@ -8,7 +8,7 @@ const screen = readFileSync(path.join(process.cwd(), 'app/(tabs)/home.tsx'), 'ut
 const configPlugin = readFileSync(path.join(process.cwd(), 'plugins/with-google-navigation.js'), 'utf8');
 const appConfig = readFileSync(path.join(process.cwd(), 'app.config.ts'), 'utf8');
 
-test('Driver runs Google turn guidance inside HY3N with native NavigationView UI', () => {
+test('Driver runs Google turn guidance inside the restored HY3N-style map', () => {
   assert.match(component, /@googlemaps\/react-native-navigation-sdk/);
   assert.match(component, /navigationController\.setDestination/);
   assert.match(component, /navigationController\.startGuidance/);
@@ -16,11 +16,12 @@ test('Driver runs Google turn guidance inside HY3N with native NavigationView UI
   assert.match(component, /AudioGuidance\.BLUETOOTH_AUDIO/);
   assert.match(component, /RouteStatus\.NO_ROUTE_FOUND/);
   assert.match(component, /setOnRouteChanged/);
-  assert.match(component, /Google NavigationView stays visible/);
-  assert.match(component, /<NavigationView/);
-  assert.match(component, /NavigationUIEnabledPreference\.AUTOMATIC/);
-  assert.match(component, /headerEnabled/);
-  assert.match(component, /footerEnabled/);
+  assert.match(component, /A branded map stays visible for the complete Driver journey/);
+  assert.match(component, /<MapView/);
+  assert.doesNotMatch(component, /<NavigationView/);
+  assert.doesNotMatch(component, /NavigationUIEnabledPreference/);
+  assert.doesNotMatch(component, /headerEnabled/);
+  assert.doesNotMatch(component, /footerEnabled/);
   assert.match(screen, /NativeDriverGoogleMap/);
   assert.doesNotMatch(screen, /googleMapsTurnByTurnUri/);
   assert.doesNotMatch(screen, /launchGoogleMapsTurnByTurn/);
