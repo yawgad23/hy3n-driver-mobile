@@ -6,6 +6,13 @@ export type DriverLocationSample = {
   recordedAt: string;
 };
 
+let telemetrySequence = 0;
+
+function createTrackingSampleId() {
+  telemetrySequence = (telemetrySequence + 1) % 1_000_000;
+  return `${Date.now().toString(36)}-${telemetrySequence.toString(36)}`;
+}
+
 type PublisherDependencies = {
   getToken: () => Promise<string | null>;
   post: (url: string, init: RequestInit) => Promise<{ ok: boolean; status: number }>;
@@ -55,6 +62,7 @@ export function createDriverLocationPublisher({ getToken, post, baseUrl }: Publi
     const recordedAt = new Date(sample.recordedAt).getTime();
     const token = await getToken();
     if (generation !== sessionGeneration || !token) return false;
+    const clientSentAtMs = Date.now();
     const response = await post(`${baseUrl}/api/driver/location`, {
       method: 'POST',
       headers: {
@@ -67,6 +75,10 @@ export function createDriverLocationPublisher({ getToken, post, baseUrl }: Publi
         heading: publishableDriverHeading(sample.heading),
         speedKmh: publishableDriverSpeedKmh(sample.speedKmh),
         recordedAt: sample.recordedAt,
+        trackingTelemetry: {
+          sampleId: createTrackingSampleId(),
+          clientSentAtMs,
+        },
       }),
     });
     if (generation !== sessionGeneration) return false;
