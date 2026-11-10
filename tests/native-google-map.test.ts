@@ -78,7 +78,8 @@ test('Driver active map re-routes for each pickup or drop-off and cleans up safe
   assert.match(component, /assessDriverOffRoute/);
   assert.match(component, /routePointsRef/);
   assert.match(component, /forcedRerouteInFlightRef/);
-  assert.match(component, /mapViewController\.moveCamera/);
+  assert.match(component, /initialCameraPosition=/);
+  assert.doesNotMatch(component, /lastVehicleCameraUpdateAtRef/);
   assert.match(component, /lastTargetKeyRef\.current === targetKey/);
   assert.match(component, /setOnReroutingRequestedByOffRoute/);
   assert.match(component, /Re-routing from your current road/);
@@ -92,7 +93,8 @@ test('Driver active map re-routes for each pickup or drop-off and cleans up safe
   assert.match(component, /routeOverlayWorkRef/);
   assert.match(component, /const drawNavigationRoute = useCallback\(\(isCurrent/);
   assert.match(component, /routeRefreshRunRef\.current === run/);
-  assert.match(component, /A blank\n\s+\/\/ line is safer than showing a Driver travelling along the old road/);
+  assert.match(component, /Keep the last verified route visible while the native provider catches/);
+  assert.match(component, /if \(points\.length < 2\) return;/);
   assert.match(component, /clearDestinations\(\)/);
   assert.match(component, /stopGuidance\(\)/);
   assert.match(component, /navigationController\.cleanup\(\)/);

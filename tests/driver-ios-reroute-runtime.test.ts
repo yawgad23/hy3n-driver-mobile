@@ -206,13 +206,13 @@ test('iOS rejects an older native sample and keeps the newer valid Expo fix auth
   } finally { await map.dispose(); }
 });
 
-test('iOS clears branded guidance instead of retaining it after every location source becomes stale', async () => {
+test('iOS retains branded guidance while every location source is temporarily stale', async () => {
   const map = await mountIos();
   try {
     assert.ok(map.lines.has('hy3n-driver-route'));
     await map.update({ latitude: 5.702, locationTimestamp: Date.now() - 60_000, locationAccuracy: 5 });
-    assert.equal(map.lines.has('hy3n-driver-route'), false,
-      'a stale phone fix must clear old visual guidance rather than direct a Driver from an old road');
+    assert.equal(map.lines.has('hy3n-driver-route'), true,
+      'a stale phone fix must not erase the last verified route line');
   } finally { await map.dispose(); }
 });
 

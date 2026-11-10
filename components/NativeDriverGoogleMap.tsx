@@ -228,7 +228,6 @@ function DriverNavigationSurface({
   const vehicleMarkerControllerRef = useRef<MapViewController | null>(null);
   const pendingVehicleMarkerRef = useRef<{ controller: MapViewController; marker: any; asset: string } | null>(null);
   const vehicleMarkerWorkerRunningRef = useRef(false);
-  const lastVehicleCameraUpdateAtRef = useRef(0);
   const targetLatitude = Number(target?.latitude);
   const targetLongitude = Number(target?.longitude);
   const targetLabel = target?.label?.trim() || (tripStatus === 'dropoff' ? 'Drop-off' : 'Pickup');
@@ -343,19 +342,6 @@ function DriverNavigationSurface({
       })();
     }
 
-    // Camera movement is deliberately rate-limited separately from marker
-    // interpolation. Sending a camera command for every 110ms marker frame
-    // floods the native Navigation SDK bridge and can make the viewport stutter.
-    const now = Date.now();
-    if (now - lastVehicleCameraUpdateAtRef.current >= 180 || !lastVehicleCameraUpdateAtRef.current) {
-      lastVehicleCameraUpdateAtRef.current = now;
-      mapViewController.moveCamera({
-        target: { lat: position.latitude, lng: position.longitude },
-        bearing: followTrip ? position.heading : 0,
-        tilt: followTrip ? 42 : 0,
-        zoom: followTrip ? 17 : 16,
-      });
-    }
   }, [mapViewController, vehicleMarkerAsset]);
 
   // Interpolate each real GPS observation into small native-map updates. The
@@ -458,8 +444,11 @@ function DriverNavigationSurface({
       const currentLocation = currentNavigationLocation();
       const points = staleRoutePlanRef.current && isSameDriverRoadPlan(routePointsRef.current, staleRoutePlanRef.current)
         ? [] : remainingDriverRoute(currentLocation, routePointsRef.current);
+      // Keep the last verified road visible during a brief stale/invalid GPS
+      // window. Clear it only after valid replacement geometry is available.
+      if (points.length < 2) return;
       await clearRouteLines();
-      if (navigationRequestRef.current !== request || points.length < 2) return;
+      if (navigationRequestRef.current !== request) return;
       await mapViewController.addPolyline({
         id: DRIVER_ROUTE_OUTLINE_ID, points, color: ROUTE_OUTLINE, width: 14, visible: true,
       });
@@ -730,10 +719,8 @@ function DriverNavigationSurface({
       offRouteMonitorRef.current = { ...offRouteMonitorRef.current, consecutiveOffRouteSamples: 0 };
       wrongWayMonitorRef.current = { ...wrongWayMonitorRef.current, previousLocation: null, consecutiveSamples: 0 };
       diagnostics('route.assessment', { shouldReroute: false, reason: 'stale_or_imprecise_gps' });
-      // A blank line is safer than guidance from a location source that is no
-      // longer trustworthy. The native route engine remains active and can
-      // restore the line as soon as a valid current sample arrives.
-      updateRemainingRoute();
+      // Keep the last verified route visible while the native provider catches
+      // up; replacement geometry is drawn only from a fresh trusted sample.
       return;
     }
 
