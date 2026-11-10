@@ -88,6 +88,20 @@ test('actual Accept handler force-stops request audio before calling the server'
   assert.ok(request > stop, 'ringtone must stop before the network request begins');
 });
 
+test('assignment confirmation force-stops request audio before showing the active trip', () => {
+  const body = homeHandlerBody('handleAcceptRide');
+  const stop = body.indexOf('stopIncomingTripAlert(true)');
+  const activeTrip = body.indexOf('setActiveTrip(ride)');
+  assert.ok(stop >= 0, 'assignment confirmation must force-stop the ringtone');
+  assert.ok(activeTrip > stop, 'the active trip must be shown only after the ringtone stop is issued');
+});
+
+test('starting a trip force-stops any stale request ringtone', () => {
+  const start = homeSource.indexOf('const beginTrip = async');
+  const body = homeSource.slice(start, homeSource.indexOf('// Verify the rider\'s pickup code', start));
+  assert.match(body, /stopIncomingTripAlert\(true\)/);
+});
+
 test('actual Decline handler force-stops request audio before calling the server', () => {
   const body = homeHandlerBody('handleDeclineRide');
   const stop = body.indexOf('stopIncomingTripAlert(true)');

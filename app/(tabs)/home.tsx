@@ -587,7 +587,7 @@ export default function DriverHomeScreen() {
   // the Driver remains online and atomically assigns the ride only after Accept.
   useEffect(() => {
     if (!user?.uid || !isOnline || !hasCurrentLocation) {
-      stopIncomingTripAlert();
+      stopIncomingTripAlert(true);
       incomingOfferReceivedAtRef.current = null;
       setIncomingRide(null);
       return;
@@ -604,7 +604,7 @@ export default function DriverHomeScreen() {
       // not erase a live request card or stop its song. Only the server lease
       // deadline is allowed to retire an unanswered offer locally.
       if (incomingRide && expiresAtMs !== null && !isDriverOfferWithinWindow(expiresAtMs, Date.now())) {
-        stopIncomingTripAlert();
+        stopIncomingTripAlert(true);
         retiredOfferLeaseRef.current = driverOfferLeaseKey(incomingRide);
         incomingOfferReceivedAtRef.current = null;
         setIncomingRide(null);
@@ -638,7 +638,7 @@ export default function DriverHomeScreen() {
       activeTripId: activeTrip?.id || null,
       soundAlerts: prefs.soundAlerts,
     })) {
-      stopIncomingTripAlert();
+      stopIncomingTripAlert(true);
       return;
     }
     // An offer may arrive before native AVPlayer finishes loading. Subscribe to
@@ -647,7 +647,7 @@ export default function DriverHomeScreen() {
     playIncomingTripAlert(incomingRideId);
   }, [activeTrip?.id, incomingRide?.id, incomingTripAlertStatus.isLoaded, isOnline, playIncomingTripAlert, prefs.soundAlerts, stopIncomingTripAlert]);
 
-  useEffect(() => () => stopIncomingTripAlert(), [stopIncomingTripAlert]);
+  useEffect(() => () => stopIncomingTripAlert(true), [stopIncomingTripAlert]);
 
   // Recover a trip if the app is reopened while the driver is already assigned.
   useEffect(() => {
@@ -689,7 +689,7 @@ export default function DriverHomeScreen() {
       const seconds = Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000));
       setRideOfferSeconds(seconds);
       if (seconds === 0) {
-        stopIncomingTripAlert();
+        stopIncomingTripAlert(true);
         retiredOfferLeaseRef.current = driverOfferLeaseKey(incomingRide);
         incomingOfferReceivedAtRef.current = null;
         setIncomingRide(null);
@@ -881,6 +881,10 @@ export default function DriverHomeScreen() {
     let serverConfirmed = false;
     const showAcceptedRide = (ride: any) => {
       serverConfirmed = true;
+      // The native player status can lag the audible AVPlayer state. Stop the
+      // request tone again when assignment is confirmed so it cannot survive
+      // the transition from offer card to active trip.
+      stopIncomingTripAlert(true);
       setActiveTrip(ride);
       incomingOfferReceivedAtRef.current = null;
       setIncomingRide(null);
@@ -1133,6 +1137,9 @@ export default function DriverHomeScreen() {
 
   const beginTrip = async (ride = activeTrip) => {
     if (!ride || !user?.uid || tripActionInFlightRef.current) return;
+    // Starting the trip is a terminal boundary for any offer audio, including
+    // a stale native loop left behind while the pickup code was being verified.
+    stopIncomingTripAlert(true);
     tripActionInFlightRef.current = true;
     setTripActionPending(true);
     try {
