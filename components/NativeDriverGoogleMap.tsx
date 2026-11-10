@@ -1031,7 +1031,10 @@ function DriverNavigationSurface({
             target: { lat: Number(latitude), lng: Number(longitude) },
             zoom: hasTarget ? 17 : 16,
             bearing: Number(heading) || 0,
-            tilt: hasTarget ? 42 : 0,
+            // Keep the HY3N map flat. A pitched camera makes the road surface
+            // look like an aerial/drone view instead of the clean Uber/Bolt
+            // road map used for Driver navigation.
+            tilt: 0,
           }}
           // The branded MapView never switches at acceptance. The HY3N car is
           // its only live vehicle marker; the Google blue location arrow stays
