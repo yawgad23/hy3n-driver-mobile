@@ -5,6 +5,7 @@ import test from 'node:test';
 
 const rides = readFileSync(path.join(__dirname, '../constants/rides.ts'), 'utf8');
 const registration = readFileSync(path.join(__dirname, '../app/driver/register.tsx'), 'utf8');
+const tools = readFileSync(path.join(__dirname, '../app/driver/tools.tsx'), 'utf8');
 const nativeMap = readFileSync(path.join(__dirname, '../components/NativeDriverGoogleMap.tsx'), 'utf8');
 const home = readFileSync(path.join(__dirname, '../app/(tabs)/home.tsx'), 'utf8');
 
@@ -14,6 +15,10 @@ test('Driver category labels match current HY3N services', () => {
   assert.match(registration, /id: 'car_delivery',[\s\S]*?label: 'Car Delivery'/);
   assert.match(registration, /id: 'express_delivery',[\s\S]*?label: 'Delivery'/);
   assert.doesNotMatch(registration, /Standard, Comfort, Kantanka or Executive rides/);
+  assert.match(tools, /key: 'car_delivery', label: 'Car Delivery'/);
+  assert.match(tools, /car: \['standard', 'comfort', 'kantanka', 'car_delivery'\]/);
+  assert.doesNotMatch(tools, /key: 'xl'/);
+  assert.doesNotMatch(tools, /key: 'delivery'/);
 });
 
 test('Driver map selects vehicle artwork for car, Car Delivery, Okada and Delivery', () => {

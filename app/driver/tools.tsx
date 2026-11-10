@@ -11,9 +11,16 @@ const GOLD = '#D4AF37'; const BG = '#0A0A0A'; const CARD = '#111111'; const BORD
 const CATEGORIES = [
   { key: 'standard', label: 'Standard', icon: 'directions-car' },
   { key: 'comfort', label: 'Comfort', icon: 'airline-seat-recline-normal' },
-  { key: 'xl', label: 'XL', icon: 'airport-shuttle' },
-  { key: 'delivery', label: 'Delivery', icon: 'local-shipping' },
+  { key: 'kantanka', label: 'Kantanka', icon: 'directions-car' },
+  { key: 'car_delivery', label: 'Car Delivery', icon: 'local-shipping' },
+  { key: 'okada', label: 'Okada', icon: 'two-wheeler' },
+  { key: 'express_delivery', label: 'Delivery', icon: 'inventory' },
 ] as const;
+const CATEGORIES_BY_SERVICE: Record<string, readonly string[]> = {
+  car: ['standard', 'comfort', 'kantanka', 'car_delivery'],
+  okada: ['okada'],
+  delivery: ['express_delivery'],
+};
 const RADII = [3, 5, 8, 12, 20];
 const HAZARDS = [
   { value: 'accident', label: 'Accident', icon: 'car-crash' },
@@ -28,7 +35,7 @@ function metric(value: number | null | undefined, suffix = '') { return value ==
 
 export default function DriverToolsScreen() {
   const insets = useSafeAreaInsets();
-  const { user } = useDriverAuth();
+  const { user, driverProfile } = useDriverAuth();
   const [rideCategories, setRideCategories] = useState<string[]>(['standard']);
   const [pickupRadiusKm, setPickupRadiusKm] = useState(10);
   const [autoAccept, setAutoAccept] = useState(false);
@@ -76,13 +83,16 @@ export default function DriverToolsScreen() {
   useEffect(() => {
     const prefs = preferencesQuery.data?.preferences;
     if (!prefs) return;
-    setRideCategories(prefs.rideCategories.length ? prefs.rideCategories : ['standard']);
+    const currentServiceType = String(driverProfile?.service_type || 'car').toLowerCase();
+    const allowedCategories = CATEGORIES_BY_SERVICE[currentServiceType] || CATEGORIES_BY_SERVICE.car;
+    const savedCategories = prefs.rideCategories.filter((category: string) => allowedCategories.includes(category));
+    setRideCategories(savedCategories.length ? savedCategories : [allowedCategories[0]]);
     setPickupRadiusKm(prefs.pickupRadiusKm || 10);
     setAutoAccept(Boolean(prefs.autoAccept));
     setDestinationLabel(prefs.destination?.label || '');
     setDestinationLatitude(prefs.destination?.latitude?.toString() || '');
     setDestinationLongitude(prefs.destination?.longitude?.toString() || '');
-  }, [preferencesQuery.data]);
+  }, [driverProfile?.service_type, preferencesQuery.data]);
 
   const toggleCategory = (category: string) => {
     setRideCategories((current) => {
@@ -135,6 +145,8 @@ export default function DriverToolsScreen() {
   const incentives = incentivesQuery.data?.incentives || [];
   const loading = preferencesQuery.isLoading || performanceQuery.isLoading || incentivesQuery.isLoading;
   const destinationActive = Boolean(prefs?.destination);
+  const serviceType = String(driverProfile?.service_type || 'car').toLowerCase();
+  const availableCategories = CATEGORIES.filter((category) => CATEGORIES_BY_SERVICE[serviceType]?.includes(category.key));
 
   return <View style={[styles.container, { paddingTop: insets.top }]}> 
     <View style={styles.header}><TouchableOpacity style={styles.backButton} onPress={() => router.back()}><MaterialIcons name="arrow-back" size={22} color={TEXT} /></TouchableOpacity><View><Text style={styles.headerTitle}>Driver tools</Text><Text style={styles.headerSub}>Shape the trips you receive and track your progress</Text></View></View>
@@ -143,7 +155,7 @@ export default function DriverToolsScreen() {
       <Text style={styles.sectionTitle}>Trip preferences</Text>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Ride categories</Text><Text style={styles.caption}>Choose the trips your vehicle can serve.</Text>
-        <View style={styles.categoryGrid}>{CATEGORIES.map((category) => { const selected = rideCategories.includes(category.key); return <TouchableOpacity key={category.key} onPress={() => toggleCategory(category.key)} style={[styles.categoryTile, selected && styles.categorySelected]}><MaterialIcons name={category.icon as any} size={20} color={selected ? GOLD : MUTED} /><Text style={[styles.categoryText, selected && styles.categoryTextSelected]}>{category.label}</Text><MaterialIcons name={selected ? 'check-circle' : 'radio-button-unchecked'} size={18} color={selected ? GOLD : MUTED} /></TouchableOpacity>; })}</View>
+        <View style={styles.categoryGrid}>{availableCategories.map((category) => { const selected = rideCategories.includes(category.key); return <TouchableOpacity key={category.key} onPress={() => toggleCategory(category.key)} style={[styles.categoryTile, selected && styles.categorySelected]}><MaterialIcons name={category.icon as any} size={20} color={selected ? GOLD : MUTED} /><Text style={[styles.categoryText, selected && styles.categoryTextSelected]}>{category.label}</Text><MaterialIcons name={selected ? 'check-circle' : 'radio-button-unchecked'} size={18} color={selected ? GOLD : MUTED} /></TouchableOpacity>; })}</View>
         <Text style={styles.label}>Maximum pickup distance</Text><View style={styles.radiusWrap}>{RADII.map((radius) => <TouchableOpacity key={radius} onPress={() => setPickupRadiusKm(radius)} style={[styles.radius, pickupRadiusKm === radius && styles.radiusSelected]}><Text style={[styles.radiusText, pickupRadiusKm === radius && styles.radiusTextSelected]}>{radius} km</Text></TouchableOpacity>)}</View>
         <View style={styles.switchRow}><View style={{ flex: 1 }}><Text style={styles.switchTitle}>Auto-accept matching trips</Text><Text style={styles.caption}>Only applies to trips that meet your preferences.</Text></View><Switch value={autoAccept} onValueChange={setAutoAccept} trackColor={{ false: '#3F3F46', true: '#806B1F' }} thumbColor={autoAccept ? GOLD : '#D4D4D8'} /></View>
       </View>
