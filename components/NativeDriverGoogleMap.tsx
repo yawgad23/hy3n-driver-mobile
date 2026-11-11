@@ -468,11 +468,6 @@ function DriverNavigationSurface({
       if (!mapViewController || !hasTarget || !isCurrent() || arrivedTargetKeyRef.current === activeTargetRef.current?.key) return false;
       let stage: 'geometry' | 'polyline' = 'geometry';
       try {
-        // Remove the passed road before reading replacement geometry. A blank
-        // line is safer than showing a Driver travelling along the old road.
-        await clearRouteLines();
-        if (!isCurrent()) return false;
-
         // iOS currentRouteLeg explicitly starts at the most recent native GPS
         // fix. HY3N sets one active stop at a time, so this is the entire leg we
         // must display. Do not silently substitute cached full legs on failure.
@@ -489,7 +484,10 @@ function DriverNavigationSurface({
         if (iosCurrentLeg && !targetMatches) {
           const completeSegments = await navigationController.getRouteSegments();
           const completePoints = routePointsForMap(completeSegments);
-          if (completePoints.length > points.length) {
+          // The complete route can have the same number of points as the
+          // current segment after Google simplifies its geometry. Compare the
+          // destination, not only the array length, before accepting it.
+          if (completePoints.length >= 2 && driverRouteReachesTarget(completePoints, { lat: targetLatitude, lng: targetLongitude })) {
             points = completePoints;
             targetMatches = driverRouteReachesTarget(points, { lat: targetLatitude, lng: targetLongitude });
           }
@@ -519,16 +517,30 @@ function DriverNavigationSurface({
         const confirmedFreshStart = iosCurrentLeg && confirmation?.request === navigationRequestRef.current
           && Date.now() - confirmation.atMs <= 30_000
           && driverRouteStartsAtLocation(points, confirmation.origin);
-        if (remaining.length < 2 || (staleRoutePlanRef.current && isSameDriverRoadPlan(points, staleRoutePlanRef.current) && !confirmedFreshStart)) {
+        const replacementIsUnconfirmed = staleRoutePlanRef.current
+          && isSameDriverRoadPlan(points, staleRoutePlanRef.current)
+          && !confirmedFreshStart;
+        if (replacementIsUnconfirmed) {
           diagnostics('geometry.rejected', { reason: remaining.length < 2 ? 'not_on_current_road' : 'unconfirmed_shared_road' });
           return false;
         }
+        // A valid Google route is still the best visual guidance available if
+        // the native location callback is momentarily stale. Do not erase the
+        // last visible route just because trimming it to the latest fix is not
+        // possible yet. Once a fresh fix arrives, updateRemainingRoute trims
+        // the line back to the Driver's actual road position.
+        const displayPoints = remaining.length >= 2 ? remaining : points;
         staleRoutePlanRef.current = null;
         confirmedRerouteRef.current = null;
 
+        // Only replace the old overlay after valid geometry has been accepted.
+        // This prevents a transient native bridge/GPS failure from leaving the
+        // Driver with a blank map while voice guidance continues.
+        await clearRouteLines();
+        if (!isCurrent()) return false;
         await mapViewController.addPolyline({
           id: DRIVER_ROUTE_OUTLINE_ID,
-          points: remaining,
+          points: displayPoints,
           color: ROUTE_OUTLINE,
           width: 14,
           visible: true,
@@ -539,7 +551,7 @@ function DriverNavigationSurface({
         }
         await mapViewController.addPolyline({
           id: DRIVER_ROUTE_ID,
-          points: remaining,
+          points: displayPoints,
           color: GREEN,
           width: 8,
           visible: true,
@@ -548,7 +560,7 @@ function DriverNavigationSurface({
           await clearRouteLines();
           return false;
         }
-        diagnostics('polyline.applied', { request: navigationRequestRef.current, points: remaining.length });
+        diagnostics('polyline.applied', { request: navigationRequestRef.current, points: displayPoints.length });
         if (driverNavigationDiagnosticsEnabled()) {
           try {
             const nativeLines = await mapViewController.getPolylines();

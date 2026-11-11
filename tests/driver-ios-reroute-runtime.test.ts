@@ -264,13 +264,14 @@ test('invalid iPhone coordinates never become a native route request', async () 
   } finally { await map.dispose(); }
 });
 
-test('iOS reports current-leg errors and does not silently repaint cached route legs', async () => {
+test('iOS reports current-leg errors and preserves the last visible route line', async () => {
   const map = await mountIos();
   try {
     map.geometryFails(true);
     await act(async () => { map.listeners.changed?.(); await Promise.resolve(); });
     await map.flush();
-    assert.equal(map.lines.has('hy3n-driver-route'), false);
+    assert.equal(map.lines.has('hy3n-driver-route'), true,
+      'a temporary native geometry failure must not leave the Driver map blank');
     assert.ok(map.logs.some(row => row[1] === 'geometry.failed' && row[2].code === 'route_not_available'));
     map.geometryFails(false);
     map.currentLeg([{ lat: 5.703, lng: origin.lng }, corner, target]);
