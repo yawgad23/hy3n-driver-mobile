@@ -9,12 +9,14 @@ const nativeGoogleMaps = {
   // EAS stores the existing restricted client keys under the public Expo names.
   // Retain the non-public aliases for local/native tooling compatibility, but
   // compile the same restricted key into Navigation SDK on both platforms.
-  iosApiKey: process.env.GOOGLE_MAPS_IOS_API_KEY?.trim()
-    || process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_IOS?.trim()
-    || "",
-  androidApiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY?.trim()
-    || process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID?.trim()
-    || "",
+  iosApiKey:
+    process.env.GOOGLE_MAPS_IOS_API_KEY?.trim() ||
+    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_IOS?.trim() ||
+    "",
+  androidApiKey:
+    process.env.GOOGLE_MAPS_ANDROID_API_KEY?.trim() ||
+    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID?.trim() ||
+    "",
 };
 const nativeGoogleNavigationPlugin: [string, Record<string, string>] | null =
   nativeGoogleMaps.iosApiKey && nativeGoogleMaps.androidApiKey
@@ -54,16 +56,19 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 123 contains the latest Driver navigation changes.
-    buildNumber: "123",
+    // Build 124 contains the route-line preservation fix for transient GPS
+    // and incomplete native route geometry responses.
+    buildNumber: "124",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
-    "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": ["location"],
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow HY3N Driver to share your location while you are online so Riders can follow your approach and active trip.",
-        "NSLocationWhenInUseUsageDescription": "Allow HY3N Driver to use your location to navigate to pickups and destinations."
-      }
+    infoPlist: {
+      ITSAppUsesNonExemptEncryption: false,
+      UIBackgroundModes: ["location"],
+      NSLocationAlwaysAndWhenInUseUsageDescription:
+        "Allow HY3N Driver to share your location while you are online so Riders can follow your approach and active trip.",
+      NSLocationWhenInUseUsageDescription:
+        "Allow HY3N Driver to use your location to navigate to pickups and destinations.",
+    },
   },
   android: {
     adaptiveIcon: {
@@ -76,11 +81,21 @@ const config: ExpoConfig = {
     // 57014 packages the current Driver source for Android closed testing.
     versionCode: 57014,
     googleServicesFile: "./firebase/google-services.json",
-    permissions: ["POST_NOTIFICATIONS", "ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_LOCATION"],
+    permissions: [
+      "POST_NOTIFICATIONS",
+      "ACCESS_COARSE_LOCATION",
+      "ACCESS_FINE_LOCATION",
+      "ACCESS_BACKGROUND_LOCATION",
+      "FOREGROUND_SERVICE",
+      "FOREGROUND_SERVICE_LOCATION",
+    ],
     // Driver request alerts use the operating system notification sound. HY3N
     // never records or performs background media playback, so retain only the
     // Driver's user-visible location foreground service.
-    blockedPermissions: ["android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK", "android.permission.RECORD_AUDIO"],
+    blockedPermissions: [
+      "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+      "android.permission.RECORD_AUDIO",
+    ],
     intentFilters: [
       {
         action: "VIEW",
@@ -119,14 +134,17 @@ const config: ExpoConfig = {
     [
       "expo-location",
       {
-        locationAlwaysAndWhenInUsePermission: "Allow HY3N Driver to use your location to navigate to pickups and destinations.",
-        locationWhenInUsePermission: "Allow HY3N Driver to use your location to navigate to pickups and destinations.",
+        locationAlwaysAndWhenInUsePermission:
+          "Allow HY3N Driver to use your location to navigate to pickups and destinations.",
+        locationWhenInUsePermission:
+          "Allow HY3N Driver to use your location to navigate to pickups and destinations.",
       },
     ],
     [
       "expo-audio",
       {
-        microphonePermission: "Allow $(PRODUCT_NAME) to access your microphone.",
+        microphonePermission:
+          "Allow $(PRODUCT_NAME) to access your microphone.",
       },
     ],
     [
