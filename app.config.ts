@@ -78,8 +78,8 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    // 57014 packages the current Driver source for Android closed testing.
-    versionCode: 57014,
+    // 57017 packages the current Driver source for Android closed testing.
+    versionCode: 57017,
     googleServicesFile: "./firebase/google-services.json",
     permissions: [
       "POST_NOTIFICATIONS",
