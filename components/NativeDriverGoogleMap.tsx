@@ -486,6 +486,13 @@ function DriverNavigationSurface({
           navigationController.getCurrentRouteSegment(),
           navigationController.getRouteSegments(),
         ]);
+        if (currentSegmentResult.status === 'rejected'
+          && (Platform.OS === 'ios' || completeSegmentsResult.status === 'rejected')) {
+          // Preserve the native error contract when neither source can provide
+          // geometry. If only one source fails, the other remains usable on
+          // Android and the route can still be rendered.
+          throw currentSegmentResult.reason;
+        }
         const currentSegment = currentSegmentResult.status === 'fulfilled' ? currentSegmentResult.value : null;
         const completeSegments = completeSegmentsResult.status === 'fulfilled' ? completeSegmentsResult.value : [];
         const routeCandidates = [
