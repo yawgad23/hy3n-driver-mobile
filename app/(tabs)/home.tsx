@@ -1472,11 +1472,11 @@ export default function DriverHomeScreen() {
                   </View>
                 </View>
               )}
-              <Text style={[styles.rideDetails, dynamicStyles.muted]} numberOfLines={1}>
+              <Text style={[styles.rideDetails, dynamicStyles.muted]} numberOfLines={2}>
                 From: {incomingRide.pickup_address || 'Pickup'}
               </Text>
               {isHighRiskArea(incomingRide.pickup_address) && <View style={styles.riskBanner}><MaterialIcons name="warning-amber" size={14} color="#7C2D12" /><Text style={styles.riskText}>Use extra caution in this pickup area</Text></View>}
-              <Text style={[styles.rideDetails, dynamicStyles.muted]} numberOfLines={1}>
+              <Text style={[styles.rideDetails, dynamicStyles.muted]} numberOfLines={2}>
                 To: {incomingRide.destination_address || 'Destination'}
               </Text>
               {isDeliveryRide(incomingRide) && (
@@ -1601,28 +1601,36 @@ export default function DriverHomeScreen() {
         <View style={[styles.activeTripActions, activeTrip && { paddingBottom: insets.bottom + 6 }]}>
           {activeTrip && (
             <>
-              <TouchableOpacity
-                style={[styles.navigateTripIconBtn, { backgroundColor: '#075985' }]}
-                onPress={openTripNavigation}
-                accessibilityRole="button"
-                accessibilityLabel="Choose navigation app"
-                accessibilityHint={Platform.OS === 'ios' ? 'Choose Apple Maps, Google Maps, or Waze for this trip' : 'Choose Google Maps, Waze, or another installed map app for this trip'}
-              >
-                <MaterialIcons name="navigation" size={22} color="#FFF" />
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: BLUE, flex: 1 }]} onPress={openChat}>
-                <MaterialIcons name="chat" size={18} color="#FFF" />
-                <Text style={styles.actionBtnText}>Chat</Text>
-                {unreadCount > 0 && <View style={styles.unreadBadge}><Text style={styles.unreadText}>{unreadCount}</Text></View>}
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#475569', flex: 1 }]} onPress={startMobileNetworkCall}>
-                <MaterialIcons name="phone" size={18} color="#FFF" />
-                <Text style={styles.actionBtnText}>Call</Text>
-              </TouchableOpacity>
-
+              <View style={styles.secondaryTripActions}>
+                <TouchableOpacity
+                  style={[styles.navigateTripIconBtn, { backgroundColor: '#075985' }]}
+                  onPress={openTripNavigation}
+                  accessibilityRole="button"
+                  accessibilityLabel="Choose navigation app"
+                  accessibilityHint={Platform.OS === 'ios' ? 'Choose Apple Maps, Google Maps, or Waze for this trip' : 'Choose Google Maps, Waze, or another installed map app for this trip'}
+                >
+                  <MaterialIcons name="navigation" size={22} color="#FFF" />
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.actionBtn, styles.secondaryActionBtn, { backgroundColor: BLUE }]} onPress={openChat}>
+                  <MaterialIcons name="chat" size={18} color="#FFF" />
+                  <Text style={styles.actionBtnText}>Chat</Text>
+                  {unreadCount > 0 && <View style={styles.unreadBadge}><Text style={styles.unreadText}>{unreadCount}</Text></View>}
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.actionBtn, styles.secondaryActionBtn, { backgroundColor: '#475569' }]} onPress={startMobileNetworkCall}>
+                  <MaterialIcons name="phone" size={18} color="#FFF" />
+                  <Text style={styles.actionBtnText}>Call</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.cancelActionBtn, { backgroundColor: RED }]}
+                  onPress={() => setShowCancel(true)}
+                  accessibilityLabel="Cancel ride"
+                >
+                  <Text style={[styles.actionBtnText, { textAlign: 'center' }]}>Cancel ride</Text>
+                </TouchableOpacity>
+              </View>
               {activeTrip.status === 'driver_arrived' ? (
                 <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: GREEN, flex: 1 }]}
+                  style={[styles.actionBtn, styles.primaryTripAction, { backgroundColor: GREEN }]}
                   onPress={handleStartTrip}
                   disabled={tripActionPending}
                 >
@@ -1630,32 +1638,25 @@ export default function DriverHomeScreen() {
                 </TouchableOpacity>
               ) : activeTrip.status === 'driver_arriving' ? (
                 <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#F59E0B', flex: 1 }]}
+                  style={[styles.actionBtn, styles.primaryTripAction, { backgroundColor: '#F59E0B' }]}
                   onPress={handleArrivedAtPickup}
                   disabled={tripActionPending}
                 >
                   {tripActionPending ? <ActivityIndicator size="small" color="#FFF" /> : <><MaterialIcons name="location-on" size={18} color="#FFF" /><Text style={styles.actionBtnText}>Arrived</Text></>}
                 </TouchableOpacity>
               ) : activeTrip.status === 'in_progress' ? (
-                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: RED, flex: 1 }]} onPress={handleEndTrip} disabled={tripActionPending}>
-                  {tripActionPending ? <ActivityIndicator size="small" color="#FFF" /> : <><MaterialIcons name="stop" size={18} color="#FFF" /><Text style={styles.actionBtnText}>End</Text></>}
+                <TouchableOpacity style={[styles.actionBtn, styles.primaryTripAction, { backgroundColor: RED }]} onPress={handleEndTrip} disabled={tripActionPending}>
+                  {tripActionPending ? <ActivityIndicator size="small" color="#FFF" /> : <><MaterialIcons name="stop" size={18} color="#FFF" /><Text style={styles.actionBtnText}>End Trip</Text></>}
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#F59E0B', flex: 1 }]}
+                  style={[styles.actionBtn, styles.primaryTripAction, { backgroundColor: '#F59E0B' }]}
                   onPress={handleArrivedAtPickup}
                   disabled={tripActionPending}
                 >
                   {tripActionPending ? <ActivityIndicator size="small" color="#FFF" /> : <><MaterialIcons name="location-on" size={18} color="#FFF" /><Text style={styles.actionBtnText}>Arrived</Text></>}
                 </TouchableOpacity>
               )}
-              <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: RED, flex: 1.25, justifyContent: 'center' }]}
-                onPress={() => setShowCancel(true)}
-                accessibilityLabel="Cancel ride"
-              >
-                <Text style={[styles.actionBtnText, { textAlign: 'center' }]}>Cancel ride</Text>
-              </TouchableOpacity>
             </>
           )}
         </View>
@@ -1952,11 +1953,15 @@ const styles = StyleSheet.create({
   stopCompleteButton: { alignItems: 'center', borderRadius: 10, justifyContent: 'center', minHeight: 38, paddingHorizontal: 10 },
   stopCompleteText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
 
-  activeTripActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  activeTripActions: { gap: 8 },
+  secondaryTripActions: { flexDirection: 'row', alignItems: 'stretch', gap: 8, width: '100%' },
   // A compact icon keeps the optional external-map chooser available without
   // covering the driving map or pushing the primary trip actions downward.
   navigateTripIconBtn: { alignItems: 'center', borderRadius: 12, height: 48, justifyContent: 'center', width: 48 },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 12 },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 48, paddingHorizontal: 10, paddingVertical: 10, borderRadius: 12 },
+  secondaryActionBtn: { flex: 1, minWidth: 0 },
+  cancelActionBtn: { flex: 1.35, minWidth: 0 },
+  primaryTripAction: { width: '100%', minHeight: 52, paddingHorizontal: 16 },
   navigationChooserBackdrop: { alignItems: 'center', backgroundColor: 'rgba(2, 6, 23, 0.62)', flex: 1, justifyContent: 'flex-end', padding: 16 },
   navigationChooser: { borderRadius: 22, borderWidth: 1, maxWidth: 520, padding: 20, width: '100%' },
   navigationChooserTitle: { fontSize: 19, fontWeight: '900' },
@@ -1965,7 +1970,7 @@ const styles = StyleSheet.create({
   navigationChoiceText: { color: '#FFF', fontSize: 15, fontWeight: '900' },
   navigationCancelButton: { alignItems: 'center', marginTop: 12, paddingVertical: 10 },
   navigationCancelText: { fontSize: 15, fontWeight: '800' },
-  actionBtnText: { color: '#FFF', fontWeight: '800', fontSize: 13 },
+  actionBtnText: { color: '#FFF', fontWeight: '800', fontSize: 13, flexShrink: 1, textAlign: 'center', includeFontPadding: false },
   unreadBadge: { position: 'absolute', top: -8, right: -8, width: 20, height: 20, borderRadius: 10, backgroundColor: RED, alignItems: 'center', justifyContent: 'center' },
   unreadText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
 

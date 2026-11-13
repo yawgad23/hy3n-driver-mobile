@@ -1140,13 +1140,15 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     backgroundColor: 'rgba(15, 23, 42, 0.94)',
     borderRadius: 14,
-    bottom: 122,
+    maxWidth: 520,
+    top: 24,
     left: 24,
     paddingHorizontal: 15,
     paddingVertical: 11,
     position: 'absolute',
     right: 24,
+    zIndex: 10,
   },
-  navigationMessageText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', lineHeight: 18, textAlign: 'center' },
+  navigationMessageText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', lineHeight: 18, textAlign: 'center', includeFontPadding: false },
 });
 

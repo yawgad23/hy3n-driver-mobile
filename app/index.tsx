@@ -178,6 +178,8 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     gap: 4,
+    minWidth: 0,
+    paddingHorizontal: 4,
   },
   statValue: {
     fontSize: 20,
@@ -185,13 +187,17 @@ const styles = StyleSheet.create({
     color: GOLD,
   },
   statLabel: {
-    fontSize: 11,
+    fontSize: 12,
     color: MUTED,
+    lineHeight: 16,
+    minHeight: 32,
+    maxWidth: 92,
     textAlign: 'center',
+    includeFontPadding: false,
   },
   statDivider: {
     width: 1,
-    height: 36,
+    height: 48,
     backgroundColor: BORDER,
   },
   ctaSection: {
