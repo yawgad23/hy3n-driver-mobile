@@ -69,8 +69,8 @@ importers:
         specifier: ~18.0.14
         version: 18.0.14(expo@54.0.37)(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.1.0))
       expo-crypto:
-        specifier: ^58.0.7
-        version: 58.0.7(expo@54.0.37)
+        specifier: ^15.0.9
+        version: 15.0.9(expo@54.0.37)
       expo-dev-client:
         specifier: ^6.0.21
         version: 6.0.21(expo@54.0.37)
@@ -136,7 +136,7 @@ importers:
         version: 12.15.0(@react-native-async-storage/async-storage@2.2.0(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.1.0)))
       hy3n-backend:
         specifier: github:yawgad23/backend
-        version: https://codeload.github.com/yawgad23/backend/tar.gz/275b227a2ddeb2db157b1f6b061ffeea312e6ea1(typescript@5.9.3)
+        version: https://codeload.github.com/yawgad23/backend/tar.gz/0a07115e4afcc28c2dcbabca17280d64230d64f7(typescript@5.9.3)
       nativewind:
         specifier: ^4.2.1
         version: 4.2.1(react-native-reanimated@4.1.6(@babel/core@7.28.5)(react-native-worklets@0.5.1(@babel/core@7.28.5)(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-safe-area-context@5.6.2(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native-svg@15.12.1(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.8.2))
@@ -3436,8 +3436,8 @@ packages:
       expo: '*'
       react-native: '*'
 
-  expo-crypto@58.0.7:
-    resolution: {integrity: sha512-g+4i4UpqQ5jNy1VPRvVVvr9aIdh8WwvxbpwL2ntiSESDRsXyVSeb8JM6tHVdC3b9J2nGxjtrhrsaWOo0jbSxlA==}
+  expo-crypto@15.0.9:
+    resolution: {integrity: sha512-SNWKa2fXx7v9gkp1h/7nqXY5XN7qgNDn3yRc2aO0gWGbeMbvob/haMxxsPFe9f51aqH5NjNCqHf2kvLhvAd8KQ==}
     peerDependencies:
       expo: '*'
 
@@ -4090,8 +4090,8 @@ packages:
     resolution: {integrity: sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==}
     engines: {node: '>= 14'}
 
-  hy3n-backend@https://codeload.github.com/yawgad23/backend/tar.gz/275b227a2ddeb2db157b1f6b061ffeea312e6ea1:
-    resolution: {tarball: https://codeload.github.com/yawgad23/backend/tar.gz/275b227a2ddeb2db157b1f6b061ffeea312e6ea1}
+  hy3n-backend@https://codeload.github.com/yawgad23/backend/tar.gz/0a07115e4afcc28c2dcbabca17280d64230d64f7:
+    resolution: {tarball: https://codeload.github.com/yawgad23/backend/tar.gz/0a07115e4afcc28c2dcbabca17280d64230d64f7}
     version: 1.0.0
     engines: {node: '22'}
 
@@ -10235,8 +10235,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  expo-crypto@58.0.7(expo@54.0.37):
+  expo-crypto@15.0.9(expo@54.0.37):
     dependencies:
+      base64-js: 1.5.1
       expo: 54.0.37(@babel/core@7.28.5)(@expo/metro-runtime@6.1.2)(expo-router@6.0.24)(react-native-webview@13.15.0(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
 
   expo-dev-client@6.0.21(expo@54.0.37):
@@ -11131,7 +11132,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  hy3n-backend@https://codeload.github.com/yawgad23/backend/tar.gz/275b227a2ddeb2db157b1f6b061ffeea312e6ea1(typescript@5.9.3):
+  hy3n-backend@https://codeload.github.com/yawgad23/backend/tar.gz/0a07115e4afcc28c2dcbabca17280d64230d64f7(typescript@5.9.3):
     dependencies:
       '@trpc/server': 11.19.0(typescript@5.9.3)
       axios: 1.20.0
