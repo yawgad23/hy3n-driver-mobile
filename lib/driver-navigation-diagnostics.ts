@@ -2,17 +2,18 @@ export type DriverNavigationStage =
   | 'gps.sample' | 'native.gps' | 'route.assessment' | 'route.request' | 'route.response'
   | 'geometry.received' | 'geometry.rejected' | 'geometry.failed' | 'polyline.applied'
   | 'polyline.verified' | 'polyline.failed' | 'session.response' | 'route.native-change' | 'route.retry'
-  | 'arrival.ignored' | 'arrival.confirmed';
+  | 'marker.failed' | 'arrival.ignored' | 'arrival.confirmed';
 
 type DiagnosticFields = {
   request?: number; valid?: boolean; accuracyMeters?: number | null; ageMs?: number | null;
   movementMeters?: number | null; nativeDeltaMeters?: number | null; distanceMeters?: number | null;
   thresholdMeters?: number; offRoute?: boolean; wrongWay?: boolean; shouldReroute?: boolean;
-  points?: number; targetMatches?: boolean; nativePathMatches?: boolean; source?: 'ios-current-leg' | 'route-legs';
-  status?: string | number; reason?: string; code?: string;
+  points?: number; targetMatches?: boolean; nativePathMatches?: boolean;
+  source?: 'ios-current-leg' | 'route-legs' | 'ios-current-and-complete' | 'android-current-and-complete';
+  status?: string | number; reason?: string; code?: string; asset?: string;
 };
 const ALLOWED = new Set(['request','valid','accuracyMeters','ageMs','movementMeters','nativeDeltaMeters',
-  'distanceMeters','thresholdMeters','offRoute','wrongWay','shouldReroute','points','targetMatches','nativePathMatches','source','status','reason','code']);
+  'distanceMeters','thresholdMeters','offRoute','wrongWay','shouldReroute','points','targetMatches','nativePathMatches','source','status','reason','code','asset']);
 
 /** Temporary local diagnostics only. Never log native error messages or raw coordinates. */
 export function driverNavigationDiagnosticsEnabled() {

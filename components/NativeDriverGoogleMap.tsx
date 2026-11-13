@@ -323,7 +323,17 @@ function DriverNavigationSurface({
             // before writing an already-outdated native marker position.
             const newerPending = pendingVehicleMarkerRef.current as { controller: MapViewController; marker: any; asset: string } | null;
             if (newerPending && newerPending.controller === pending.controller) continue;
-            await pending.controller.addMarker(pending.marker);
+            try {
+              await pending.controller.addMarker(pending.marker);
+            } catch (error) {
+              // Some Android Navigation SDK builds fail to resolve an app asset
+              // from the native assets directory. Keep the live Driver visible
+              // with Google's standard marker rather than dropping it entirely.
+              diagnostics('marker.failed', { code: navigationErrorCode(error), asset: pending.asset });
+              const fallbackMarker = { ...pending.marker };
+              delete fallbackMarker.imgPath;
+              await pending.controller.addMarker(fallbackMarker);
+            }
           }
         } catch (error) {
           console.warn('[HY3N] Could not update the live vehicle marker.', error);
@@ -468,31 +478,26 @@ function DriverNavigationSurface({
       if (!mapViewController || !hasTarget || !isCurrent() || arrivedTargetKeyRef.current === activeTargetRef.current?.key) return false;
       let stage: 'geometry' | 'polyline' = 'geometry';
       try {
-        // iOS currentRouteLeg explicitly starts at the most recent native GPS
-        // fix. HY3N sets one active stop at a time, so this is the entire leg we
-        // must display. Do not silently substitute cached full legs on failure.
+        // Android and iOS can expose different route snapshots immediately
+        // after setDestination. Read both native sources and choose the route
+        // that actually reaches the active pickup/drop-off target, preferring
+        // the complete route when the current segment is only a prefix.
+        const [currentSegmentResult, completeSegmentsResult] = await Promise.allSettled([
+          navigationController.getCurrentRouteSegment(),
+          navigationController.getRouteSegments(),
+        ]);
+        const currentSegment = currentSegmentResult.status === 'fulfilled' ? currentSegmentResult.value : null;
+        const completeSegments = completeSegmentsResult.status === 'fulfilled' ? completeSegmentsResult.value : [];
+        const routeCandidates = [
+          routePointsForMap([currentSegment]),
+          routePointsForMap(completeSegments),
+        ].filter((candidate) => candidate.length >= 2);
         const iosCurrentLeg = Platform.OS === 'ios';
-        const firstSegments = iosCurrentLeg
-          ? [await navigationController.getCurrentRouteSegment()]
-          : await navigationController.getRouteSegments();
-        let points = routePointsForMap(firstSegments);
-        let targetMatches = driverRouteReachesTarget(points, { lat: targetLatitude, lng: targetLongitude });
-        // iOS can return only the current native segment immediately after
-        // guidance starts. That segment is valid geometry but may end before
-        // the destination, so rejecting it leaves the HY3N line blank. Ask
-        // Google for the complete route before treating the geometry as bad.
-        if (iosCurrentLeg && !targetMatches) {
-          const completeSegments = await navigationController.getRouteSegments();
-          const completePoints = routePointsForMap(completeSegments);
-          // The complete route can have the same number of points as the
-          // current segment after Google simplifies its geometry. Compare the
-          // destination, not only the array length, before accepting it.
-          if (completePoints.length >= 2 && driverRouteReachesTarget(completePoints, { lat: targetLatitude, lng: targetLongitude })) {
-            points = completePoints;
-            targetMatches = driverRouteReachesTarget(points, { lat: targetLatitude, lng: targetLongitude });
-          }
-        }
-        diagnostics('geometry.received', { request: navigationRequestRef.current, points: points.length, targetMatches, source: iosCurrentLeg ? 'ios-current-leg' : 'route-legs' });
+        let points = routeCandidates.find((candidate) => driverRouteReachesTarget(candidate, { lat: targetLatitude, lng: targetLongitude }))
+          ?? routeCandidates.sort((a, b) => b.length - a.length)[0]
+          ?? [];
+        const targetMatches = driverRouteReachesTarget(points, { lat: targetLatitude, lng: targetLongitude });
+        diagnostics('geometry.received', { request: navigationRequestRef.current, points: points.length, targetMatches, source: iosCurrentLeg ? 'ios-current-and-complete' : 'android-current-and-complete' });
         if (!isCurrent() || points.length < 2 || !targetMatches) {
           diagnostics('geometry.rejected', { reason: !isCurrent() ? 'stale_request' : points.length < 2 ? 'invalid_points' : 'wrong_target' });
           return false;

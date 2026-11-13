@@ -1733,7 +1733,7 @@ export default function DriverHomeScreen() {
       {/* Fare confirmation before the post-trip rating */}
       <Modal visible={showFareScreen} transparent animationType="slide" onRequestClose={handleFareAcknowledged}>
         <View style={styles.sheetOverlay}>
-          <View style={[styles.sheet, { backgroundColor: isDark ? '#1a1a1a' : '#fff' }]}>
+          <View style={[styles.sheet, { backgroundColor: isDark ? '#1a1a1a' : '#fff', paddingBottom: Math.max(insets.bottom + 24, 32) }]}>
             <MaterialIcons name="check-circle" size={34} color={GREEN} />
             <Text style={[styles.sheetTitle, dynamicStyles.text]}>Trip completed</Text>
             <Text style={[styles.sheetText, dynamicStyles.muted]}>{completedRide?.destination_address || 'Trip destination'}</Text>
