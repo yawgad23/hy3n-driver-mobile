@@ -110,6 +110,19 @@ function hasFreshNavigationFix(accuracy: number | null | undefined, time: number
     && time != null && Number.isFinite(time) && Date.now() - time <= 15_000 && time - Date.now() <= 5_000;
 }
 
+function routeDistanceMeters(points: readonly DriverRoutePoint[]) {
+  return points.slice(1).reduce((total, point, index) => total + distanceBetweenPositionsMetres(
+    { latitude: points[index].lat, longitude: points[index].lng, heading: 0 },
+    { latitude: point.lat, longitude: point.lng, heading: 0 },
+  ), 0);
+}
+
+function formatRemainingDistance(distanceMeters: number | null) {
+  if (distanceMeters === null || !Number.isFinite(distanceMeters) || distanceMeters < 0) return null;
+  if (distanceMeters < 1000) return `${Math.max(10, Math.round(distanceMeters / 10) * 10)} m remaining`;
+  return `${(distanceMeters / 1000).toFixed(1)} km remaining`;
+}
+
 type DriverNavigationLocation = {
   latitude: number;
   longitude: number;
@@ -193,6 +206,7 @@ function DriverNavigationSurface({
   } = useNavigation();
   const [mapViewController, setMapViewController] = useState<MapViewController | null>(null);
   const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
+  const [remainingDistanceMeters, setRemainingDistanceMeters] = useState<number | null>(null);
   const diagnostics = useRef(createDriverNavigationDiagnostics()).current;
   const nativeLocationRef = useRef<DriverNavigationLocation | null>(null);
   const expoLocationRef = useRef<DriverNavigationLocation | null>(null);
@@ -443,6 +457,7 @@ function DriverNavigationSurface({
       await Promise.allSettled([Promise.resolve(mapViewController.removeMarker(DRIVER_TARGET_MARKER_ID))]);
     });
     routeOverlayWorkRef.current = work.catch(() => {});
+    setRemainingDistanceMeters(null);
     return work;
   }, [clearRouteLines, mapViewController]);
 
@@ -457,6 +472,7 @@ function DriverNavigationSurface({
       // Keep the last verified road visible during a brief stale/invalid GPS
       // window. Clear it only after valid replacement geometry is available.
       if (points.length < 2) return;
+      setRemainingDistanceMeters(routeDistanceMeters(points));
       await clearRouteLines();
       if (navigationRequestRef.current !== request) return;
       await mapViewController.addPolyline({
@@ -542,6 +558,7 @@ function DriverNavigationSurface({
         // possible yet. Once a fresh fix arrives, updateRemainingRoute trims
         // the line back to the Driver's actual road position.
         const displayPoints = remaining.length >= 2 ? remaining : points;
+        setRemainingDistanceMeters(routeDistanceMeters(displayPoints));
         staleRoutePlanRef.current = null;
         confirmedRerouteRef.current = null;
 
@@ -1102,6 +1119,13 @@ function DriverNavigationSurface({
           <Text style={styles.navigationMessageText}>{navigationMessage}</Text>
         </View>
       )}
+      {hasTarget && hasDeviceLocation && formatRemainingDistance(remainingDistanceMeters) && (
+        <View style={styles.remainingDistancePill} pointerEvents="none">
+          <Text style={styles.remainingDistanceText}>
+            {formatRemainingDistance(remainingDistanceMeters)} to {tripStatus === 'dropoff' ? 'drop-off' : 'pickup'}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -1150,5 +1174,18 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   navigationMessageText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700', lineHeight: 18, textAlign: 'center', includeFontPadding: false },
+  remainingDistancePill: {
+    alignSelf: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.94)',
+    borderColor: 'rgba(255,255,255,0.24)',
+    borderRadius: 14,
+    borderWidth: 1,
+    bottom: 28,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    position: 'absolute',
+    zIndex: 10,
+  },
+  remainingDistanceText: { color: '#FFFFFF', fontSize: 13, fontWeight: '900', includeFontPadding: false },
 });
 
