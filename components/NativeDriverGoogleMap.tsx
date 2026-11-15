@@ -309,6 +309,8 @@ function DriverNavigationSurface({
       anchor: { u: 0.5, v: 0.5 },
       visible: true,
     };
+    // Vehicle updates are ultimately applied through mapViewController.addMarker
+    // so the branded marker remains the only live navigation indicator.
     // The Navigation SDK does not reliably replace the image of an existing
     // marker when addMarker is called again with the same ID. Remove it once
     // when the service asset changes, then recreate it with the correct image.
@@ -526,13 +528,6 @@ function DriverNavigationSurface({
           return false;
         }
         stage = 'polyline';
-        await mapViewController.addMarker({
-          id: DRIVER_TARGET_MARKER_ID,
-          position: { lat: targetLatitude, lng: targetLongitude },
-          title: targetLabel, anchor: { u: 0.5, v: 1 }, visible: true,
-        });
-        if (!isCurrent()) return false;
-
         routePointsRef.current = points;
         // Native path prefixes can change on progress/traffic reads without a
         // genuine new direction. Never erase distinct real-GPS evidence because
@@ -1084,14 +1079,16 @@ function DriverNavigationSurface({
             target: { lat: Number(latitude), lng: Number(longitude) },
             zoom: hasTarget ? 17 : 16,
             bearing: Number(heading) || 0,
-            // Keep the HY3N map flat. A pitched camera makes the road surface
-            // look like an aerial/drone view instead of the clean Uber/Bolt
-            // road map used for Driver navigation.
-            tilt: 0,
+            // Start with the same slight forward perspective used by Google
+            // Navigation; setFollowingPerspective keeps it heading-up once
+            // guidance is active.
+            tilt: hasTarget ? 30 : 0,
           }}
           // The branded MapView never switches at acceptance. The HY3N car is
           // its only live vehicle marker; the Google blue location arrow stays
           // disabled while the Navigation SDK remains the voice/route engine.
+          // FOLLOW_SYSTEM supplies a genuinely dark Google basemap in dark mode
+          // and the normal light Google basemap in light mode.
           mapColorScheme={MapColorScheme.FOLLOW_SYSTEM}
           mapStyle={CLEAN_GOOGLE_STYLE}
           trafficEnabled
