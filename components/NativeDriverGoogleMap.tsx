@@ -51,7 +51,8 @@ type Props = {
 };
 
 const GREEN = '#008C5A';
-const ROUTE_OUTLINE = '#FFFFFF';
+const NAVIGATION_ROUTE = '#F6C945';
+const ROUTE_OUTLINE = '#2A2A2A';
 const DRIVER_VEHICLE_MARKER_ID = 'hy3n-driver-vehicle';
 const DRIVER_ROUTE_OUTLINE_ID = 'hy3n-driver-route-outline';
 const DRIVER_ROUTE_ID = 'hy3n-driver-route';
@@ -482,7 +483,7 @@ function DriverNavigationSurface({
       });
       if (navigationRequestRef.current !== request) { await clearRouteLines(); return; }
       await mapViewController.addPolyline({
-        id: DRIVER_ROUTE_ID, points, color: GREEN, width: 8, visible: true,
+        id: DRIVER_ROUTE_ID, points, color: NAVIGATION_ROUTE, width: 8, visible: true,
       });
       if (navigationRequestRef.current !== request) await clearRouteLines();
     });
@@ -576,7 +577,7 @@ function DriverNavigationSurface({
         await mapViewController.addPolyline({
           id: DRIVER_ROUTE_ID,
           points: displayPoints,
-          color: GREEN,
+          color: NAVIGATION_ROUTE,
           width: 8,
           visible: true,
         });
