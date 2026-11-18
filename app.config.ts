@@ -78,9 +78,8 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    // 57020 packages the Android marker, route-line, trip-action layout, and
-    // optional hardware-feature declaration fixes.
-    versionCode: 57020,
+    // 57021 packages the 16 KB page-size and edge-to-edge compatibility fixes.
+    versionCode: 57021,
     googleServicesFile: "./firebase/google-services.json",
     permissions: [
       "POST_NOTIFICATIONS",

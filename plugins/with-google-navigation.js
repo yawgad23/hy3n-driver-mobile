@@ -6,6 +6,7 @@ const {
   withAppDelegate,
   withDangerousMod,
   withGradleProperties,
+  withProjectBuildGradle,
 } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
@@ -31,6 +32,7 @@ const IOS_NAVIGATION_VIEW_CONTROLLER_SOURCE = path.join(
 );
 const IOS_DISABLE_DEFAULT_LOCATION_INDICATOR_MARKER = 'HY3N_DRIVER_DISABLE_DEFAULT_LOCATION_INDICATOR';
 const IOS_DISABLE_NAVIGATION_LOCATION_INDICATOR_MARKER = 'HY3N_DRIVER_DISABLE_NAVIGATION_LOCATION_INDICATOR';
+const DRIVER_ANDROID_NDK_VERSION = '28.0.12433566';
 
 function addAndroidNavigationApiKey(config, androidApiKey) {
   return withAndroidManifest(config, (androidConfig) => {
@@ -115,6 +117,23 @@ function enableAndroidNavigationBuildSupport(config) {
     }
 
     gradleConfig.modResults.contents = contents;
+    return gradleConfig;
+  });
+}
+
+function pinAndroidNdkVersion(config) {
+  return withProjectBuildGradle(config, (gradleConfig) => {
+    if (gradleConfig.modResults.language !== 'groovy') return gradleConfig;
+    const marker = 'apply plugin: "expo-root-project"';
+    const assignment = `ext.ndkVersion = "${DRIVER_ANDROID_NDK_VERSION}"`;
+    if (gradleConfig.modResults.contents.includes(assignment)) return gradleConfig;
+    if (!gradleConfig.modResults.contents.includes(marker)) {
+      throw new Error('Unable to locate the Expo root project plugin while configuring the Android NDK.');
+    }
+    gradleConfig.modResults.contents = gradleConfig.modResults.contents.replace(
+      marker,
+      `${marker}\n${assignment}`,
+    );
     return gradleConfig;
   });
 }
@@ -260,6 +279,7 @@ function withGoogleNavigation(config, options = {}) {
   config = addAndroidNavigationApiKey(config, String(options.androidApiKey || '').trim());
   config = markNonEssentialAndroidFeaturesOptional(config);
   config = enableAndroidNavigationBuildSupport(config);
+  config = pinAndroidNdkVersion(config);
   config = addIosNavigationApiKey(config, String(options.iosApiKey || '').trim());
   config = disableIosDefaultLocationIndicator(config);
   return config;

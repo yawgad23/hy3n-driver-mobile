@@ -1,8 +1,9 @@
 import React, { useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Image, ActivityIndicator, StatusBar,
+  Image, ActivityIndicator,
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { router } from 'expo-router';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,7 +29,7 @@ export default function DriverLandingScreen() {
   if (loading) {
     return (
       <View style={[styles.loadingContainer, { paddingTop: insets.top }]}>
-        <StatusBar barStyle="light-content" backgroundColor={BG} />
+        <StatusBar style="light" />
         <Image
           source={require('@/assets/images/icon.png')}
           style={styles.loadingLogo}
@@ -42,7 +43,7 @@ export default function DriverLandingScreen() {
   // Not logged in — show the landing page
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, 32) }]}>
-      <StatusBar barStyle="light-content" backgroundColor={BG} />
+      <StatusBar style="light" />
 
       {/* Hero */}
       <View style={styles.hero}>

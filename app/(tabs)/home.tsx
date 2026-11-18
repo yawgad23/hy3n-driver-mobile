@@ -5,8 +5,9 @@ import { RIDE_CATEGORIES, FREE_WAITING_MINUTES, POPULAR_DESTINATIONS } from '@/c
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView,
   Alert, ActivityIndicator, Animated, Image, Platform, PanResponder,
-  Modal, TextInput, StatusBar, AppState
+  Modal, TextInput, AppState
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Notifications from 'expo-notifications';
@@ -1392,7 +1393,7 @@ export default function DriverHomeScreen() {
 
   return (
     <View style={[styles.container, dynamicStyles.container]}>
-      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} translucent backgroundColor="transparent" />
+      <StatusBar style={isDark ? "light" : "dark"} />
 
       {/* Map Layer */}
       {isOnline ? (
