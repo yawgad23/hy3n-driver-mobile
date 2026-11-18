@@ -51,6 +51,42 @@ function addAndroidNavigationApiKey(config, androidApiKey) {
   });
 }
 
+/**
+ * Keep the app's portrait UX while preventing Play from filtering out devices
+ * whose manifest capability set does not advertise portrait or Wi-Fi hardware.
+ */
+function markNonEssentialAndroidFeaturesOptional(config) {
+  return withAndroidManifest(config, (androidConfig) => {
+    const manifest = androidConfig.modResults.manifest;
+    const optionalFeatures = [
+      "android.hardware.screen.portrait",
+      "android.hardware.wifi",
+    ];
+    const features = manifest["uses-feature"] || [];
+
+    for (const name of optionalFeatures) {
+      const existing = features.find(
+        (feature) => feature.$?.["android:name"] === name,
+      );
+      const attributes = {
+        ...(existing?.$ || {}),
+        "android:name": name,
+        "android:required": "false",
+        "tools:replace": "android:required",
+      };
+
+      if (existing) {
+        existing.$ = attributes;
+      } else {
+        features.push({ $: attributes });
+      }
+    }
+
+    manifest["uses-feature"] = features;
+    return androidConfig;
+  });
+}
+
 function enableAndroidNavigationBuildSupport(config) {
   config = withGradleProperties(config, (gradleConfig) => {
     const property = gradleConfig.modResults.find((entry) => entry.type === 'property' && entry.key === 'android.enableJetifier');
@@ -222,6 +258,7 @@ function disableIosDefaultLocationIndicator(config) {
 function withGoogleNavigation(config, options = {}) {
   config = addDriverCarMarkerAssets(config);
   config = addAndroidNavigationApiKey(config, String(options.androidApiKey || '').trim());
+  config = markNonEssentialAndroidFeaturesOptional(config);
   config = enableAndroidNavigationBuildSupport(config);
   config = addIosNavigationApiKey(config, String(options.iosApiKey || '').trim());
   config = disableIosDefaultLocationIndicator(config);
