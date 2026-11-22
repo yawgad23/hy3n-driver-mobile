@@ -1779,7 +1779,7 @@ export default function DriverHomeScreen() {
       {/* Rating Modal */}
       <Modal visible={showRating} animationType="slide" presentationStyle="pageSheet" transparent>
         <View style={styles.ratingOverlay}>
-          <View style={[styles.ratingModal, { backgroundColor: isDark ? '#1a1a1a' : '#fff' }]}>
+          <View style={[styles.ratingModal, { backgroundColor: isDark ? '#1a1a1a' : '#fff', paddingBottom: Math.max(insets.bottom + 24, 56) }]}>
             <Text style={[styles.ratingTitle, dynamicStyles.text]}>Rate Your Experience</Text>
             <Text style={[styles.ratingSubtitle, dynamicStyles.muted]}>{completedRide?.rider_name}</Text>
 
@@ -1810,7 +1810,7 @@ export default function DriverHomeScreen() {
             <TextInput style={[styles.compactInput, { color: themeColors.text, borderColor: themeColors.border }]} placeholder="Report a found item (optional)" placeholderTextColor="#999" value={foundItem} onChangeText={setFoundItem} />
             <TextInput style={[styles.compactInput, { color: themeColors.text, borderColor: themeColors.border }]} placeholder="Report a safety concern (optional)" placeholderTextColor="#999" value={safetyReport} onChangeText={setSafetyReport} />
 
-            <View style={{ flexDirection: 'row', gap: 12 }}>
+            <View style={styles.ratingActions}>
               <TouchableOpacity
               style={[styles.ratingBtn, { backgroundColor: themeColors.border, flex: 1 }]}
                 onPress={() => { setShowRating(false); setRatingValue(5); }}
@@ -2032,6 +2032,7 @@ const styles = StyleSheet.create({
   starsContainer: { flexDirection: 'row', justifyContent: 'center', gap: 12, marginBottom: 24 },
   feedbackInput: { height: 86, borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14, marginBottom: 10, textAlignVertical: 'top' },
   compactInput: { height: 46, borderWidth: 1, borderRadius: 11, paddingHorizontal: 13, fontSize: 13, marginBottom: 9 },
+  ratingActions: { flexDirection: 'row', gap: 12, paddingBottom: 2 },
   ratingBtn: { height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   ratingBtnText: { fontSize: 15, fontWeight: '800', color: '#000' }
 });
