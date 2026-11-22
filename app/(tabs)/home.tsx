@@ -175,6 +175,8 @@ export default function DriverHomeScreen() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [tripDistanceKm, setTripDistanceKm] = useState(0);
   const [tripStartedAt, setTripStartedAt] = useState<string | null>(null);
+  const [mapBottomInset, setMapBottomInset] = useState(160);
+  const [mapTopInset, setMapTopInset] = useState(insets.top + 68);
   // One player is retained for the whole Home-screen lifetime. It plays the
   // bundled request tone only for a new foreground offer, rather than creating
   // a player during rendering or relying on a provider notification tone.
@@ -1351,6 +1353,19 @@ export default function DriverHomeScreen() {
     } catch {}
   };
 
+  // Keep this hook before the approval gate: approval changes may not change
+  // Home's hook order. Only the existing server-verified selector owns targets.
+  const activeNavigationTarget = useMemo(() => {
+    if (!activeTrip) return null;
+    return activeTripNavigationTarget(
+      activeTrip,
+      activeTrip.status === 'in_progress' ? 'dropoff' : 'pickup',
+    );
+  }, [activeTrip]);
+  const activeNavigationId = activeTrip && activeNavigationTarget
+    ? `${activeTrip.id}:${activeNavigationTarget.kind}:${activeNavigationTarget.kind === 'stop' ? activeTrip.route_target?.stop_id || 'approved-stop' : activeNavigationTarget.kind}`
+    : null;
+
   // Check approval status
   if (driverProfile?.approval_status === "pending") {
     return (
@@ -1381,16 +1396,6 @@ export default function DriverHomeScreen() {
     }
   };
 
-  const activeNavigationTarget = useMemo(() => {
-    if (!activeTrip) return null;
-    return activeTripNavigationTarget(
-      activeTrip,
-      activeTrip.status === 'in_progress' ? 'dropoff' : 'pickup',
-    );
-  }, [activeTrip]);
-
-
-
   return (
     <View style={[styles.container, dynamicStyles.container]}>
       <StatusBar style={isDark ? "light" : "dark"} />
@@ -1405,6 +1410,11 @@ export default function DriverHomeScreen() {
           heading={location?.coords.heading}
           target={activeNavigationTarget}
           tripStatus={activeTrip ? (activeTrip.status === 'in_progress' ? 'dropoff' : 'pickup') : null}
+          navigationId={activeNavigationId}
+          navigationPaused={activeTrip?.status === 'driver_arrived'}
+          navigationTopInset={mapTopInset}
+          navigationBottomInset={mapBottomInset}
+          isDark={isDark}
           serviceType={(driverProfile as any)?.service_type ?? (driverProfile as any)?.serviceType ?? ((driverProfile as any)?.accepted_categories?.includes?.('okada') ? 'okada' : (driverProfile as any)?.accepted_categories?.includes?.('express_delivery') ? 'delivery' : 'car')}
         />
       ) : (
@@ -1416,7 +1426,8 @@ export default function DriverHomeScreen() {
       )}
 
       {/* Floating Controls */}
-      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}
+        onLayout={(event) => setMapTopInset(event.nativeEvent.layout.height + 12)}>
         <View style={[styles.statusBadge, dynamicStyles.badge]}>
           <View style={[styles.statusDot, { backgroundColor: isOnline ? GREEN : themeColors.muted }]} />
           <Text style={[styles.statusText, dynamicStyles.text]}>{driverStatusLabel}</Text>
@@ -1445,7 +1456,8 @@ export default function DriverHomeScreen() {
       </View>
 
       {/* Bottom Interface */}
-      <View style={[styles.bottomContainer, { paddingBottom: insets.bottom + 20 }]}>
+      <View style={[styles.bottomContainer, { paddingBottom: insets.bottom + 20 }]}
+        onLayout={(event) => setMapBottomInset(event.nativeEvent.layout.height + 12)}>
         {/* Incoming Ride Request */}
         {incomingRide && !activeTrip && (
           <Animated.View {...offerPanResponder.panHandlers} style={[styles.rideRequestCard, dynamicStyles.card, { transform: [{ translateX: offerSwipeX }] }]}>

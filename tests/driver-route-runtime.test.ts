@@ -15,13 +15,23 @@ const corner = { lat: 5.704, lng: -0.1 };
 const destination = { lat: 5.704, lng: -0.096 };
 const road = [origin, corner, destination];
 
-async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng }) {
+async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng }, platform: 'ios' | 'android' = 'ios') {
   let segments = road;
+  let currentSegments: typeof road | null = null;
+  let currentTraffic: any = undefined;
+  let completeTraffic: any = undefined;
+  let hasCurrentContext = true;
   let onDestination: ((point: any) => Promise<number>) | null = null;
   const polylines = new Map<string, any>();
   const destinationCalls: any[] = [];
   const cameraCalls: any[] = [];
-  const listeners: Record<string, (() => void) | null> = {};
+  const polylineRemovals: string[] = [];
+  const listeners: Record<string, ((value?: any) => void) | null> = {};
+  const loggingCalls: boolean[] = [];
+  let nativeGeneration = 0;
+  let nativeTarget = destination;
+  const nativeStamp = () => ({ hy3nTargetLatitude: nativeTarget.lat, hy3nTargetLongitude: nativeTarget.lng,
+    hy3nRouteGeneration: nativeGeneration, hy3nCapturedAtMs: Date.now() });
   const backgroundLocationCalls: boolean[] = [];
   const keepAwakeCalls: string[] = [];
   let locationStarts = 0;
@@ -29,7 +39,7 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
   const controller = {
     addMarker: async () => ({}), removeMarker: async () => {}, moveCamera: (camera: any) => { cameraCalls.push(camera); },
     addPolyline: async (line: any) => { polylines.set(line.id, line); return line; },
-    removePolyline: async (id: string) => { polylines.delete(id); },
+    removePolyline: async (id: string) => { polylineRemovals.push(id); polylines.delete(id); },
   };
   const navigationController = {
     showTermsAndConditionsDialog: async () => true, init: async () => 0,
@@ -37,10 +47,17 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
     stopUpdatingLocation: () => {},
     setBackgroundLocationUpdatesEnabled: (enabled: boolean) => { backgroundLocationCalls.push(enabled); },
     startGuidance: async () => {}, stopGuidance: async () => {},
+    setTurnByTurnLoggingEnabled: (enabled: boolean) => { loggingCalls.push(enabled); },
+    getCurrentTimeAndDistance: async () => ({ ...nativeStamp() }),
     clearDestinations: async () => {}, cleanup: async () => {},
-    getCurrentRouteSegment: async () => ({ segmentLatLngList: segments }),
-    getRouteSegments: async () => [{ segmentLatLngList: segments }],
-    setDestination: async (point: any) => { destinationCalls.push(point); return onDestination ? onDestination(point) : 0; },
+    getCurrentRouteSegment: async () => ({ segmentLatLngList: currentSegments ?? segments, navigationTrafficData: currentTraffic, ...(hasCurrentContext ? nativeStamp() : {}) }),
+    getRouteSegments: async () => [{ segmentLatLngList: segments, navigationTrafficData: completeTraffic }],
+    setDestination: async (point: any) => {
+      nativeGeneration++;
+      nativeTarget = { ...point.position };
+      destinationCalls.push(point);
+      return onDestination ? onDestination(point) : 0;
+    },
   };
   const useNavigation = () => React.useMemo(() => ({
     navigationController,
@@ -49,10 +66,13 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
     setOnRouteChanged: (cb: any) => { listeners.changed = cb; },
     setOnReroutingRequestedByOffRoute: (cb: any) => { listeners.offRoute = cb; },
     setOnLocationChanged: (cb: any) => { listeners.location = cb; },
+    setOnTurnByTurn: (cb: any) => { listeners.turn = cb; },
+    setOnRemainingTimeOrDistanceChanged: (cb: any) => { listeners.remaining = cb; },
+    setOnTrafficUpdated: (cb: any) => { listeners.traffic = cb; },
   }), []);
-  const MapView = ({ onMapViewControllerCreated }: any) => {
+  const MapView = ({ onMapViewControllerCreated, ...props }: any) => {
     React.useEffect(() => { onMapViewControllerCreated(controller); }, [onMapViewControllerCreated]);
-    return React.createElement('map');
+    return React.createElement('map', props);
   };
   const sdk = {
     useNavigation, MapView, NavigationView: MapView, NavigationProvider: ({ children }: any) => children,
@@ -67,7 +87,8 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
       appStateListener = listener;
       return { remove: () => { appStateListener = null; } };
     } },
-    Linking: { openSettings: () => {} }, Platform: { OS: 'ios', select: (v: any) => v.ios },
+    Linking: { openSettings: () => {} }, Platform: { OS: platform, select: (v: any) => v[platform] },
+    PixelRatio: { get: () => 3 },
     StyleSheet: { create: (v: any) => v, absoluteFillObject: {}, absoluteFill: {} },
   };
   const keepAwake = {
@@ -83,12 +104,13 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
     bundle: true, write: false, platform: 'node', format: 'cjs',
     external: ['react'],
     plugins: [{ name: 'native-boundary-mocks', setup(b) {
-      b.onResolve({ filter: /^(react-native|@googlemaps\/react-native-navigation-sdk|expo-keep-awake)$/ }, args => ({ path: args.path, external: true }));
+      b.onResolve({ filter: /^(react-native|@googlemaps\/react-native-navigation-sdk|expo-keep-awake|@expo\/vector-icons\/MaterialIcons)$/ }, args => ({ path: args.path, external: true }));
     } }],
   });
   const module = { exports: {} as any };
   new Function('require', 'module', 'exports', result.outputFiles[0].text)(
-    (name: string) => name === 'react-native' ? native : name === '@googlemaps/react-native-navigation-sdk' ? sdk : name === 'expo-keep-awake' ? keepAwake : requireHere(name),
+    (name: string) => name === 'react-native' ? native : name === '@googlemaps/react-native-navigation-sdk' ? sdk : name === 'expo-keep-awake' ? keepAwake
+      : name === '@expo/vector-icons/MaterialIcons' ? (props: any) => React.createElement('icon', props) : requireHere(name),
     module, module.exports,
   );
   const Component = module.exports.default;
@@ -101,10 +123,21 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
   await act(async () => { await flush(); });
   return {
     polylines, destinationCalls, cameraCalls, listeners,
-    backgroundLocationCalls, keepAwakeCalls,
+    backgroundLocationCalls, keepAwakeCalls, polylineRemovals,
+    loggingCalls, nativeStamp,
+    rendered: () => JSON.stringify(tree!.toJSON()),
+    mapProps: () => tree!.root.findByType('map').props,
+    surfaceProps: () => tree!.root.findAllByType('view').find(view => view.props.onTouchMove)?.props,
+    press: async (label: string) => { await act(async () => {
+      tree!.root.findByProps({ accessibilityLabel: label }).props.onPress(); await flush();
+    }); },
     locationStarts: () => locationStarts,
     appState: async (state: string) => { await act(async () => { appStateListener?.(state); await flush(); }); },
     setSegments: (v: typeof road) => { segments = v; },
+    setCurrentSegments: (v: typeof road | null) => { currentSegments = v; },
+    setTraffic: (current: any, complete = current) => { currentTraffic = current; completeTraffic = complete; },
+    setCurrentContext: (value: boolean) => { hasCurrentContext = value; },
+    emit: async (name: string, value?: any) => { await act(async () => { listeners[name]?.(value); await flush(); }); },
     setDestinationHandler: (handler: (point: any) => Promise<number>) => { onDestination = handler; },
     update: async (update: any) => {
       if (typeof update.locationTimestamp === 'number' && update.locationTimestamp < 1000) {
@@ -118,14 +151,37 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
   };
 }
 
-test('manual Driver map zoom is not overridden by subsequent GPS updates', async () => {
-  const map = await mountMap();
-  try {
-    await map.update({ latitude: 5.701, longitude: -0.1, locationTimestamp: 2 });
-    await map.update({ latitude: 5.702, longitude: -0.1, locationTimestamp: 3 });
-    assert.equal(map.cameraCalls.length, 0, 'GPS updates must not snap the viewport back to the car');
-  } finally { await map.dispose(); }
-});
+for (const platform of ['ios', 'android'] as const) {
+  test(`${platform} follows by default, lets Explore map pause GPS camera writes, and recenters explicitly`, async () => {
+    const clock = requireHere('@sinonjs/fake-timers').install({ now: 100_000, toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    const map = await mountMap(undefined, platform);
+    try {
+      assert.ok(map.cameraCalls.length > 0, 'active navigation starts in following mode');
+      assert.equal(map.cameraCalls.at(-1).tilt, 45);
+      assert.equal(map.cameraCalls.at(-1).zoom, 17.2);
+      const followingCalls = map.cameraCalls.length;
+      await act(async () => { await clock.tickAsync(150); });
+      await map.update({ latitude: 5.701, locationTimestamp: 2 });
+      await act(async () => { await clock.tickAsync(250); });
+      assert.ok(map.cameraCalls.length > followingCalls, 'subsequent GPS movement advances the following camera');
+      await map.press('Explore map');
+      const pausedCalls = map.cameraCalls.length;
+      await map.update({ latitude: 5.702, locationTimestamp: 3 });
+      await act(async () => { await clock.tickAsync(500); });
+      assert.equal(map.cameraCalls.length, pausedCalls, 'manual exploration must not snap the viewport back to the car');
+      await map.press('Recenter navigation');
+      assert.ok(map.cameraCalls.length > pausedCalls, 'recenter immediately restores the latest car view');
+      const recenteredCalls = map.cameraCalls.length;
+      await act(async () => { await clock.tickAsync(150); });
+      await map.update({ latitude: 5.7025, locationTimestamp: 4 });
+      await act(async () => { await clock.tickAsync(250); });
+      assert.ok(map.cameraCalls.length > recenteredCalls, 'GPS following remains active after recenter');
+      assert.equal(map.mapProps().trafficEnabled, true);
+      assert.equal(map.mapProps().mapPadding.left, platform === 'android' ? 12 * 3 : 12);
+      assert.ok(map.mapProps().mapPadding.top > map.mapProps().mapPadding.bottom, 'turn banner has reserved native map space');
+    } finally { await map.dispose(); clock.uninstall(); }
+  });
+}
 
 test('real Driver component erases the passed road after a new GPS sample', async () => {
   const map = await mountMap();
@@ -290,3 +346,171 @@ test('native progress-only prefix changes cannot resurrect a quarantined wrong-w
     assert.equal(map.polylines.has('hy3n-driver-route'), false, 'an old-direction road with a shortened prefix is not a genuine replacement route');
   } finally { await map.dispose(); clock.uninstall(); }
 });
+
+const providerTraffic = {
+  status: 'OK',
+  roadStretchRenderingDataList: [
+    { style: 'TRAFFIC_JAM', offsetMeters: 0, lengthMeters: 300 },
+    { style: 'SLOWER_TRAFFIC', offsetMeters: 400, lengthMeters: 350 },
+  ],
+};
+const trafficLines = (map: Awaited<ReturnType<typeof mountMap>>) =>
+  [...map.polylines.values()].filter(line => line.id.startsWith('hy3n-driver-traffic-'));
+
+test('Android paints actual string provider traffic styles above the blue base and trims passed traffic in place', async () => {
+  const map = await mountMap(undefined, 'android');
+  try {
+    map.setTraffic(providerTraffic);
+    await map.emit('traffic');
+    assert.equal(map.polylines.get('hy3n-driver-route')?.color, '#387DF3');
+    assert.deepEqual(trafficLines(map).map(line => [line.id, line.color]), [
+      ['hy3n-driver-traffic-0', '#DC2626'],
+      ['hy3n-driver-traffic-1', '#F59E0B'],
+    ]);
+    for (const line of trafficLines(map)) {
+      assert.equal(line.width, 8);
+      assert.equal(line.visible, true);
+      assert.ok(line.zIndex > map.polylines.get('hy3n-driver-route').zIndex, 'provider congestion is above the blue base');
+      assert.ok(line.points.length >= 2);
+    }
+    assert.deepEqual(trafficLines(map)[0].points[0], origin, 'red geometry uses the provider road, not a speed-derived connector');
+    const originalJamEnd = { ...trafficLines(map)[0].points.at(-1) };
+    const removals = map.polylineRemovals.length;
+    await map.update({ latitude: 5.702, locationTimestamp: 2 });
+    const remainingJam = trafficLines(map).find(line => line.color === '#DC2626');
+    assert.ok(remainingJam);
+    assert.ok(remainingJam.points[0].lat >= 5.7019, 'passed red road is erased with GPS progress');
+    assert.deepEqual(remainingJam.points.at(-1), originalJamEnd);
+    assert.equal(map.polylineRemovals.length, removals, 'healthy progress updates existing native IDs instead of clearing/recreating lines');
+    await map.update({ latitude: 5.7035, locationTimestamp: 3 });
+    assert.equal(trafficLines(map).some(line => line.color === '#DC2626'), false, 'a fully passed jam must disappear');
+    assert.equal(trafficLines(map).length, 1, 'the unpassed provider slowdown remains');
+    assert.equal(trafficLines(map)[0].color, '#F59E0B');
+    assert.deepEqual(map.polylines.get('hy3n-driver-route')?.points.at(-1), destination);
+    assert.equal(map.destinationCalls.length, 1, 'traffic/progress does not restart routing or alter the server target');
+  } finally { await map.dispose(); }
+});
+
+test('Android route traffic is measured against the exact selected current or complete native snapshot', async () => {
+  const map = await mountMap(undefined, 'android');
+  try {
+    const currentJam = { status: 'OK', roadStretchRenderingDataList: [{ style: 'TRAFFIC_JAM', offsetMeters: 0, lengthMeters: 150 }] };
+    const completeSlowdown = { status: 'OK', roadStretchRenderingDataList: [{ style: 'SLOWER_TRAFFIC', offsetMeters: 0, lengthMeters: 250 }] };
+    const currentStart = { lat: 5.701, lng: origin.lng };
+    map.setCurrentSegments([currentStart, corner, destination]);
+    map.setTraffic(currentJam, completeSlowdown);
+    await map.emit('traffic');
+    assert.equal(trafficLines(map).length, 1, 'current and complete snapshots must never be concatenated/doubled');
+    assert.equal(trafficLines(map)[0].color, '#DC2626');
+    assert.deepEqual(trafficLines(map)[0].points[0], currentStart, 'offset zero belongs to the selected current road prefix');
+    map.setCurrentSegments([origin, corner]);
+    await map.emit('traffic');
+    assert.equal(trafficLines(map).length, 1);
+    assert.equal(trafficLines(map)[0].color, '#F59E0B', 'a partial current leg selects the complete snapshot and its own traffic');
+    assert.deepEqual(trafficLines(map)[0].points[0], origin);
+  } finally { await map.dispose(); }
+});
+
+test('Android missing provider traffic clears old congestion but preserves the genuine blue road', async () => {
+  const map = await mountMap(undefined, 'android');
+  try {
+    map.setTraffic(providerTraffic);
+    await map.emit('traffic');
+    assert.equal(trafficLines(map).length, 2);
+    map.setTraffic(undefined);
+    await map.emit('traffic');
+    assert.equal(trafficLines(map).length, 0, 'missing traffic is unknown, not a stale red-road claim');
+    assert.ok(map.polylines.has('hy3n-driver-route'));
+    assert.equal(map.polylines.get('hy3n-driver-route')?.color, '#387DF3', 'no data does not imply free-flow green');
+    assert.ok(map.polylineRemovals.includes('hy3n-driver-traffic-0'));
+    assert.ok(map.polylineRemovals.includes('hy3n-driver-traffic-1'));
+    assert.equal(map.destinationCalls.length, 1);
+  } finally { await map.dispose(); }
+});
+
+test('Android clearing the server target removes route traffic and delayed native traffic updates cannot restore it', async () => {
+  const map = await mountMap(undefined, 'android');
+  try {
+    map.setTraffic(providerTraffic);
+    await map.emit('traffic');
+    assert.equal(trafficLines(map).length, 2);
+    await map.update({ target: null, tripStatus: null });
+    assert.equal(trafficLines(map).length, 0);
+    assert.equal(map.polylines.has('hy3n-driver-route'), false);
+    await map.emit('traffic');
+    await map.flush();
+    assert.equal(trafficLines(map).length, 0, 'obsolete provider geometry cannot paint an idle map');
+    assert.equal(map.polylines.has('hy3n-driver-route'), false);
+  } finally { await map.dispose(); }
+});
+
+test('iOS keeps genuine native traffic enabled without fabricating custom congestion geometry', async () => {
+  const map = await mountMap(undefined, 'ios');
+  try {
+    assert.equal(map.mapProps().trafficEnabled, true);
+    assert.equal(trafficLines(map).length, 0);
+    // The installed iOS route serializer omits this field. Even an accidental
+    // Android-shaped mock field must not imply phone support that does not exist.
+    map.setTraffic(providerTraffic);
+    await map.emit('traffic');
+    await map.update({ latitude: 5.702, locationTimestamp: 2 });
+    assert.equal(trafficLines(map).length, 0);
+    assert.equal(map.polylines.get('hy3n-driver-route')?.color, '#387DF3');
+    assert.equal(map.destinationCalls.length, 1);
+  } finally { await map.dispose(); }
+});
+
+for (const platform of ['ios', 'android'] as const) {
+  test(`${platform} swipe pauses following and route/traffic refresh never silently recenters`, async () => {
+    const map = await mountMap(undefined, platform);
+    try {
+      const start = { nativeEvent: { pageX: 100, pageY: 200, touches: [{}] } };
+      const surface = map.surfaceProps();
+      assert.ok(surface);
+      await act(async () => {
+        surface.onTouchStart(start);
+        surface.onTouchMove({ nativeEvent: { pageX: 125, pageY: 205, touches: [{}] } });
+      });
+      const calls = map.cameraCalls.length;
+      await map.update({ latitude: 5.701, locationTimestamp: 2 });
+      await map.emit('traffic');
+      await map.emit('changed');
+      assert.equal(map.cameraCalls.length, calls);
+      assert.ok(map.rendered().includes('Recenter'));
+      await map.press('Recenter navigation');
+      assert.ok(map.cameraCalls.length > calls);
+    } finally { await map.dispose(); }
+  });
+
+  test(`${platform} complete geometry fallback never weakens current native generation matching`, async () => {
+    const map = await mountMap(undefined, platform);
+    try {
+      map.setCurrentSegments([origin, corner]);
+      await map.emit('traffic');
+      const event = { ...map.nativeStamp(), navState: 1, distanceToCurrentStepMeters: 80,
+        currentStep: { maneuver: 6, instruction: 'Turn left onto Native Road', fullRoadName: 'Native Road' } };
+      await map.emit('turn', [event]);
+      assert.ok(map.rendered().includes('Native Road'), 'a contextual current prefix validates turns even when complete geometry is used');
+      await map.emit('turn', [{ ...event, hy3nRouteGeneration: event.hy3nRouteGeneration + 1,
+        currentStep: { maneuver: 7, instruction: 'Unbound Turn', fullRoadName: 'Unbound Road' } }]);
+      assert.ok(!map.rendered().includes('Unbound Road'));
+      map.setCurrentContext(false);
+      await map.emit('traffic');
+      await map.emit('turn', [event]);
+      assert.ok(!map.rendered().includes('Native Road'), 'without current native context, geometry is not turn provenance');
+      assert.ok(map.polylines.has('hy3n-driver-route'), 'safe visual geometry may still remain available');
+    } finally { await map.dispose(); }
+  });
+
+  test(`${platform} the newest malformed turn in a callback batch cannot resurrect an older turn`, async () => {
+    const map = await mountMap(undefined, platform);
+    try {
+      const event = { ...map.nativeStamp(), navState: 1, distanceToCurrentStepMeters: 50,
+        currentStep: { maneuver: 7, instruction: 'Older maneuver', fullRoadName: 'Old Road' } };
+      await map.emit('turn', [event]);
+      assert.ok(map.rendered().includes('Older maneuver'));
+      await map.emit('turn', [event, { ...map.nativeStamp(), navState: 'invalid' }]);
+      assert.ok(!map.rendered().includes('Older maneuver'));
+    } finally { await map.dispose(); }
+  });
+}

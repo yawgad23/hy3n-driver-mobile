@@ -11,6 +11,8 @@ const {
 const fs = require('fs');
 const path = require('path');
 
+const { withDriverNavigationFeedSafeguards } = require('./driver-navigation-feed-patch');
+const { withDriverNavigationPolylineZIndex } = require('./driver-navigation-polyline-patch');
 const PLUGIN_NAME = 'with-google-navigation';
 const DESUGARING_DEPENDENCY = "coreLibraryDesugaring('com.android.tools:desugar_jdk_libs_nio:2.0.4')";
 const DRIVER_CAR_MARKER_SOURCE = path.join('assets', 'images', 'driver-map-car-marker.png');
@@ -282,6 +284,8 @@ function withGoogleNavigation(config, options = {}) {
   config = pinAndroidNdkVersion(config);
   config = addIosNavigationApiKey(config, String(options.iosApiKey || '').trim());
   config = disableIosDefaultLocationIndicator(config);
+  config = withDriverNavigationFeedSafeguards(config);
+  config = withDriverNavigationPolylineZIndex(config);
   return config;
 }
 
