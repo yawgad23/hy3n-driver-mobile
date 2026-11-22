@@ -1611,7 +1611,7 @@ export default function DriverHomeScreen() {
         )}
 
         {/* Action Buttons */}
-        <View style={[styles.activeTripActions, activeTrip && { paddingBottom: insets.bottom + 6 }]}>
+        <View style={[styles.activeTripActions, activeTrip && { paddingBottom: insets.bottom + 2 }]}>
           {activeTrip && (
             <>
               <View style={styles.secondaryTripActions}>
@@ -1966,15 +1966,15 @@ const styles = StyleSheet.create({
   stopCompleteButton: { alignItems: 'center', borderRadius: 10, justifyContent: 'center', minHeight: 38, paddingHorizontal: 10 },
   stopCompleteText: { color: '#FFF', fontSize: 11, fontWeight: '900' },
 
-  activeTripActions: { gap: 8 },
+  activeTripActions: { gap: 6 },
   secondaryTripActions: { flexDirection: 'row', alignItems: 'stretch', gap: 8, width: '100%' },
   // A compact icon keeps the optional external-map chooser available without
   // covering the driving map or pushing the primary trip actions downward.
-  navigateTripIconBtn: { alignItems: 'center', borderRadius: 12, height: 48, justifyContent: 'center', width: 48 },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 48, paddingHorizontal: 10, paddingVertical: 10, borderRadius: 12 },
+  navigateTripIconBtn: { alignItems: 'center', borderRadius: 12, height: 46, justifyContent: 'center', width: 48 },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 46, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 12 },
   secondaryActionBtn: { flex: 1, minWidth: 0 },
   cancelActionBtn: { flex: 1.35, minWidth: 0 },
-  primaryTripAction: { width: '100%', minHeight: 52, paddingHorizontal: 16 },
+  primaryTripAction: { width: '100%', minHeight: 46, paddingHorizontal: 16 },
   navigationChooserBackdrop: { alignItems: 'center', backgroundColor: 'rgba(2, 6, 23, 0.62)', flex: 1, justifyContent: 'flex-end', padding: 16 },
   navigationChooser: { borderRadius: 22, borderWidth: 1, maxWidth: 520, padding: 20, width: '100%' },
   navigationChooserTitle: { fontSize: 19, fontWeight: '900' },
