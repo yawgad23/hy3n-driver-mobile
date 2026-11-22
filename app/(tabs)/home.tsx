@@ -1719,10 +1719,10 @@ export default function DriverHomeScreen() {
       <Modal visible={showOtp} transparent animationType="fade" onRequestClose={() => setShowOtp(false)}>
         <KeyboardAvoidingView
           style={styles.sheetOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={0}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'android' ? 12 : 0}
         >
-          <View style={[styles.sheet, { backgroundColor: isDark ? '#1a1a1a' : '#fff' }]}>
+          <View style={[styles.sheet, styles.verificationSheet, { backgroundColor: isDark ? '#1a1a1a' : '#fff' }]}>
             <MaterialIcons name="lock" size={30} color={GOLD} />
             <Text style={[styles.sheetTitle, dynamicStyles.text]}>Verify pickup code</Text>
             <Text style={[styles.sheetText, dynamicStyles.muted]}>Ask the rider for the code in their HY3N app before starting this trip.</Text>
@@ -2002,6 +2002,7 @@ const styles = StyleSheet.create({
   applyBtnText: { color: '#000', fontSize: 16, fontWeight: '800' },
   sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.56)', justifyContent: 'flex-end' },
   sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 13 },
+  verificationSheet: { paddingBottom: 14 },
   sheetTitle: { fontSize: 20, fontWeight: '900' },
   sheetText: { fontSize: 14, lineHeight: 20 },
   sheetPrimary: { height: 50, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
