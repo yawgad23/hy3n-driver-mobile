@@ -44,7 +44,7 @@ const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
   owner: "yawgad",
-  version: "1.0.1",
+  version: "1.0.2",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   scheme: env.scheme,
@@ -78,8 +78,8 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    // 57021 packages the 16 KB page-size and edge-to-edge compatibility fixes.
-    versionCode: 57021,
+    // 57022 packages the active-trip, verification-keyboard, and rating safe-area fixes.
+    versionCode: 57022,
     googleServicesFile: "./firebase/google-services.json",
     permissions: [
       "POST_NOTIFICATIONS",
