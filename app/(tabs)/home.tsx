@@ -78,7 +78,7 @@ import {
 import { shouldPlayIncomingTripAlert } from '@/lib/incoming-trip-alert';
 import { createDriverRequestAudio } from '@/lib/driver-request-audio';
 import { offerMatchesDriverPreferences } from '@/lib/driver-offer-preferences';
-import { DriverHomeLayoutRegion, getDriverAndroidHomeLayout } from '@/lib/driver-android-home-layout';
+import { DriverHomeLayoutRegion, getDriverAndroidHomeLayout, getDriverIosHomeLayout } from '@/lib/driver-android-home-layout';
 
 // These guards live at module scope so an Expo Router Home remount cannot
 // reopen the same Android location prompt during one online session.
@@ -180,6 +180,8 @@ export default function DriverHomeScreen() {
   const [mapTopInset, setMapTopInset] = useState(insets.top + 68);
   const [androidHomeHeight, setAndroidHomeHeight] = useState(0);
   const [androidDockHeight, setAndroidDockHeight] = useState(0);
+  const [iosHomeHeight, setIosHomeHeight] = useState(0);
+  const [iosDockHeight, setIosDockHeight] = useState(0);
   // iOS retains its existing hook-owned player. Android request sources are
   // controller-owned per offer so a stopped source cannot natively auto-resume.
   const incomingTripAlertPlayer = useAudioPlayer(
@@ -1412,6 +1414,13 @@ export default function DriverHomeScreen() {
     leftInset: insets.left,
     rightInset: insets.right,
   });
+  const iosHomeLayout = getDriverIosHomeLayout({
+    homeHeight: iosHomeHeight,
+    headerInset: mapTopInset,
+    dockHeight: iosDockHeight,
+    leftInset: insets.left,
+    rightInset: insets.right,
+  });
 
   // Check approval status
   if (driverProfile?.approval_status === "pending") {
@@ -1445,7 +1454,8 @@ export default function DriverHomeScreen() {
 
   return (
     <View style={[styles.container, dynamicStyles.container]}
-      {...(Platform.OS === 'android' ? { onLayout: (event: import('react-native').LayoutChangeEvent) => setAndroidHomeHeight(event.nativeEvent.layout.height) } : {})}>
+      {...(Platform.OS === 'android' ? { onLayout: (event: import('react-native').LayoutChangeEvent) => setAndroidHomeHeight(event.nativeEvent.layout.height) }
+        : Platform.OS === 'ios' ? { onLayout: (event: import('react-native').LayoutChangeEvent) => setIosHomeHeight(event.nativeEvent.layout.height) } : {})}>
       <StatusBar style={isDark ? "light" : "dark"} />
 
       {/* Map Layer */}
@@ -1504,9 +1514,9 @@ export default function DriverHomeScreen() {
       </View>
 
       {/* Bottom Interface */}
-      <View style={[styles.bottomContainer, Platform.OS === 'android' ? androidHomeLayout.bottomStyle : { paddingBottom: insets.bottom + 20 }]}
+      <View style={[styles.bottomContainer, Platform.OS === 'android' ? androidHomeLayout.bottomStyle : Platform.OS === 'ios' ? iosHomeLayout.bottomStyle : { paddingBottom: insets.bottom + 20 }]}
         onLayout={(event) => setMapBottomInset(event.nativeEvent.layout.height + 12)}>
-        <DriverHomeLayoutRegion maxHeight={androidHomeLayout.auxiliaryMaxHeight}>
+        <DriverHomeLayoutRegion maxHeight={Platform.OS === 'ios' ? iosHomeLayout.auxiliaryMaxHeight : androidHomeLayout.auxiliaryMaxHeight} scrollOnIos={Platform.OS === 'ios'}>
         {/* Incoming Ride Request */}
         {incomingRide && !activeTrip && (
           <Animated.View {...offerPanResponder.panHandlers} style={[styles.rideRequestCard, dynamicStyles.card, { transform: [{ translateX: offerSwipeX }] }]}>
@@ -1660,15 +1670,15 @@ export default function DriverHomeScreen() {
         )}
         </DriverHomeLayoutRegion>
 
-        <DriverHomeLayoutRegion maxHeight={androidHomeLayout.dockMaxHeight}
-          onContentSizeChange={(_width, height) => setAndroidDockHeight(height)}>
+        <DriverHomeLayoutRegion maxHeight={Platform.OS === 'ios' ? iosHomeLayout.dockMaxHeight : androidHomeLayout.dockMaxHeight} scrollOnIos={Platform.OS === 'ios'}
+          onContentSizeChange={Platform.OS === 'ios' ? (_width, height) => setIosDockHeight(height) : (_width, height) => setAndroidDockHeight(height)}>
         {/* Action Buttons */}
-        <View style={[styles.activeTripActions, activeTrip && { paddingBottom: Platform.OS === 'android' ? 0 : insets.bottom + 2 }]}>
+        <View style={[styles.activeTripActions, activeTrip && { paddingBottom: Platform.OS === 'android' || Platform.OS === 'ios' ? 0 : insets.bottom + 2 }]}>
           {activeTrip && (
             <>
-              <View style={styles.secondaryTripActions}>
+              <View style={[styles.secondaryTripActions, Platform.OS === 'ios' && iosLayoutStyles.tripActionRow]}>
                 <TouchableOpacity
-                  style={[styles.navigateTripIconBtn, { backgroundColor: '#075985' }]}
+                  style={[styles.navigateTripIconBtn, { backgroundColor: '#075985' }, Platform.OS === 'ios' && iosLayoutStyles.navigateButton]}
                   onPress={openTripNavigation}
                   accessibilityRole="button"
                   accessibilityLabel="Choose navigation app"
@@ -1676,24 +1686,35 @@ export default function DriverHomeScreen() {
                 >
                   <MaterialIcons name="navigation" size={22} color="#FFF" />
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionBtn, styles.secondaryActionBtn, { backgroundColor: BLUE }]} onPress={openChat}>
-                  <MaterialIcons name="chat" size={18} color="#FFF" />
+                <TouchableOpacity style={[styles.actionBtn, styles.secondaryActionBtn, { backgroundColor: BLUE }, Platform.OS === 'ios' && iosLayoutStyles.compactAction]} onPress={openChat}>
+                  {Platform.OS !== 'ios' && <MaterialIcons name="chat" size={18} color="#FFF" />}
                   <Text style={styles.actionBtnText}>Chat</Text>
-                  {unreadCount > 0 && <View style={styles.unreadBadge}><Text style={styles.unreadText}>{unreadCount}</Text></View>}
+                  {unreadCount > 0 && <View style={[styles.unreadBadge, Platform.OS === 'ios' && iosLayoutStyles.unreadBadge]}><Text style={styles.unreadText}>{unreadCount}</Text></View>}
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionBtn, styles.secondaryActionBtn, { backgroundColor: '#475569' }]} onPress={startMobileNetworkCall}>
-                  <MaterialIcons name="phone" size={18} color="#FFF" />
+                <TouchableOpacity style={[styles.actionBtn, styles.secondaryActionBtn, { backgroundColor: '#475569' }, Platform.OS === 'ios' && iosLayoutStyles.compactAction]} onPress={startMobileNetworkCall}>
+                  {Platform.OS !== 'ios' && <MaterialIcons name="phone" size={18} color="#FFF" />}
                   <Text style={styles.actionBtnText}>Call</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.actionBtn, styles.cancelActionBtn, { backgroundColor: RED }]}
+                  style={[styles.actionBtn, styles.cancelActionBtn, { backgroundColor: RED }, Platform.OS === 'ios' && iosLayoutStyles.compactAction]}
                   onPress={() => setShowCancel(true)}
                   accessibilityLabel="Cancel ride"
                 >
-                  <Text style={[styles.actionBtnText, { textAlign: 'center' }]}>Cancel ride</Text>
+                  <Text style={[styles.actionBtnText, { textAlign: 'center' }]}>{Platform.OS === 'ios' ? 'Cancel' : 'Cancel ride'}</Text>
                 </TouchableOpacity>
+                {Platform.OS === 'ios' && (
+                  <TouchableOpacity
+                    style={[styles.actionBtn, iosLayoutStyles.compactAction, { backgroundColor: activeTrip.status === 'in_progress' ? RED : activeTrip.status === 'driver_arrived' ? GREEN : '#F59E0B' }]}
+                    onPress={activeTrip.status === 'in_progress' ? handleEndTrip : activeTrip.status === 'driver_arrived' ? handleStartTrip : handleArrivedAtPickup}
+                    accessibilityRole="button"
+                    accessibilityLabel={activeTrip.status === 'in_progress' ? 'End trip' : activeTrip.status === 'driver_arrived' ? 'Start trip' : 'Arrived at pickup'}
+                    disabled={tripActionPending}
+                  >
+                    {tripActionPending ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={styles.actionBtnText}>{activeTrip.status === 'in_progress' ? 'End' : activeTrip.status === 'driver_arrived' ? 'Start' : 'Arrived'}</Text>}
+                  </TouchableOpacity>
+                )}
               </View>
-              {activeTrip.status === 'driver_arrived' ? (
+              {Platform.OS !== 'ios' && (activeTrip.status === 'driver_arrived' ? (
                 <TouchableOpacity
                   style={[styles.actionBtn, styles.primaryTripAction, { backgroundColor: GREEN }]}
                   onPress={handleStartTrip}
@@ -1721,7 +1742,7 @@ export default function DriverHomeScreen() {
                 >
                   {tripActionPending ? <ActivityIndicator size="small" color="#FFF" /> : <><MaterialIcons name="location-on" size={18} color="#FFF" /><Text style={styles.actionBtnText}>Arrived</Text></>}
                 </TouchableOpacity>
-              )}
+              ))}
             </>
           )}
         </View>
@@ -1729,13 +1750,13 @@ export default function DriverHomeScreen() {
         {/* Keep the Driver's existing availability control visible while an
             assigned ride is being navigated. It is hidden only by the full
             incoming-offer card, never removed by the navigation experience. */}
-        {!incomingRide && <View style={[styles.onlineCard, dynamicStyles.card, Platform.OS === 'android' && androidLayoutStyles.onlineCard]}>
-          <View style={[styles.onlineLeft, Platform.OS === 'android' && androidLayoutStyles.onlineLeft]}>
+        {!incomingRide && <View style={[styles.onlineCard, dynamicStyles.card, Platform.OS === 'android' && androidLayoutStyles.onlineCard, Platform.OS === 'ios' && iosLayoutStyles.onlineCard]}>
+          <View style={[styles.onlineLeft, Platform.OS === 'android' && androidLayoutStyles.onlineLeft, Platform.OS === 'ios' && iosLayoutStyles.onlineLeft]}>
             <Animated.View style={[styles.onlineDot, { backgroundColor: isOnline ? GREEN : themeColors.muted, transform: [{ scale: isOnline ? pulseAnim : 1 }] }]} />
-            <Text style={[styles.onlineStatus, dynamicStyles.text, Platform.OS === 'android' && androidLayoutStyles.onlineStatus]}>{isOnline ? (hasCurrentLocation ? 'You are Online' : 'Getting your location…') : 'You are Offline'}</Text>
+            <Text style={[styles.onlineStatus, dynamicStyles.text, Platform.OS === 'android' && androidLayoutStyles.onlineStatus, Platform.OS === 'ios' && iosLayoutStyles.onlineStatus]}>{isOnline ? (hasCurrentLocation ? 'You are Online' : 'Getting your location…') : 'You are Offline'}</Text>
           </View>
           <TouchableOpacity
-            style={[styles.toggleBtn, { backgroundColor: isOnline ? RED : GREEN }, Platform.OS === 'android' && androidLayoutStyles.toggleBtn]}
+            style={[styles.toggleBtn, { backgroundColor: isOnline ? RED : GREEN }, Platform.OS === 'android' && androidLayoutStyles.toggleBtn, Platform.OS === 'ios' && iosLayoutStyles.toggleBtn]}
             onPress={handleToggleOnline}
             disabled={togglingOnline}
           >
@@ -2095,4 +2116,17 @@ const androidLayoutStyles = StyleSheet.create({
   onlineLeft: { flex: 1, minWidth: 0, gap: 8 },
   onlineStatus: { flexShrink: 1, fontSize: 13 },
   toggleBtn: { height: undefined, minHeight: 44, paddingHorizontal: 12, paddingVertical: 8, flexShrink: 0 },
+});
+
+const iosLayoutStyles = StyleSheet.create({
+  // One compact row rather than a separate full-width trip-action banner.
+  // Natural text growth/wrapping retains usable 44pt targets at larger sizes.
+  tripActionRow: { gap: 4, flexWrap: 'wrap' },
+  navigateButton: { width: 44, height: undefined, minHeight: 44, borderRadius: 10 },
+  compactAction: { flex: 1, minWidth: 44, minHeight: 44, paddingHorizontal: 4, paddingVertical: 6, gap: 4, borderRadius: 10 },
+  unreadBadge: { top: 2, right: 2, width: 14, height: 14, borderRadius: 7 },
+  onlineCard: { padding: undefined, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 16, gap: 10 },
+  onlineLeft: { flex: 1, minWidth: 0, gap: 8 },
+  onlineStatus: { flexShrink: 1, fontSize: 14 },
+  toggleBtn: { height: undefined, minHeight: 44, paddingHorizontal: 14, paddingVertical: 8, flexShrink: 0 },
 });

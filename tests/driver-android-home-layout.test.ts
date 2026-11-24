@@ -12,8 +12,10 @@ import { activeTripDetails } from '../lib/driver-active-trip-details';
 // not Yoga text measurement, touch dispatch, or Android native UI appearance.
 const BASELINE = 'a7209d6a32f6e1df10a6760a66141e0242a56cf6';
 const HOME = 'app/(tabs)/home.tsx';
+const IOS_RELEASE = 'ddd131a4849b1784ff0e83861bf02d00ad42a9de';
 const helperPath = path.resolve('lib/driver-android-home-layout.tsx');
 const baseline = execFileSync('git', ['show', `${BASELINE}:${HOME}`], { encoding: 'utf8' });
+const iosRelease = execFileSync('git', ['show', `${IOS_RELEASE}:${HOME}`], { encoding: 'utf8' });
 const current = readFileSync(HOME, 'utf8');
 const Fragment = Symbol('Fragment');
 const React = {
@@ -117,6 +119,7 @@ function render(source: string, platform: string, overrides: any = {}) {
     pulseAnim: 1, rideOfferSeconds: 20, unreadCount: 2, tripActionPending: false, togglingOnline: false,
     activeNavigationTarget: null, activeNavigationId: null, mapTopInset: 92, mapBottomInset: 180,
     androidHomeHeight: 620, androidDockHeight: 158,
+    iosHomeHeight: 620, iosDockHeight: 158,
     destModalVisible: false, destInput: '', showOtp: false, pickupCode: '', showCancel: false,
     showFareScreen: false, completedRide: null, showRating: false, ratingValue: 5, ratingFeedback: '',
     foundItem: '', safetyReport: '', ratingSubmitting: false, showChat: false, user: null, showNavigationChooser: false,
@@ -128,6 +131,8 @@ function render(source: string, platform: string, overrides: any = {}) {
     isDeliveryRide: () => false,
     setAndroidHomeHeight: (height: number) => { events.homeHeight = height; },
     setAndroidDockHeight: (height: number) => { events.dockHeight = height; },
+    setIosHomeHeight: (height: number) => { events.iosHomeHeight = height; },
+    setIosDockHeight: (height: number) => { events.iosDockHeight = height; },
     setMapTopInset: (height: number) => { events.mapTopInset = height; },
     setMapBottomInset: (height: number) => { events.mapBottomInset = height; },
   };
@@ -143,7 +148,7 @@ function render(source: string, platform: string, overrides: any = {}) {
   for (const name of ['setShowChat', 'setUnreadCount', 'setShowHeatmap', 'setNotifOpen', 'setDestModalVisible', 'setPrefs', 'setShowCancel', 'setDestInput', 'setShowOtp', 'setPickupCode', 'setShowFareScreen', 'setShowRating', 'setRatingValue', 'setRatingFeedback', 'setFoundItem', 'setSafetyReport', 'setShowNavigationChooser']) context[name] = () => {};
   Object.assign(context, overrides);
   if (existsSync(helperPath)) Object.assign(context, loadHelper(platform));
-  vm.runInNewContext(compile(`${declaration(file, 'styles')}\n${declaration(file, 'androidLayoutStyles')}\n${declaration(file, 'androidHomeLayout')}\n${declaration(file, 'dynamicStyles')}\nconst result = (${jsx});\nexports.result = result;`), Object.assign(context, { exports: {} }));
+  vm.runInNewContext(compile(`${declaration(file, 'styles')}\n${declaration(file, 'androidLayoutStyles')}\n${declaration(file, 'iosLayoutStyles')}\n${declaration(file, 'androidHomeLayout')}\n${declaration(file, 'iosHomeLayout')}\n${declaration(file, 'dynamicStyles')}\nconst result = (${jsx});\nexports.result = result;`), Object.assign(context, { exports: {} }));
   const tree = expand(context.exports.result);
   return { tree, nodes: allNodes(tree), events };
 }
@@ -239,10 +244,125 @@ test('real Android regions use measured budgets and real rendered panel heights 
   }
 });
 
-test('all real iOS host trees, rendered styles/values and handler contracts remain equivalent to release baseline', () => {
-  for (const state of states) for (const bottom of [0, 34]) for (const isDark of [false, true]) for (const pending of [false, true]) {
+test('Android and web real host trees, styles and handler contracts remain equivalent to build 125', () => {
+  for (const platform of ['android', 'web']) for (const state of states) for (const bottom of [0, 34]) for (const isDark of [false, true]) for (const pending of [false, true]) {
     const overrides = { ...state, isDark, tripActionPending: pending, togglingOnline: pending, insets: { top: 47, bottom, left: 0, right: 0 } };
-    assert.deepEqual(normalized(render(current, 'ios', overrides).tree), normalized(render(baseline, 'ios', overrides).tree), `${state.name}, bottom=${bottom}, dark=${isDark}, pending=${pending}`);
+    assert.deepEqual(normalized(render(current, platform, overrides).tree), normalized(render(iosRelease, platform, overrides).tree), `${platform}, ${state.name}, bottom=${bottom}, dark=${isDark}, pending=${pending}`);
+  }
+});
+
+test('iOS lowers availability and action controls by removing both repeated bottom-safe-area paddings', () => {
+  for (const bottom of [0, 8, 34, 48]) for (const status of ['driver_arriving', 'driver_arrived', 'in_progress']) {
+    const overrides = { activeTrip: { ...trip, status }, insets: { top: 47, bottom, left: 0, right: 0 } };
+    const { nodes } = render(current, 'ios', overrides);
+    const panel = findStyled(nodes, (style) => style.position === 'absolute' && style.bottom === 0);
+    assert.equal(flattenStyle(panel.props.style).paddingBottom, 8, 'Tabs already owns home-indicator clearance');
+    assert.equal(flattenStyle(panel.props.style).gap, 6);
+    const actions = findStyled(nodes, (style) => style.gap === 6 && style.paddingBottom !== undefined && style.position !== 'absolute');
+    assert.equal(flattenStyle(actions.props.style).paddingBottom, 0, 'no second spacer between actions and availability');
+    const oldPanel = findStyled(render(iosRelease, 'ios', overrides).nodes, (style) => style.position === 'absolute' && style.bottom === 0);
+    assert.equal(flattenStyle(oldPanel.props.style).paddingBottom - flattenStyle(panel.props.style).paddingBottom, bottom + 12);
+  }
+});
+
+test('iOS End is in the same compact row as navigate/chat/call/cancel with a guarded 44pt target', () => {
+  for (const pending of [false, true]) {
+    const { nodes } = render(current, 'ios', { activeTrip: { ...trip, status: 'in_progress' }, tripActionPending: pending });
+    const endTrip = nodes.find((node) => node.props.onPress?.contractName === 'handleEndTrip');
+    assert.ok(endTrip);
+    const style = flattenStyle(endTrip.props.style);
+    assert.equal(style.width, undefined, 'not a full-width banner');
+    assert.equal(style.flex, 1);
+    assert.equal(style.minWidth, 44);
+    assert.equal(style.minHeight, 44, 'preserve a usable native touch target');
+    assert.equal(style.height, undefined, 'accessibility text can grow');
+    assert.equal(style.paddingVertical, 6);
+    assert.equal(endTrip.props.disabled, pending);
+    assert.equal(endTrip.props.accessibilityLabel, 'End trip');
+    assert.equal(endTrip.props.accessibilityRole, 'button');
+    assert.equal(text(endTrip), pending ? '' : 'End');
+    const row = findStyled(nodes, (style) => style.flexDirection === 'row' && style.width === '100%' && style.gap === 4);
+    assert.ok(row);
+    const buttons = row.props.children.filter((node: any) => node.type === 'TouchableOpacity');
+    assert.equal(buttons.length, 5);
+    assert.ok(buttons.some((button: any) => button.props.onPress === endTrip.props.onPress), 'the row contains the real End handler, not a separate banner');
+    assert.equal(flattenStyle(row.props.style).flexWrap, 'wrap', 'very narrow/large-text layouts can wrap instead of clip');
+    for (const button of buttons) assert.ok(flattenStyle(button.props.style).minHeight >= 44);
+  }
+});
+
+test('iOS uses Start/End/Cancel with full accessibility labels and no separate primary-action banner', () => {
+  for (const [status, handler, visible, accessible] of [
+    ['driver_arrived', 'handleStartTrip', 'Start', 'Start trip'],
+    ['in_progress', 'handleEndTrip', 'End', 'End trip'],
+    ['driver_arriving', 'handleArrivedAtPickup', 'Arrived', 'Arrived at pickup'],
+  ]) {
+    const { nodes } = render(current, 'ios', { activeTrip: { ...trip, status } });
+    const primary = nodes.find((node) => node.props.onPress?.contractName === handler);
+    assert.equal(text(primary), visible);
+    assert.equal(primary.props.accessibilityLabel, accessible);
+    assert.equal(nodes.filter((node) => node.props.onPress?.contractName === handler).length, 1);
+    const cancel = nodes.find((node) => node.props.accessibilityLabel === 'Cancel ride');
+    assert.equal(text(cancel), 'Cancel');
+    assert.equal(findStyled(nodes, (style) => style.width === '100%' && style.minHeight === 46 && style.paddingHorizontal === 16), undefined);
+    const badge = findStyled(nodes, (style) => style.position === 'absolute' && style.width === 14 && style.borderRadius === 7);
+    assert.ok(badge);
+    assert.equal(flattenStyle(badge.props.style).top, 2);
+    assert.equal(flattenStyle(badge.props.style).right, 2);
+  }
+});
+
+test('iOS availability stays compact, wraps long status text and preserves its 44pt toggle target', () => {
+  for (const state of states.slice(0, 3)) {
+    const { nodes } = render(current, 'ios', state);
+    const toggle = nodes.find((node) => node.props.onPress?.contractName === 'handleToggleOnline');
+    assert.equal(flattenStyle(toggle.props.style).minHeight, 44);
+    assert.equal(flattenStyle(toggle.props.style).height, undefined);
+    const status = nodes.find((node) => node.type === 'Text' && /You are Online|You are Offline|Getting your location/.test(text(node)));
+    assert.equal(flattenStyle(status.props.style).flexShrink, 1);
+    assert.equal(status.props.numberOfLines, undefined);
+    const card = findStyled(nodes, (style) => style.paddingVertical === 8 && style.borderRadius === 16 && style.gap === 10);
+    assert.ok(card);
+    const left = card.props.children.find((node: any) => node.type === 'View');
+    assert.equal(flattenStyle(left.props.style).flex, 1);
+    assert.equal(flattenStyle(left.props.style).minWidth, 0);
+  }
+});
+
+test('iOS uses the tab-contained measured height, cutout padding and actual rendered dock height for camera clearance', () => {
+  const { getDriverIosHomeLayout } = loadHelper('ios');
+  for (const state of states) for (const height of [420, 548, 844]) for (const scale of [1, 1.5, 2]) {
+    const dockHeight = Math.round(158 * scale);
+    const expected = getDriverIosHomeLayout({ homeHeight: height, headerInset: 92, dockHeight, leftInset: 34, rightInset: 0 });
+    const { tree, nodes, events } = render(current, 'ios', { ...state, iosHomeHeight: height, iosDockHeight: dockHeight, insets: { top: 47, bottom: 34, left: 34, right: 0 } });
+    tree[0].props.onLayout({ nativeEvent: { layout: { height, width: 390 } } });
+    assert.equal(events.iosHomeHeight, height);
+    const regions = nodes.filter((node) => node.type === 'ScrollView' && node.props.nestedScrollEnabled);
+    assert.equal(regions.length, 2);
+    assert.equal(flattenStyle(regions[0].props.style).maxHeight, expected.auxiliaryMaxHeight);
+    assert.equal(flattenStyle(regions[1].props.style).maxHeight, expected.dockMaxHeight);
+    regions[1].props.onContentSizeChange(390, dockHeight);
+    assert.equal(events.iosDockHeight, dockHeight);
+    const panel = findStyled(nodes, (style) => style.position === 'absolute' && style.bottom === 0);
+    assert.equal(flattenStyle(panel.props.style).paddingLeft, 42);
+    assert.equal(flattenStyle(panel.props.style).paddingRight, 12);
+    assert.ok(expected.dockMaxHeight + expected.auxiliaryMaxHeight + 14 <= height - 92);
+    panel.props.onLayout({ nativeEvent: { layout: { height: 193, y: height - 193 } } });
+    assert.equal(events.mapBottomInset, 205, 'camera uses the actual panel measurement, not assumed button geometry');
+  }
+});
+
+test('iOS preserves all build 125 interactions and pending states except the explicitly shortened action labels', () => {
+  for (const state of states) for (const pending of [false, true]) for (const isDark of [false, true]) {
+    const overrides = { ...state, isDark, tripActionPending: pending, togglingOnline: pending };
+    const expected = interactions(render(iosRelease, 'ios', overrides).nodes).map((item) => {
+      if (item.label === 'Cancel ride') return { ...item, text: 'Cancel' };
+      if (item.handler === 'handleEndTrip') return { ...item, text: pending ? '' : 'End', label: 'End trip', role: 'button' };
+      if (item.handler === 'handleStartTrip') return { ...item, text: pending ? '' : 'Start', label: 'Start trip', role: 'button' };
+      if (item.handler === 'handleArrivedAtPickup') return { ...item, label: 'Arrived at pickup', role: 'button' };
+      return item;
+    });
+    assert.deepEqual(interactions(render(current, 'ios', overrides).nodes), expected, state.name);
   }
 });
 

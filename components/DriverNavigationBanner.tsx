@@ -44,6 +44,27 @@ function maneuverIcon(guidance: DriverGuidance | null): IconName {
   return MANEUVER_ICONS[guidance?.maneuver ?? 'unknown'] ?? 'navigation';
 }
 
+/** A generic departure/navigation glyph is NOT a left, right, or straight turn. */
+function iosManeuverIcon(guidance: DriverGuidance | null, instruction: string | null): IconName {
+  if (!instruction || !guidance || guidance.navState !== 'enroute') return 'info-outline';
+  if (guidance.maneuver !== 'unknown') return maneuverIcon(guidance);
+  const nativeName = guidance.nativeManeuverName;
+  if (nativeName === 'DEPART') return 'navigation';
+  // Only this anchored live provider phrase is recognized when direction is absent.
+  if ((!nativeName || nativeName === 'UNKNOWN') && /^Head towards?\s+\S/i.test(instruction.trim())) return 'navigation';
+  return 'info-outline';
+}
+
+/** Omit a redundant full road name, never shorten the provider instruction. */
+function iosRoadName(instruction: string | null, roadName: string | null | undefined): string | null {
+  if (!instruction || !roadName?.trim()) return null;
+  const normalize = (text: string) => text.trim().replace(/\s+/g, ' ').toLowerCase();
+  const road = normalize(roadName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Whole-name boundaries avoid hiding "Hill Rd" when only "Hill Rdway" is present.
+  const contained = new RegExp(`(^|[^\\p{L}\\p{N}])${road}(?=$|[^\\p{L}\\p{N}])`, 'u').test(normalize(instruction));
+  return contained ? null : roadName;
+}
+
 /** Android uses only verified native maneuver names; unknown states stay neutral. */
 function androidManeuverIcon(guidance: DriverGuidance | null): IconName {
   const name = guidance?.nativeManeuverName;
@@ -122,9 +143,8 @@ function OriginalDriverNavigationBanner({
   const instruction = !message && guidance?.navState === 'enroute' ? guidance.instruction : null;
   const distance = instruction ? formatNavigationDistance(guidance?.distanceToManeuverMeters ?? null) : null;
   const isIos = Platform.OS === 'ios';
-  // Keep the original known-turn mapper; unavailable iOS guidance is not an arrow.
-  const icon = isIos && (!instruction || guidance?.maneuver === 'unknown')
-    ? 'info-outline' : instruction ? maneuverIcon(guidance) : 'navigation';
+  const icon = isIos ? iosManeuverIcon(guidance, instruction) : instruction ? maneuverIcon(guidance) : 'navigation';
+  const roadName = isIos ? iosRoadName(instruction, guidance?.roadName) : guidance?.roadName;
   const duration = formatNavigationDuration(remainingTimeSeconds);
   const remaining = formatNavigationDistance(remainingDistanceMeters);
   const arrival = formatNavigationArrivalTime(remainingTimeSeconds);
@@ -132,27 +152,27 @@ function OriginalDriverNavigationBanner({
   const targetType = targetKind === 'pickup' ? 'Pickup' : targetKind === 'stop' ? 'Next stop' : 'Drop-off';
 
   return (
-    <View testID="driver-navigation-banner" onLayout={onLayout} style={styles.container} pointerEvents="none">
-      <View style={[styles.instructionPanel, isDark && styles.darkInstructionPanel]} accessibilityLabel={[instruction || stateMessage, distance && `in ${distance}`, guidance?.roadName].filter(Boolean).join('. ')}>
+    <View testID="driver-navigation-banner" onLayout={onLayout} style={isIos ? [styles.container, iosStyles.container] : styles.container} pointerEvents="none">
+      <View style={[styles.instructionPanel, isIos && iosStyles.instructionPanel, isDark && styles.darkInstructionPanel]} accessibilityLabel={[instruction || stateMessage, distance && `in ${distance}`, roadName].filter(Boolean).join('. ')}>
         <View style={isIos ? [styles.iconColumn, iosStyles.iconColumn] : styles.iconColumn}>
-          <MaterialIcons name={icon} size={isIos ? 44 : 48} color="#FFFFFF" />
+          <MaterialIcons name={icon} size={isIos ? 32 : 48} color="#FFFFFF" />
           {!isIos && distance ? <Text style={styles.turnDistance} numberOfLines={1}>{distance}</Text> : null}
         </View>
-        <View style={styles.instructionColumn}>
+        <View style={isIos ? [styles.instructionColumn, iosStyles.instructionColumn] : styles.instructionColumn}>
           {isIos && distance ? <Text style={[styles.turnDistance, iosStyles.turnDistance]}>{distance}</Text> : null}
-          <Text style={styles.instruction} numberOfLines={isIos ? undefined : 2}>{instruction || stateMessage}</Text>
-          {instruction && guidance?.roadName && guidance.roadName !== instruction ? (
-            <Text style={styles.roadName} numberOfLines={isIos ? undefined : 1}>{guidance.roadName}</Text>
+          <Text style={isIos ? [styles.instruction, iosStyles.instruction] : styles.instruction} numberOfLines={isIos ? undefined : 2}>{instruction || stateMessage}</Text>
+          {instruction && roadName && roadName !== instruction ? (
+            <Text style={isIos ? [styles.roadName, iosStyles.roadName] : styles.roadName} numberOfLines={isIos ? undefined : 1}>{roadName}</Text>
           ) : null}
         </View>
       </View>
-      <View style={[styles.summary, { backgroundColor: isDark ? '#17212C' : '#FFFFFF', borderColor: isDark ? '#304151' : '#DBE2E8' }]}>
-        <View style={styles.summaryMetrics}>
-          <Text style={[styles.summaryPrimary, { color: isDark ? '#65DBAB' : '#087B4C' }]}>{duration || 'ETA updating'}</Text>
-          {remaining ? <Text style={[styles.summarySecondary, { color: isDark ? '#ECF1F5' : '#23313F' }]}>{remaining}</Text> : null}
-          {arrival ? <Text style={[styles.summarySecondary, { color: isDark ? '#ECF1F5' : '#23313F' }]}>{arrival} arrival</Text> : null}
+      <View style={[styles.summary, isIos && iosStyles.summary, { backgroundColor: isDark ? '#17212C' : '#FFFFFF', borderColor: isDark ? '#304151' : '#DBE2E8' }]}>
+        <View style={isIos ? [styles.summaryMetrics, iosStyles.summaryMetrics] : styles.summaryMetrics}>
+          <Text style={[styles.summaryPrimary, isIos && iosStyles.summaryPrimary, { color: isDark ? '#65DBAB' : '#087B4C' }]}>{duration || 'ETA updating'}</Text>
+          {remaining ? <Text style={[styles.summarySecondary, isIos && iosStyles.summarySecondary, { color: isDark ? '#ECF1F5' : '#23313F' }]}>{remaining}</Text> : null}
+          {arrival ? <Text style={[styles.summarySecondary, isIos && iosStyles.summarySecondary, { color: isDark ? '#ECF1F5' : '#23313F' }]}>{arrival} arrival</Text> : null}
         </View>
-        <Text style={[styles.target, { color: isDark ? '#B9C7D4' : '#526273' }]} numberOfLines={1}>{targetType} · {targetLabel}</Text>
+        <Text style={[styles.target, isIos && iosStyles.target, { color: isDark ? '#B9C7D4' : '#526273' }]} numberOfLines={isIos ? undefined : 1}>{targetType} · {targetLabel}</Text>
       </View>
     </View>
   );
@@ -178,10 +198,20 @@ const styles = StyleSheet.create({
   target: { fontSize: 12, lineHeight: 17, fontWeight: '600', includeFontPadding: false },
 });
 
-// Override only the iOS hierarchy metrics; web retains the original styles.
+// Compact iOS only; content grows/wraps at large text sizes without a fixed height.
 const iosStyles = StyleSheet.create({
-  iconColumn: { width: 56 },
-  turnDistance: { fontSize: 24, lineHeight: 28 },
+  container: { borderRadius: 14 },
+  instructionPanel: { minHeight: 64, padding: 10, gap: 8 },
+  iconColumn: { width: 40 },
+  instructionColumn: { gap: 2 },
+  turnDistance: { fontSize: 20, lineHeight: 24 },
+  instruction: { fontSize: 18, lineHeight: 23, fontWeight: '700' },
+  roadName: { fontSize: 13, lineHeight: 18 },
+  summary: { paddingHorizontal: 12, paddingVertical: 7, gap: 2 },
+  summaryMetrics: { columnGap: 10, rowGap: 2 },
+  summaryPrimary: { fontSize: 16 },
+  summarySecondary: { fontSize: 12 },
+  target: { fontSize: 11, lineHeight: 15 },
 });
 
 const androidStyles = StyleSheet.create({

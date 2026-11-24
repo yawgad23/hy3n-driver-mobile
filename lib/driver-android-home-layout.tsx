@@ -52,17 +52,24 @@ export function getDriverAndroidHomeLayout({
   };
 }
 
+// Both native platforms render Home above the same non-absolute Tabs bar.
+// Reuse the measured dp budget without repeating its already-owned safe area.
+export const getDriverIosHomeLayout = getDriverAndroidHomeLayout;
+
 export function DriverHomeLayoutRegion({
   children,
   maxHeight,
   onContentSizeChange,
+  scrollOnIos = false,
 }: {
   children: ReactNode;
   maxHeight?: number;
   onContentSizeChange?: (width: number, height: number) => void;
+  scrollOnIos?: boolean;
 }) {
-  // No added native View, changed styles, scrolling, or measurements on iOS.
-  if (Platform.OS !== 'android') return <>{children}</>;
+  // iOS opts in only from its map-first Home dock. Other callers and web retain
+  // their original fragment, and Android keeps its existing scroll contract.
+  if (Platform.OS !== 'android' && !(Platform.OS === 'ios' && scrollOnIos)) return <>{children}</>;
   return (
     <ScrollView
       style={[styles.region, { maxHeight }]}

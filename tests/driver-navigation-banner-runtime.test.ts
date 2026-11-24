@@ -163,30 +163,39 @@ test('Android and web representative states, targets, and themes match the 3aed0
   }
 });
 
-test('iOS promotes next-turn distance above full guidance in a 56dp column beside a 44dp icon', async () => {
+test('iOS compact hierarchy keeps full guidance beside a 32dp icon and reduces panel and summary spacing', async () => {
   const { renderer, onLayout } = await renderBanner();
   const [root, panel, iconColumn, instructionColumn] = hostNodes(renderer, 'view');
   assert.equal(root.props.testID, 'driver-navigation-banner');
   assert.equal(root.props.pointerEvents, 'none');
   assert.equal(root.props.onLayout, onLayout);
-  assert.deepEqual(flattenStyle(root.props.style), { borderRadius: 18, overflow: 'hidden', width: '100%' });
+  assert.deepEqual(flattenStyle(root.props.style), { borderRadius: 14, overflow: 'hidden', width: '100%' });
   assert.deepEqual(flattenStyle(panel.props.style), {
-    backgroundColor: '#096B47', flexDirection: 'row', alignItems: 'center', minHeight: 100, padding: 14, gap: 12,
+    backgroundColor: '#096B47', flexDirection: 'row', alignItems: 'center', minHeight: 64, padding: 10, gap: 8,
   });
-  assert.equal(panel.props.accessibilityLabel, 'Turn left onto Independence Avenue. in 85 m. Independence Avenue');
-  assert.equal(flattenStyle(iconColumn.props.style).width, 56);
+  assert.equal(panel.props.accessibilityLabel, 'Turn left onto Independence Avenue. in 85 m');
+  assert.equal(flattenStyle(iconColumn.props.style).width, 40);
   assert.equal(iconColumn.findAllByType('text' as any).length, 0, 'distance no longer sits under the arrow');
   const icon = renderer.root.findByType('icon' as any);
-  assert.equal(icon.props.size, 44);
+  assert.equal(icon.props.size, 32);
   assert.equal(icon.props.name, 'turn-left');
   assert.equal(icon.props.color, '#FFFFFF');
-  assert.deepEqual(flattenStyle(instructionColumn.props.style), { flex: 1, minWidth: 0, gap: 5 });
+  assert.deepEqual(flattenStyle(instructionColumn.props.style), { flex: 1, minWidth: 0, gap: 2 });
   const columnTexts = instructionColumn.findAllByType('text' as any);
-  assert.deepEqual(columnTexts.map(node => node.children.join('')), ['85 m', baseGuidance.instruction, baseGuidance.roadName]);
-  assert.deepEqual(flattenStyle(columnTexts[0].props.style), { color: '#FFFFFF', fontSize: 24, lineHeight: 28, fontWeight: '800', includeFontPadding: false });
-  assert.deepEqual(flattenStyle(columnTexts[1].props.style), { color: '#FFFFFF', fontSize: 22, lineHeight: 27, fontWeight: '800', includeFontPadding: false });
-  assert.deepEqual(flattenStyle(columnTexts[2].props.style), { color: '#E6F5ED', fontSize: 16, lineHeight: 21, fontWeight: '600', includeFontPadding: false });
-  assert.ok(columnTexts.every(node => node.props.numberOfLines === undefined), 'distance, instruction, and road all wrap');
+  assert.deepEqual(columnTexts.map(node => node.children.join('')), ['85 m', baseGuidance.instruction]);
+  assert.deepEqual(flattenStyle(columnTexts[0].props.style), { color: '#FFFFFF', fontSize: 20, lineHeight: 24, fontWeight: '800', includeFontPadding: false });
+  assert.deepEqual(flattenStyle(columnTexts[1].props.style), { color: '#FFFFFF', fontSize: 18, lineHeight: 23, fontWeight: '700', includeFontPadding: false });
+  assert.ok(columnTexts.every(node => node.props.numberOfLines === undefined), 'distance and full instruction wrap');
+  const [, , , , summary, summaryMetrics] = hostNodes(renderer, 'view');
+  assert.deepEqual(flattenStyle(summary.props.style), {
+    paddingHorizontal: 12, paddingVertical: 7, gap: 2, borderWidth: 1, borderTopWidth: 0,
+    backgroundColor: '#FFFFFF', borderColor: '#DBE2E8',
+  });
+  assert.deepEqual(flattenStyle(summaryMetrics.props.style), { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 10, rowGap: 2 });
+  const summaryTexts = summary.findAllByType('text' as any);
+  assert.deepEqual(summaryTexts.map(node => node.children.join('')), ['4 min', '1.4 km', '11:54 PM arrival', 'Drop-off · Independence Avenue']);
+  assert.deepEqual(summaryTexts.map(node => flattenStyle(node.props.style).fontSize), [16, 12, 12, 11]);
+  assert.deepEqual(flattenStyle(summaryTexts[3].props.style), { fontSize: 11, lineHeight: 15, fontWeight: '600', includeFontPadding: false, color: '#526273' });
   await unmount(renderer);
 });
 
@@ -211,10 +220,17 @@ test('iOS long provider text and distance have no clipping limit or fixed height
   assert.match(texts[0].children.join(''), /km$/);
   assert.equal(texts[1].children.join(''), longInstruction);
   assert.equal(texts[2].children.join(''), longRoad);
-  for (const node of texts) {
+  assert.deepEqual(flattenStyle(texts[2].props.style), { color: '#E6F5ED', fontSize: 13, lineHeight: 18, fontWeight: '600', includeFontPadding: false });
+  for (const node of hostNodes(renderer, 'view')) {
+    assert.equal(flattenStyle(node.props.style).height, undefined);
+    assert.equal(flattenStyle(node.props.style).maxHeight, undefined);
+  }
+  for (const node of hostNodes(renderer, 'text')) {
     assert.equal(node.props.numberOfLines, undefined);
     assert.equal(node.props.ellipsizeMode, undefined);
     assert.equal(node.props.adjustsFontSizeToFit, undefined);
+    assert.notEqual(node.props.allowFontScaling, false, 'large text remains enabled');
+    assert.equal(node.props.maxFontSizeMultiplier, undefined, 'no dynamic-type ceiling');
     assert.equal(flattenStyle(node.props.style).height, undefined);
     assert.equal(flattenStyle(node.props.style).maxHeight, undefined);
   }
@@ -227,15 +243,15 @@ test('iOS turn and remaining distance independently preserve zero/null, with hon
     const { renderer } = await renderBanner({ guidance: { ...baseGuidance, distanceToManeuverMeters: turn }, remainingDistanceMeters: remaining, remainingTimeSeconds: seconds });
     const [, panel, , instructionColumn, , summaryMetrics] = hostNodes(renderer, 'view');
     const instructionTexts = instructionColumn.findAllByType('text' as any).map(node => node.children.join(''));
-    assert.deepEqual(instructionTexts, [...(turn === null ? [] : [turn === 0 ? '0 m' : '85 m']), baseGuidance.instruction, baseGuidance.roadName]);
+    assert.deepEqual(instructionTexts, [...(turn === null ? [] : [turn === 0 ? '0 m' : '85 m']), baseGuidance.instruction]);
     const metrics = summaryMetrics.findAllByType('text' as any).map(node => node.children.join(''));
     assert.deepEqual(metrics, [seconds === null ? 'ETA updating' : '0 min', ...(remaining === null ? [] : [remaining === 0 ? '0 m' : '1.4 km']), ...(seconds === null ? [] : ['11:50 PM arrival'])]);
-    assert.equal(panel.props.accessibilityLabel, [baseGuidance.instruction, turn === null ? null : `in ${turn === 0 ? '0 m' : '85 m'}`, baseGuidance.roadName].filter(Boolean).join('. '));
+    assert.equal(panel.props.accessibilityLabel, [baseGuidance.instruction, turn === null ? null : `in ${turn === 0 ? '0 m' : '85 m'}`].filter(Boolean).join('. '));
     await unmount(renderer);
   }
 });
 
-test('iOS states and light/dark pickup/drop-off/stop targets retain provider gating, accessibility, and the original summary', async () => {
+test('iOS states and light/dark targets retain provider gating and real summary content with deliberately compact styling', async () => {
   for (const isDark of [false, true]) for (const [targetKind, targetType] of [['pickup', 'Pickup'], ['destination', 'Drop-off'], ['stop', 'Next stop']]) for (const state of representativeStates) {
     const props = { ...state, isDark, targetKind, targetLabel: longRoad };
     const actual = await renderBanner(props);
@@ -244,34 +260,37 @@ test('iOS states and light/dark pickup/drop-off/stop targets retain provider gat
     const stateMessage = state.message || (state.guidance?.navState === 'rerouting' ? 'Recalculating your route…' : 'Waiting for live turn instructions…');
     const [, panel, iconColumn, instructionColumn, summary] = hostNodes(actual.renderer, 'view');
     assert.equal(flattenStyle(panel.props.style).backgroundColor, isDark ? '#064D36' : '#096B47');
-    assert.equal(flattenStyle(panel.props.style).minHeight, 100);
-    assert.equal(flattenStyle(panel.props.style).padding, 14);
-    assert.equal(flattenStyle(iconColumn.props.style).width, 56);
-    assert.equal(actual.renderer.root.findByType('icon' as any).props.size, 44);
+    assert.equal(flattenStyle(panel.props.style).minHeight, 64);
+    assert.equal(flattenStyle(panel.props.style).padding, 10);
+    assert.equal(flattenStyle(iconColumn.props.style).width, 40);
+    assert.equal(actual.renderer.root.findByType('icon' as any).props.size, 32);
     const columnTexts = instructionColumn.findAllByType('text' as any);
     assert.ok(columnTexts.some(node => node.children.join('') === (instruction || stateMessage)));
     assert.ok(columnTexts.every(node => node.props.numberOfLines === undefined));
-    const expectedRoad = instruction && state.guidance?.roadName && state.guidance.roadName !== instruction;
+    const expectedRoad = instruction && state.guidance?.roadName && !instruction.includes(state.guidance.roadName);
     assert.equal(columnTexts.some(node => node.children.join('') === state.guidance?.roadName && state.guidance?.roadName !== instruction), Boolean(expectedRoad));
     if (!instruction) {
       assert.equal(columnTexts.length, 1, 'non-enroute/message states cannot show a stale turn distance or road');
       assert.equal(iconName(actual.renderer), 'info-outline');
     } else if (state.guidance?.maneuver === 'unknown') {
-      assert.equal(iconName(actual.renderer), 'info-outline', 'unknown can retain provider text, but cannot imply a direction');
+      assert.equal(iconName(actual.renderer), 'navigation', 'the anchored Head toward state gets a generic navigation glyph, never a turn');
     } else {
       assert.equal(iconName(actual.renderer), iconName(original.renderer), 'known iOS maneuvers retain the original mapper');
     }
-    const actualTree = treeWithoutFunctions(actual.renderer.toJSON());
-    const originalTree = treeWithoutFunctions(original.renderer.toJSON());
-    assert.equal(panel.props.accessibilityLabel, originalTree.children[0].props.accessibilityLabel, 'accessibility label composition remains unchanged');
-    assert.deepEqual(actualTree.children[1], originalTree.children[1], 'summary and target are not part of this layout port');
+    const turnDistance = instruction ? columnTexts[0].children.join('') : null;
+    const hasDistance = instruction && columnTexts[0].children.join('') !== instruction;
+    assert.equal(panel.props.accessibilityLabel, [instruction || stateMessage, hasDistance && `in ${turnDistance}`, expectedRoad && state.guidance?.roadName].filter(Boolean).join('. '), 'full instruction stays accessible without a duplicate/stale road');
+    const originalSummary = hostNodes(original.renderer, 'view')[4];
+    assert.deepEqual(summary.findAllByType('text' as any).map(node => node.children.join('')), originalSummary.findAllByType('text' as any).map(node => node.children.join('')), 'summary values and target text remain identical, not their superseded styles');
     assert.equal(flattenStyle(summary.props.style).backgroundColor, isDark ? '#17212C' : '#FFFFFF');
     assert.equal(flattenStyle(summary.props.style).borderColor, isDark ? '#304151' : '#DBE2E8');
+    assert.equal(flattenStyle(summary.props.style).paddingVertical, 7);
     const summaryTexts = summary.findAllByType('text' as any);
     assert.equal(flattenStyle(summaryTexts[0].props.style).color, isDark ? '#65DBAB' : '#087B4C');
+    for (const node of summaryTexts.slice(1, -1)) assert.equal(flattenStyle(node.props.style).color, isDark ? '#ECF1F5' : '#23313F');
     assert.equal(flattenStyle(summaryTexts[summaryTexts.length - 1].props.style).color, isDark ? '#B9C7D4' : '#526273');
     assert.equal(summaryTexts[summaryTexts.length - 1].children.join(''), `${targetType} · ${longRoad}`);
-    assert.equal(summaryTexts[summaryTexts.length - 1].props.numberOfLines, 1, 'preserve the original target contract');
+    assert.ok(summaryTexts.every(node => node.props.numberOfLines === undefined), 'compact metrics and target can wrap at large text sizes');
     await unmount(actual.renderer, original.renderer);
   }
 });
@@ -309,6 +328,95 @@ test('iOS retains known maneuver mappings using installed MaterialIcons glyphs w
   assert.equal(iconName(neutral.renderer), 'info-outline');
   assert.ok(Object.hasOwn(materialGlyphs, iconName(neutral.renderer)));
   await unmount(neutral.renderer);
+});
+
+test('iOS recognizes verified departure or only anchored live Head toward/towards text as generic navigation, not a turn', async () => {
+  for (const nativeManeuverName of [null, undefined, 'UNKNOWN', 'DEPART']) for (const instruction of [
+    'Head toward Nmai Dzorn Papafio Hills Rd',
+    'Head towards Nmai Dzorn Papafio Hills Rd',
+    '  HEAD TOWARD   Nmai Dzorn Papafio Hills Rd  ',
+  ]) {
+    const guidance = { ...baseGuidance, maneuver: 'unknown', nativeManeuverName, instruction, roadName: 'Nmai Dzorn Papafio Hills Rd', distanceToManeuverMeters: null };
+    const { renderer } = await renderBanner({ guidance });
+    assert.equal(iconName(renderer), 'navigation', `${nativeManeuverName ?? 'missing enum'}: ${instruction}`);
+    assert.ok(Object.hasOwn(materialGlyphs, iconName(renderer)), 'generic glyph exists in the installed native font');
+    const [, panel, , instructionColumn] = hostNodes(renderer, 'view');
+    assert.deepEqual(instructionColumn.findAllByType('text' as any).map(node => node.children.join('')), [instruction], 'screenshot road is not repeated and no missing distance is invented');
+    assert.equal(panel.props.accessibilityLabel, instruction, 'verbatim provider instruction, with no guessed left/right/straight text');
+    await unmount(renderer);
+  }
+  const departure = await renderBanner({ guidance: { ...baseGuidance, maneuver: 'unknown', nativeManeuverName: 'DEPART', instruction: 'Start navigation' } });
+  assert.equal(iconName(departure.renderer), 'navigation', 'verified DEPART is generic departure, not a directional turn');
+  await unmount(departure.renderer);
+  // Known maneuver metadata stays authoritative even if provider text begins Head toward.
+  for (const [maneuver, nativeManeuverName, expected] of [['left', 'TURN_LEFT', 'turn-left'], ['straight', 'STRAIGHT', 'straight']]) {
+    const { renderer } = await renderBanner({ guidance: { ...baseGuidance, maneuver, nativeManeuverName, instruction: 'Head toward the terminal' } });
+    assert.equal(iconName(renderer), expected);
+    await unmount(renderer);
+  }
+});
+
+test('iOS arbitrary unknown/missing guidance and rerouting, stopped, arrived, preparing, and error states stay neutral', async () => {
+  for (const instruction of [null, '', 'Head toward', 'Head towards   ', 'Head towardleft the terminal', 'Head toward: the terminal', 'Head towardsness the terminal', 'Please head toward the terminal', 'Continue, then Head toward the terminal', 'Proceed toward the terminal', 'Turn left onto the terminal road', 'Dirigez-vous vers le terminal']) {
+    for (const nativeManeuverName of [null, 'UNKNOWN']) {
+      const { renderer } = await renderBanner({ guidance: { ...baseGuidance, maneuver: 'unknown', nativeManeuverName, instruction } });
+      assert.equal(iconName(renderer), 'info-outline', `no inferred direction from ${JSON.stringify(instruction)}`);
+      await unmount(renderer);
+    }
+  }
+  for (const nativeManeuverName of ['NAME_CHANGE', 'FERRY_BOAT', 'FERRY_TRAIN', 'UNRECOGNIZED']) {
+    const { renderer } = await renderBanner({ guidance: { ...baseGuidance, maneuver: 'unknown', nativeManeuverName, instruction: 'Head toward the terminal' } });
+    assert.equal(iconName(renderer), 'info-outline', 'a different/unsupported native maneuver is not reclassified by English text');
+    await unmount(renderer);
+  }
+  const departure = { ...baseGuidance, maneuver: 'unknown', nativeManeuverName: 'DEPART', instruction: 'Head toward Nmai Dzorn Papafio Hills Rd', roadName: 'Nmai Dzorn Papafio Hills Rd' };
+  for (const props of [
+    { guidance: null, message: null },
+    { guidance: { ...departure, instruction: null }, message: null },
+    ...(['rerouting', 'unknown', 'stopped', 'arrived'] as const).map(navState => ({ guidance: { ...departure, navState }, message: null })),
+    ...['Preparing your route…', 'Route unavailable', 'Head toward the terminal'].map(message => ({ guidance: departure, message })),
+  ]) {
+    const { renderer } = await renderBanner(props);
+    assert.equal(iconName(renderer), 'info-outline');
+    const [, panel, , instructionColumn] = hostNodes(renderer, 'view');
+    const expected = props.message || (props.guidance?.navState === 'rerouting' ? 'Recalculating your route…' : 'Waiting for live turn instructions…');
+    assert.deepEqual(instructionColumn.findAllByType('text' as any).map(node => node.children.join('')), [expected], 'no stale distance or road in non-guidance states');
+    assert.equal(panel.props.accessibilityLabel, expected, 'no stale maneuver metadata in accessibility');
+    await unmount(renderer);
+  }
+});
+
+test('iOS suppresses only fully contained road names and preserves distinct/partial names, without altering Android/web', async () => {
+  const cases: [string, string | null, boolean][] = [
+    ['Head toward Nmai Dzorn Papafio Hills Rd', 'Nmai Dzorn Papafio Hills Rd', false],
+    ['Turn left onto Independence Avenue', 'Independence Avenue', false],
+    ['Independence Avenue', 'Independence Avenue', false],
+    ['Head toward NMAI  DZORN Papafio Hills Rd.', ' nmai dzorn papafio hills rd ', false],
+    ['Head toward A+B (North) Rd.', 'A+B (North) Rd', false],
+    ['Head toward École Avenue.', 'École Avenue', false],
+    ['Head toward Independence Avenue', 'Independence Avenue / Terminal Access Road', true],
+    ['Head toward Hill Rdway', 'Hill Rd', true],
+    ['Head toward Uphill Rd', 'hill Rd', true],
+    ['Head toward the terminal', 'Airport approach road', true],
+    ['Head toward the terminal', null, false],
+    ['Head toward the terminal', '   ', false],
+  ];
+  for (const [instruction, roadName, showRoad] of cases) {
+    const guidance = { ...baseGuidance, instruction, roadName, distanceToManeuverMeters: null };
+    const { renderer } = await renderBanner({ guidance });
+    const [, panel, , instructionColumn] = hostNodes(renderer, 'view');
+    const texts = instructionColumn.findAllByType('text' as any);
+    assert.deepEqual(texts.map(node => node.children.join('')), [instruction, ...(showRoad ? [roadName] : [])], `${instruction}: ${roadName}`);
+    assert.equal(panel.props.accessibilityLabel, [instruction, showRoad && roadName].filter(Boolean).join('. '));
+    assert.ok(texts.every(node => node.props.numberOfLines === undefined));
+    await unmount(renderer);
+    for (const platform of ['android', 'web'] as const) {
+      const actual = await renderBanner({ guidance }, platform);
+      const original = await renderBanner({ guidance }, platform, true);
+      assert.deepEqual(treeWithoutFunctions(actual.renderer.toJSON()), treeWithoutFunctions(original.renderer.toJSON()), `${platform} retains original road behavior`);
+      await unmount(actual.renderer, original.renderer);
+    }
+  }
 });
 
 test('Android keeps next-turn distance separate, compact, and readable without a fixed height', async () => {
@@ -388,7 +496,7 @@ test('Android unknown, reroute, error, and zero-value states stay neutral while 
 });
 
 test('iOS and Android retain shared provider/summary text while web keeps its original truncation hierarchy', async () => {
-  const shared = { targetKind: 'stop', targetLabel: 'Gate B', isDark: true };
+  const shared = { targetKind: 'stop', targetLabel: 'Gate B', isDark: true, guidance: { ...baseGuidance, roadName: 'Airport approach road' } };
   const ios = await renderBanner(shared);
   const android = await renderBanner(shared, 'android');
   const web = await renderBanner(shared, 'web');

@@ -134,7 +134,7 @@ test('Driver presents a map-app choice when Navigate is tapped during a trip', (
   assert.match(screen, /Apple Maps/);
   assert.match(screen, /Google Maps/);
   assert.match(screen, /Other map app/);
-  assert.match(screen, /style=\{\[styles\.navigateTripIconBtn, \{ backgroundColor: '#075985' \}\]\}/);
+  assert.match(screen, /style=\{\[styles\.navigateTripIconBtn, \{ backgroundColor: '#075985' \}, Platform\.OS === 'ios' && iosLayoutStyles\.navigateButton\]\}/);
   assert.match(screen, /accessibilityHint=\{Platform\.OS === 'ios' \? 'Choose Apple Maps, Google Maps, or Waze for this trip' : 'Choose Google Maps, Waze, or another installed map app for this trip'\}/);
   assert.match(screen, /<MaterialIcons name="navigation" size=\{22\} color="#FFF" \/>/);
   assert.doesNotMatch(screen, /<Text style=\{styles\.actionBtnText\}>Navigate<\/Text>/);
@@ -142,17 +142,21 @@ test('Driver presents a map-app choice when Navigate is tapped during a trip', (
   const evaluateNavigationStyle = (source: string, platform: string) => {
     const file = ts.createSourceFile('home.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     const statement = file.statements.find((node) => ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => d.name.getText(file) === 'styles'))!;
-    const context = { StyleSheet: { create: (styles: unknown) => styles }, Platform: { OS: platform }, GOLD: '#D4AF37', GREEN: '#22C55E', RED: '#EF4444', result: {} as { height: number; width: number } };
-    vm.runInNewContext(ts.transpileModule(`${statement.getText(file)}\nresult = styles.navigateTripIconBtn;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, context);
+    const iosStatement = file.statements.find((node) => ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => d.name.getText(file) === 'iosLayoutStyles'));
+    const expression = iosStatement ? "Platform.OS === 'ios' ? { ...styles.navigateTripIconBtn, ...iosLayoutStyles.navigateButton } : styles.navigateTripIconBtn" : 'styles.navigateTripIconBtn';
+    const context = { StyleSheet: { create: (styles: unknown) => styles }, Platform: { OS: platform }, GOLD: '#D4AF37', GREEN: '#22C55E', RED: '#EF4444', result: {} as { height?: number; minHeight?: number; width: number } };
+    vm.runInNewContext(ts.transpileModule(`${statement.getText(file)}\n${iosStatement?.getText(file) || ''}\nresult = ${expression};`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, context);
     return context.result;
   };
-  for (const platform of ['android', 'ios']) {
-    const actual = evaluateNavigationStyle(screen, platform);
-    const released = evaluateNavigationStyle(releasedHome, platform);
-    assert.equal(actual.height, released.height, `${platform} retains released navigation target height`);
-    assert.equal(actual.width, released.width, `${platform} retains released navigation target width`);
-    assert.ok(actual.height >= 44 && actual.width >= 44, `${platform} navigation remains a usable touch target`);
-  }
+  const android = evaluateNavigationStyle(screen, 'android');
+  const releasedAndroid = evaluateNavigationStyle(releasedHome, 'android');
+  assert.equal(android.height, releasedAndroid.height, 'Android retains released navigation target height');
+  assert.equal(android.width, releasedAndroid.width, 'Android retains released navigation target width');
+  assert.ok(android.height! >= 44 && android.width >= 44);
+  const ios = evaluateNavigationStyle(screen, 'ios');
+  assert.equal(ios.width, 44, 'iOS icon shares the compact trip row');
+  assert.equal(ios.minHeight, 44, 'iOS keeps a usable minimum touch target');
+  assert.equal(ios.height, undefined, 'iOS row can grow for accessibility text');
 });
 
 test('native build configuration persists the Navigation SDK API key and Android desugaring support', () => {
