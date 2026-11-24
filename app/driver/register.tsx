@@ -11,6 +11,16 @@ import { useDriverAuth } from '@/lib/driver-auth-context';
 import { auth as firebaseAuthObj, firebaseAuth, firebaseStorage } from '@/lib/firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { openDriverSupportWhatsApp } from '@/lib/support-whatsapp';
+import { useDriverDocumentManifest } from '@/hooks/use-driver-document-manifest';
+import { canConfirmDriverSubmission, isOwnedDriverStorageReference } from '@/lib/driver-document-manifest';
+import {
+  clampDriverDraftStep, createDriverRegistrationDraftSession, driverRegistrationDetailsMissing,
+  driverRegistrationMissingLabels, driverRegistrationRecoveryStep, driverRegistrationRejectionReason,
+  driverRegistrationMatchesSavedSubmission,
+  driverRegistrationRevision, emptyDriverRegistrationForm, isCurrentDriverRegistrationOperation,
+  isLocalDriverDocument, restoreDriverRegistrationForm,
+  type DriverRegistrationForm,
+} from '@/lib/driver-registration-draft';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -109,312 +119,471 @@ function FileUploadField({ label, uri, onPick }: { label: string; uri: string; o
 export default function DriverRegisterScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { signUp, signInWithGoogle, user, driverProfile } = useDriverAuth();
-
+  const { signUp, signInWithGoogle, user, driverProfile, loading: authLoading, refreshProfile } = useDriverAuth();
+  const uid = user?.uid ?? null;
   const [step, setStep] = useState(1);
-  const [email, setEmail] = useState('');
+  const [form, setForm] = useState<DriverRegistrationForm>(emptyDriverRegistrationForm);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [phone, setPhone] = useState('+233');
-  const [momoNumber, setMomoNumber] = useState('+233');
-  const [vehicleMake, setVehicleMake] = useState('');
-  const [vehicleModel, setVehicleModel] = useState('');
-  const [vehiclePlate, setVehiclePlate] = useState('');
-  const [vehicleColor, setVehicleColor] = useState('');
-  const [vehicleFullModel, setVehicleFullModel] = useState('');
-  const [city, setCity] = useState('');
-  const [serviceType, setServiceType] = useState('');
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [ghanaCardFront, setGhanaCardFront] = useState('');
-  const [ghanaCardBack, setGhanaCardBack] = useState('');
-  const [licenseFront, setLicenseFront] = useState('');
-  const [licenseBack, setLicenseBack] = useState('');
-  const [driverPhoto, setDriverPhoto] = useState('');
-  const [vehiclePhoto, setVehiclePhoto] = useState('');
-  const [insurancePhoto, setInsurancePhoto] = useState('');
-  const [roadworthyPhoto, setRoadworthyPhoto] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [hydratedScope, setHydratedScope] = useState<string | null>(null);
+  const [hydrationError, setHydrationError] = useState('');
+  const [recoveryError, setRecoveryError] = useState('');
+  const [retry, setRetry] = useState(0);
+  const [verifiedUID, setVerifiedUID] = useState<string | null>(null);
+  const [emailCheckedUID, setEmailCheckedUID] = useState<string | null>(null);
+  const [recoveredRevision, setRecoveredRevision] = useState<string | null>(null);
+  const [confirmed, setConfirmed] = useState<{ uid: string; revision: string } | null>(null);
+  const [pendingEdits, setPendingEdits] = useState(false);
+  const mountedRef = useRef(true);
+  const identityRef = useRef({ uid, generation: 0 });
+  if (identityRef.current.uid !== uid) {
+    identityRef.current = { uid, generation: identityRef.current.generation + 1 };
+  }
+  const formRef = useRef(form);
+  formRef.current = form;
+  const editsRef = useRef(false);
+  const editRevisionRef = useRef(0);
+  const editedFieldsRef = useRef(new Set<keyof DriverRegistrationForm>());
+  const submissionRef = useRef(false);
+  const savedSubmissionRef = useRef<{
+    ticket: { uid: string | null; generation: number }; editRevision: number; form: DriverRegistrationForm;
+  } | null>(null);
+  const draftSessionRef = useRef<ReturnType<typeof createDriverRegistrationDraftSession> | null>(null);
+  const freshSignUpRef = useRef<{ email: string; form: DriverRegistrationForm; targetUID: string | null } | null>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scope = uid ?? 'anonymous-this-screen';
+  const hydrated = hydratedScope === scope;
+  const ownProfile = driverProfile?.user_id === uid || driverProfile?.id === uid ? driverProfile : null;
+  const profileStatus = String(ownProfile?.approval_status ?? ownProfile?.application_status ?? ownProfile?.status ?? '').toLowerCase();
+  const { manifest, status: manifestStatus, error: manifestError, recheck } = useDriverDocumentManifest(
+    uid, ownProfile, !authLoading && hydrated && verifiedUID === uid && !!uid,
+  );
+  const approved = manifest?.approvalStatus === 'approved';
+  const rejected = manifest ? manifest.approvalStatus === 'rejected' : profileStatus === 'rejected';
+  const rejectionReason = rejected ? driverRegistrationRejectionReason(ownProfile) : '';
+  const approvedRef = useRef(approved);
+  approvedRef.current = approved;
+  const manifestRef = useRef(manifest);
+  manifestRef.current = manifest;
+  const confirmedRef = useRef(confirmed);
+  confirmedRef.current = confirmed;
 
-  // Load draft from AsyncStorage on mount
-  useEffect(() => {
-    AsyncStorage.getItem('hy3n_driver_register_draft').then(val => {
-      if (val) {
-        try {
-          const draft = JSON.parse(val);
-          if (draft.step) setStep(draft.step);
-          if (draft.fullName) setFullName(draft.fullName);
-          if (draft.email) setEmail(draft.email);
-          if (draft.phone) setPhone(draft.phone);
-          if (draft.momoNumber) setMomoNumber(draft.momoNumber);
-          if (draft.vehicleMake) setVehicleMake(draft.vehicleMake);
-          if (draft.vehicleModel) setVehicleModel(draft.vehicleModel);
-          if (draft.vehiclePlate) setVehiclePlate(draft.vehiclePlate);
-          if (draft.vehicleColor) setVehicleColor(draft.vehicleColor);
-          if (draft.vehicleFullModel) setVehicleFullModel(draft.vehicleFullModel);
-          if (draft.city) setCity(draft.city);
-          if (draft.serviceType) setServiceType(draft.serviceType);
-          if (draft.selectedCategories) setSelectedCategories(draft.selectedCategories);
-          
-          if (draft.ghanaCardFront) setGhanaCardFront(draft.ghanaCardFront);
-          if (draft.ghanaCardBack) setGhanaCardBack(draft.ghanaCardBack);
-          if (draft.licenseFront) setLicenseFront(draft.licenseFront);
-          if (draft.licenseBack) setLicenseBack(draft.licenseBack);
-          if (draft.driverPhoto) setDriverPhoto(draft.driverPhoto);
-          if (draft.vehiclePhoto) setVehiclePhoto(draft.vehiclePhoto);
-          if (draft.insurancePhoto) setInsurancePhoto(draft.insurancePhoto);
-          if (draft.roadworthyPhoto) setRoadworthyPhoto(draft.roadworthyPhoto);
-        } catch (e) {
-          console.warn("Failed to parse draft", e);
-        }
-      }
+  const isCurrent = (captured: { uid: string | null; generation: number }) => isCurrentDriverRegistrationOperation(captured, {
+    ...identityRef.current, mounted: mountedRef.current, authUID: firebaseAuthObj.currentUser?.uid ?? null,
+  });
+  const renderTicket = { ...identityRef.current };
+  const updateForm = <K extends keyof DriverRegistrationForm>(key: K, value: React.SetStateAction<DriverRegistrationForm[K]>) => {
+    if (submissionRef.current || !isCurrent(renderTicket)) return;
+    editsRef.current = true;
+    editRevisionRef.current += 1;
+    editedFieldsRef.current.add(key);
+    setPendingEdits(true);
+    savedSubmissionRef.current = null;
+    draftSessionRef.current?.resumeEdits();
+    setConfirmed(null);
+    setForm(previous => {
+      const next = { ...previous, [key]: typeof value === 'function' ? (value as (old: DriverRegistrationForm[K]) => DriverRegistrationForm[K])(previous[key]) : value };
+      formRef.current = next;
+      return next;
     });
+  };
+  const { fullName, email, phone, momoNumber, vehicleMake, vehicleModel, vehiclePlate, vehicleColor,
+    vehicleFullModel, city, serviceType, selectedCategories, ghanaCardFront, ghanaCardBack,
+    licenseFront, licenseBack, driverPhoto, vehiclePhoto, insurancePhoto, roadworthyPhoto } = form;
+  const setFullName = (v: string) => updateForm('fullName', v);
+  const setEmail = (v: string) => updateForm('email', v);
+  const setPhone = (v: string) => updateForm('phone', v);
+  const setMomoNumber = (v: string) => updateForm('momoNumber', v);
+  const setVehicleMake = (v: string) => updateForm('vehicleMake', v);
+  const setVehicleModel = (v: string) => updateForm('vehicleModel', v);
+  const setVehiclePlate = (v: string) => updateForm('vehiclePlate', v);
+  const setVehicleColor = (v: string) => updateForm('vehicleColor', v);
+  const setVehicleFullModel = (v: string) => updateForm('vehicleFullModel', v);
+  const setCity = (v: string) => updateForm('city', v);
+  const setServiceType = (v: string) => updateForm('serviceType', v);
+  const setSelectedCategories = (v: React.SetStateAction<string[]>) => updateForm('selectedCategories', v);
+  const setGhanaCardFront = (v: string) => updateForm('ghanaCardFront', v);
+  const setGhanaCardBack = (v: string) => updateForm('ghanaCardBack', v);
+  const setLicenseFront = (v: string) => updateForm('licenseFront', v);
+  const setLicenseBack = (v: string) => updateForm('licenseBack', v);
+  const setDriverPhoto = (v: string) => updateForm('driverPhoto', v);
+  const setVehiclePhoto = (v: string) => updateForm('vehiclePhoto', v);
+  const setInsurancePhoto = (v: string) => updateForm('insurancePhoto', v);
+  const setRoadworthyPhoto = (v: string) => updateForm('roadworthyPhoto', v);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      identityRef.current.generation += 1;
+      if (pollRef.current) clearTimeout(pollRef.current);
+    };
   }, []);
 
-  // Save draft on state changes
+  // A screen-initiated email sign-up alone can carry this mount's anonymous form
+  // into its newly created UID. No unscoped disk draft is ever read or imported.
   useEffect(() => {
-    const draft = {
-      step, fullName, email, phone, momoNumber,
-      vehicleMake, vehicleModel, vehiclePlate, vehicleColor, vehicleFullModel,
-      city, serviceType, selectedCategories,
-      ghanaCardFront, ghanaCardBack, licenseFront, licenseBack,
-      driverPhoto, vehiclePhoto, insurancePhoto, roadworthyPhoto
-    };
-    AsyncStorage.setItem('hy3n_driver_register_draft', JSON.stringify(draft)).catch(() => {});
-  }, [
-    step, fullName, email, phone, momoNumber,
-    vehicleMake, vehicleModel, vehiclePlate, vehicleColor, vehicleFullModel,
-    city, serviceType, selectedCategories,
-    ghanaCardFront, ghanaCardBack, licenseFront, licenseBack,
-    driverPhoto, vehiclePhoto, insurancePhoto, roadworthyPhoto
-  ]);
+    const fresh = freshSignUpRef.current;
+    const preserveFresh = !!uid && !!fresh && fresh.email === user?.email?.trim().toLowerCase()
+      && (!fresh.targetUID || fresh.targetUID === uid);
+    if (preserveFresh && fresh) fresh.targetUID = uid;
+    else freshSignUpRef.current = null;
+    const initial = preserveFresh && fresh ? fresh.form : emptyDriverRegistrationForm();
+    setForm(initial);
+    formRef.current = initial;
+    editsRef.current = preserveFresh;
+    setPendingEdits(preserveFresh);
+    editedFieldsRef.current = new Set();
+    editRevisionRef.current += 1;
+    setPassword('');
+    setConfirmPassword('');
+    setStep(1);
+    setLoading(false);
+    submissionRef.current = false;
+    savedSubmissionRef.current = null;
+    setError('');
+    setRecoveryError('');
+    setHydrationError('');
+    setHydratedScope(null);
+    setVerifiedUID(null);
+    setEmailCheckedUID(null);
+    setRecoveredRevision(null);
+    setConfirmed(null);
+    draftSessionRef.current = uid ? createDriverRegistrationDraftSession(AsyncStorage, uid) : null;
+    if (pollRef.current) clearTimeout(pollRef.current);
+    pollRef.current = null;
+  }, [uid]);
 
-  // Clear draft when finished
   useEffect(() => {
-    if (step === 5) {
-      AsyncStorage.removeItem('hy3n_driver_register_draft').catch(() => {});
-    }
-  }, [step]);
-
-  // Auth-based progress recovery & details restoration
-  useEffect(() => {
+    if (authLoading || hydrated) return;
+    const captured = { ...identityRef.current };
     let active = true;
-    const recoverState = async () => {
-      if (!user) return;
+    const hydrate = async () => {
+      try {
+        const draft = await draftSessionRef.current?.read();
+        if (!active || !isCurrent(captured)) return;
+        if (draft) {
+          setForm(draft.form);
+          formRef.current = draft.form;
+          editsRef.current = draft.pendingEdits;
+          setPendingEdits(draft.pendingEdits);
+          editedFieldsRef.current = new Set(draft.editedFields);
+          setStep(clampDriverDraftStep(draft.step));
+        }
+        setHydrationError('');
+        setHydratedScope(scope);
+      } catch {
+        if (active && isCurrent(captured)) setHydrationError('Your saved draft could not be loaded. Retry before continuing; it has not been overwritten.');
+      }
+    };
+    void hydrate();
+    return () => { active = false; };
+  }, [uid, authLoading, retry]);
+
+  // Hydration is an explicit barrier. All reads, writes and confirmation clears
+  // share one ordered queue; an account change invalidates queued writes.
+  useEffect(() => {
+    if (authLoading || !hydrated || !uid || confirmed || hydrationError) return;
+    const captured = { ...identityRef.current };
+    void draftSessionRef.current?.write({ version: 1, uid, step: clampDriverDraftStep(step), pendingEdits,
+      editedFields: [...editedFieldsRef.current], form }, () => isCurrent(captured))
+      .catch(() => { if (isCurrent(captured)) setError('Your draft could not be saved on this device. Keep this page open and retry.'); });
+  }, [form, step, pendingEdits, uid, authLoading, hydrated, confirmed, hydrationError]);
+
+  useEffect(() => {
+    if (authLoading || !hydrated || !user) return;
+    const captured = { ...identityRef.current };
+    let active = true;
+    let busy = false;
+    const checkEmail = async () => {
+      if (busy || !active || !isCurrent(captured)) return;
+      busy = true;
       try {
         await user.reload();
-      } catch (err) {
-        console.error("Error reloading user:", err);
-      }
-      if (!active) return;
-
-      if (!user.emailVerified) {
-        setStep(2);
-        if (!email) setEmail(user.email || '');
-        if (!fullName && user.displayName) setFullName(user.displayName);
-        startVerificationPolling();
-      } else {
-        if (driverProfile) {
-          if (driverProfile.approval_status === 'pending') {
-            setStep(5);
-          } else {
-            if (!fullName && driverProfile.full_name) setFullName(driverProfile.full_name);
-            if (!email && driverProfile.email) setEmail(driverProfile.email);
-            if (phone === '+233' && driverProfile.phone) setPhone(driverProfile.phone);
-            if (momoNumber === '+233' && driverProfile.momo_number) setMomoNumber(driverProfile.momo_number);
-            if (!city && driverProfile.city) setCity(driverProfile.city);
-            if (!serviceType && driverProfile.service_type) setServiceType(driverProfile.service_type);
-            if (selectedCategories.length === 0 && driverProfile.accepted_categories) {
-              setSelectedCategories(driverProfile.accepted_categories);
-            }
-
-            if (!vehicleMake && driverProfile.vehicle_make) setVehicleMake(driverProfile.vehicle_make);
-            if (!vehicleModel && driverProfile.vehicle_model) setVehicleModel(driverProfile.vehicle_model);
-            if (!vehiclePlate && driverProfile.vehicle_plate) setVehiclePlate(driverProfile.vehicle_plate);
-            if (!vehicleColor && driverProfile.vehicle_color) setVehicleColor(driverProfile.vehicle_color);
-
-            if (driverProfile.phone && driverProfile.city && driverProfile.service_type) {
-              setStep(4);
-            } else {
-              setStep(3);
-            }
-          }
+        if (!active || !isCurrent(captured)) return;
+        setRecoveryError('');
+        if (user.emailVerified) {
+          await refreshProfile();
+          if (!active || !isCurrent(captured)) return;
+          setVerifiedUID(user.uid);
+          setEmailCheckedUID(user.uid);
         } else {
-          setStep(3);
-          if (!fullName && user.displayName) setFullName(user.displayName);
-          if (!email) setEmail(user.email || '');
+          setEmailCheckedUID(user.uid);
+          setStep(2);
+          setForm(previous => ({ ...previous, email: previous.email || user.email || '', fullName: previous.fullName || user.displayName || '' }));
+          // One non-overlapping timeout chain, cancelled for account changes/unmount.
+          pollRef.current = setTimeout(() => { void checkEmail(); }, 3000);
         }
+      } catch {
+        if (active && isCurrent(captured)) setRecoveryError('We could not verify your account right now. Retry; your draft and selections are still here.');
+      } finally {
+        busy = false;
       }
     };
-    recoverState();
-    return () => { active = false; };
-  }, [user, driverProfile]);
+    void checkEmail();
+    return () => {
+      active = false;
+      if (pollRef.current) clearTimeout(pollRef.current);
+      pollRef.current = null;
+    };
+  }, [uid, authLoading, hydrated, retry]);
+
+  const confirmSubmission = (checked: NonNullable<typeof manifest>, captured: { uid: string | null; generation: number }) => {
+    if (!captured.uid || !isCurrent(captured) || editsRef.current || !canConfirmDriverSubmission(checked, captured.uid)) return false;
+    const revision = driverRegistrationRevision(checked);
+    const confirmation = { uid: captured.uid, revision };
+    confirmedRef.current = confirmation;
+    setConfirmed(confirmation);
+    setStep(5);
+    void draftSessionRef.current?.confirmedClear(() => isCurrent(captured) && !editsRef.current
+      && confirmedRef.current?.uid === captured.uid && confirmedRef.current?.revision === revision
+      && driverRegistrationRevision(manifestRef.current) === revision
+      && canConfirmDriverSubmission(manifestRef.current, captured.uid))
+      .catch(() => { if (isCurrent(captured)) setError('Submission is verified, but the local draft could not be removed.'); });
+    return true;
+  };
+
+  useEffect(() => {
+    if (authLoading || !hydrated || !uid || verifiedUID !== uid || submissionRef.current || recoveryError) return;
+    if (approved) { router.replace('/home'); return; }
+    if (manifestStatus !== 'ready' || !manifest) return;
+    const captured = { ...identityRef.current };
+    if (!isCurrent(captured)) return;
+    const saved = savedSubmissionRef.current;
+    if (saved && isCurrent(saved.ticket) && saved.editRevision === editRevisionRef.current
+      && canConfirmDriverSubmission(manifest, uid) && driverRegistrationMatchesSavedSubmission(saved.form, manifest)) {
+      editsRef.current = false;
+      setPendingEdits(false);
+      editedFieldsRef.current.clear();
+      savedSubmissionRef.current = null;
+    }
+    const restored = restoreDriverRegistrationForm(formRef.current, ownProfile, manifest, editsRef.current, editedFieldsRef.current);
+    restored.email ||= user?.email || '';
+    restored.fullName ||= user?.displayName || '';
+    setForm(restored);
+    formRef.current = restored;
+    const revision = driverRegistrationRevision(manifest);
+    setRecoveredRevision(revision);
+    const complete = !rejected && canConfirmDriverSubmission(manifest, uid);
+    const nextStep = driverRegistrationRecoveryStep({ status: manifestStatus, confirmed: complete,
+      pendingEdits: editsRef.current, detailsMissing: driverRegistrationDetailsMissing(restored) });
+    if (nextStep === 5) {
+      confirmSubmission(manifest, captured);
+    } else {
+      setConfirmed(null);
+      setStep(nextStep ?? 3);
+      const labels = driverRegistrationMissingLabels(manifest);
+      setError(previous => previous && editsRef.current ? previous
+        : labels.length ? `Please upload the required documents before submitting: ${labels.join(', ')}.` : '');
+    }
+  }, [uid, authLoading, hydrated, verifiedUID, ownProfile, manifest, manifestStatus, approved, rejected, recoveryError, loading]);
 
   const isKantanka = selectedCategories.includes('kantanka') || serviceType === 'okada' || serviceType === 'delivery';
   const maxCategories = isKantanka ? 99 : 2;
-
   const toggleCategory = (id: string) => {
     setSelectedCategories(prev => {
       if (prev.includes(id)) return prev.filter(c => c !== id);
-      // Kantanka unlocks all car services; others are capped at two.
       if (id === 'kantanka') return ['standard', 'comfort', 'kantanka', 'car_delivery'];
-      if (prev.length >= maxCategories) return prev; // silently ignore if at cap
+      if (prev.length >= maxCategories) return prev;
       return [...prev, id];
     });
   };
-
   const availableCategories = serviceType ? ALL_CATEGORIES.filter(c => CATEGORIES_BY_SERVICE[serviceType]?.includes(c.id)) : [];
-
   const selectedService = SERVICE_TYPES.find(s => s.id === serviceType);
 
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
-
-  const startVerificationPolling = () => {
-    pollRef.current = setInterval(async () => {
-      try {
-        const user = firebaseAuthObj.currentUser;
-        if (user) {
-          await user.reload();
-          if (user.emailVerified) {
-            if (pollRef.current) clearInterval(pollRef.current);
-            setStep(3);
-          }
-        }
-      } catch {}
-    }, 3000);
-  };
-
   const handleCreateAccount = async () => {
+    if (loading || !hydrated || uid) return;
     setError('');
     if (!fullName.trim()) { setError('Please enter your full name.'); return; }
     if (!email.trim()) { setError('Please enter your email.'); return; }
     if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
     if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
+    const captured = { ...identityRef.current };
+    const fresh = { email: email.trim().toLowerCase(), form: { ...form, selectedCategories: [...selectedCategories] }, targetUID: null as string | null };
+    freshSignUpRef.current = fresh;
+    const stillFresh = () => mountedRef.current && freshSignUpRef.current === fresh
+      && (!firebaseAuthObj.currentUser || firebaseAuthObj.currentUser.email?.toLowerCase() === fresh.email)
+      && (!fresh.targetUID || firebaseAuthObj.currentUser?.uid === fresh.targetUID);
     setLoading(true);
     try {
       await signUp(email.trim(), password, fullName.trim());
-      const user = firebaseAuthObj.currentUser;
-      if (user) {
+      if (!stillFresh()) return;
+      const createdUser = firebaseAuthObj.currentUser;
+      if (createdUser) {
+        fresh.targetUID = createdUser.uid;
         const { sendEmailVerification: sendVerif } = await import('firebase/auth');
-        await sendVerif(user);
+        if (!stillFresh()) return;
+        await sendVerif(createdUser);
+        if (!stillFresh()) return;
+        setStep(2);
       }
-      setStep(2);
-      startVerificationPolling();
     } catch (err: any) {
+      if (!stillFresh() && !isCurrent(captured)) return;
+      if (!firebaseAuthObj.currentUser && freshSignUpRef.current === fresh) freshSignUpRef.current = null;
       if (err?.code === 'auth/email-already-in-use') {
-        Alert.alert(
-          'Account already exists',
-          'This email already has a HY3N account. Please log in with your password.',
-          [
-            { text: 'Stay here', style: 'cancel' },
-            { text: 'Log in', onPress: () => router.replace('/login' as any) },
-          ],
-        );
-      } else {
-        setError(err?.message || 'Failed to create account.');
-      }
+        freshSignUpRef.current = null;
+        Alert.alert('Account already exists', 'This email already has a HY3N account. Please log in with your password.', [
+          { text: 'Stay here', style: 'cancel' }, { text: 'Log in', onPress: () => router.replace('/login' as any) },
+        ]);
+      } else setError(err?.message || 'Failed to create account.');
     } finally {
-      setLoading(false);
+      if (stillFresh() || isCurrent(captured)) setLoading(false);
     }
   };
 
   const handleGoogleSignUp = async () => {
+    if (loading || !hydrated || uid) return;
+    const captured = { ...identityRef.current };
     setError('');
     setLoading(true);
     try {
+      // Google may select an existing account; never transplant anonymous data.
       await signInWithGoogle();
-      const user = firebaseAuthObj.currentUser;
-      if (user) {
-        setEmail(user.email || '');
-        setFullName(user.displayName || '');
-      }
-      setStep(3);
     } catch (err: any) {
-      setError(err.message || 'Google sign-in failed.');
+      if (isCurrent(captured)) setError(err?.message || 'Google sign-in failed.');
     } finally {
-      setLoading(false);
+      if (isCurrent(captured)) setLoading(false);
     }
   };
 
   const handleSubmitApplication = async () => {
-    if (!serviceType) { setError('Please select a service type.'); return; }
+    if (submissionRef.current || loading || !uid || !hydrated || approved || verifiedUID !== uid || manifestStatus !== 'ready') return;
+    if (driverRegistrationDetailsMissing(form)) { setStep(3); setError('Please fill in your personal details and select a ride category.'); return; }
     if (!vehicleMake.trim() || !vehicleModel.trim() || !vehiclePlate.trim()) {
       setError('Please fill in all vehicle details.'); return;
     }
     const requiredDocuments = [
-      ['Ghana Card (Front)', ghanaCardFront],
-      ['Ghana Card (Back)', ghanaCardBack],
-      ["Driver's License (Front)", licenseFront],
-      ["Driver's License (Back)", licenseBack],
-      ['Your Photo (Selfie)', driverPhoto],
-      ['Vehicle Photo', vehiclePhoto],
+      ['Ghana Card (Front)', ghanaCardFront], ['Ghana Card (Back)', ghanaCardBack],
+      ["Driver's License (Front)", licenseFront], ["Driver's License (Back)", licenseBack],
+      ['Your Photo (Selfie)', driverPhoto], ['Vehicle Photo', vehiclePhoto],
     ] as const;
     const missingDocuments = requiredDocuments.filter(([, uri]) => !uri.trim()).map(([label]) => label);
-    if (missingDocuments.length > 0) {
+    if (missingDocuments.length) {
       setStep(4);
       setError(`Please upload the required documents before submitting: ${missingDocuments.join(', ')}.`);
       return;
     }
+    const captured = { ...identityRef.current };
+    const editRevision = editRevisionRef.current;
+    const submittedForm = { ...form, selectedCategories: [...selectedCategories] };
+    submissionRef.current = true;
+    setConfirmed(null);
     setError('');
     setLoading(true);
     try {
-      const user = firebaseAuthObj.currentUser;
-      if (!user) throw new Error('Not authenticated');
-
-      const defaultCats = serviceType === 'okada' ? ['okada'] : serviceType === 'delivery' ? ['express_delivery'] : ['standard'];
-      const rideCategories = selectedCategories.length > 0 ? selectedCategories : defaultCats;
-
-      const uploadDocument = async (uri: string, key: string) => {
+      const submitUser = firebaseAuthObj.currentUser;
+      if (!submitUser || !isCurrent(captured)) throw new Error('Please sign in again before submitting.');
+      const assertCurrent = () => {
+        if (!isCurrent(captured) || editRevisionRef.current !== editRevision || approvedRef.current) throw new Error('Account or application changed. Please retry.');
+      };
+      // Recheck before replacing fixed-slot objects that an administrator may
+      // have reviewed since this repair screen was opened.
+      const beforeUpload = await recheck();
+      assertCurrent();
+      if (!beforeUpload) throw new Error('Documents could not be checked before uploading. Retry verification; your selections are retained.');
+      if (beforeUpload.approvalStatus === 'approved') throw new Error('This application is already approved. Please return to the Driver app.');
+      const uploadDocument = async (uri: string, key: string, manifestKey: string) => {
+        assertCurrent();
         if (!uri) return '';
-        if (!uri.startsWith('file://') && !uri.startsWith('content://')) return uri;
+        if (!isLocalDriverDocument(uri)) {
+          const checked = beforeUpload.documents[manifestKey as keyof typeof beforeUpload.documents];
+          if (checked?.status !== 'valid' || checked.reference !== uri) throw new Error('Please select the document again; this reference has not been verified.');
+          return uri;
+        }
         const response = await fetch(uri);
+        assertCurrent();
         const blob = await response.blob();
-        return firebaseStorage.uploadFile(blob, `drivers/${user.uid}/applications/${key}.jpg`);
+        assertCurrent();
+        const uploaded = await firebaseStorage.uploadFile(blob, `drivers/${submitUser.uid}/${key}.jpg`);
+        assertCurrent();
+        if (!isOwnedDriverStorageReference(uploaded, submitUser.uid)) throw new Error('Document upload was not confirmed. Please retry.');
+        return uploaded;
       };
       const uploadedDocuments = await Promise.all([
-        uploadDocument(ghanaCardFront, 'ghana-card-front'),
-        uploadDocument(ghanaCardBack, 'ghana-card-back'),
-        uploadDocument(licenseFront, 'drivers-license-front'),
-        uploadDocument(licenseBack, 'drivers-license-back'),
-        uploadDocument(driverPhoto, 'profile-photo'),
-        uploadDocument(vehiclePhoto, 'vehicle-photo'),
-        uploadDocument(insurancePhoto, 'insurance'),
-        uploadDocument(roadworthyPhoto, 'roadworthy'),
+        uploadDocument(ghanaCardFront, 'ghana-card-front', 'ghanaCardFront'),
+        uploadDocument(ghanaCardBack, 'ghana-card-back', 'ghanaCardBack'),
+        uploadDocument(licenseFront, 'drivers-license-front', 'licenseFront'),
+        uploadDocument(licenseBack, 'drivers-license-back', 'licenseBack'),
+        uploadDocument(driverPhoto, 'profile-photo', 'profilePhoto'),
+        uploadDocument(vehiclePhoto, 'vehicle-photo', 'vehiclePhoto'),
+        uploadDocument(insurancePhoto, 'insurance', 'insurance'),
+        uploadDocument(roadworthyPhoto, 'roadworthy', 'roadworthy'),
       ]);
-      const [uploadedGhanaCardFront, uploadedGhanaCardBack, uploadedLicenseFront, uploadedLicenseBack, uploadedDriverPhoto, uploadedVehiclePhoto, uploadedInsurance, uploadedRoadworthy] = uploadedDocuments;
+      assertCurrent();
+      const [uploadedGhanaCardFront, uploadedGhanaCardBack, uploadedLicenseFront, uploadedLicenseBack,
+        uploadedDriverPhoto, uploadedVehiclePhoto, uploadedInsurance, uploadedRoadworthy] = uploadedDocuments;
       await firebaseAuth.submitDriverProfile({
-        fullName,
-        email: email || user.email || '',
-        phone,
-        momoNumber,
-        city,
-        serviceType: serviceType as 'car' | 'okada' | 'delivery',
-        rideCategories: rideCategories as Array<'standard' | 'comfort' | 'kantanka' | 'car_delivery' | 'executive' | 'okada' | 'express_delivery'>,
-        vehicleMake,
-        vehicleModel,
-        vehiclePlate,
-        vehicleColor,
-        vehicleYear: vehicleFullModel,
-        documents: {
-          ghanaCardFront: uploadedGhanaCardFront,
-          ghanaCardBack: uploadedGhanaCardBack,
-          licenseFront: uploadedLicenseFront,
-          licenseBack: uploadedLicenseBack,
-          profilePhoto: uploadedDriverPhoto,
-          vehiclePhoto: uploadedVehiclePhoto,
-          insurance: uploadedInsurance,
-          roadworthy: uploadedRoadworthy,
-        },
+        fullName: submittedForm.fullName, email: submittedForm.email || submitUser.email || '', phone: submittedForm.phone,
+        momoNumber: submittedForm.momoNumber, city: submittedForm.city,
+        serviceType: submittedForm.serviceType as 'car' | 'okada' | 'delivery',
+        rideCategories: submittedForm.selectedCategories as Array<'standard' | 'comfort' | 'kantanka' | 'car_delivery' | 'executive' | 'okada' | 'express_delivery'>,
+        vehicleMake: submittedForm.vehicleMake, vehicleModel: submittedForm.vehicleModel, vehiclePlate: submittedForm.vehiclePlate,
+        vehicleColor: submittedForm.vehicleColor, vehicleYear: submittedForm.vehicleFullModel,
+        documents: { ghanaCardFront: uploadedGhanaCardFront, ghanaCardBack: uploadedGhanaCardBack,
+          licenseFront: uploadedLicenseFront, licenseBack: uploadedLicenseBack, profilePhoto: uploadedDriverPhoto,
+          vehiclePhoto: uploadedVehiclePhoto, insurance: uploadedInsurance, roadworthy: uploadedRoadworthy },
       });
-      setStep(5);
+      assertCurrent();
+      await refreshProfile();
+      assertCurrent();
+      // A profile-fingerprint change can cancel this hook closure's recheck.
+      // Keep the saved snapshot so a later authoritative ready/retry can finish
+      // only these exact edits; a new selection invalidates it immediately.
+      savedSubmissionRef.current = { ticket: captured, editRevision, form: {
+        ...submittedForm, email: submittedForm.email || submitUser.email || '',
+        ghanaCardFront: uploadedGhanaCardFront, ghanaCardBack: uploadedGhanaCardBack,
+        licenseFront: uploadedLicenseFront, licenseBack: uploadedLicenseBack,
+        driverPhoto: uploadedDriverPhoto, vehiclePhoto: uploadedVehiclePhoto,
+        insurancePhoto: uploadedInsurance, roadworthyPhoto: uploadedRoadworthy,
+      } };
+      const checked = await recheck();
+      assertCurrent();
+      if (!checked) throw new Error('Your application was saved, but documents could not be verified. Retry verification; your selections are retained.');
+      const restored = restoreDriverRegistrationForm(submittedForm, null, checked, false);
+      if (!canConfirmDriverSubmission(checked, submitUser.uid)) {
+        setStep(driverRegistrationDetailsMissing(restored) ? 3 : 4);
+        const labels = driverRegistrationMissingLabels(checked);
+        throw new Error(labels.length ? `Documents still need attention: ${labels.join(', ')}.` : 'Submission could not be confirmed. Retry verification.');
+      }
+      // Clear the edit barrier only after this exact save, refresh and new check.
+      editsRef.current = false;
+      setPendingEdits(false);
+      editedFieldsRef.current.clear();
+      savedSubmissionRef.current = null;
+      setForm(restored);
+      formRef.current = restored;
+      manifestRef.current = checked;
+      setRecoveredRevision(driverRegistrationRevision(checked));
+      confirmSubmission(checked, captured);
     } catch (err: any) {
-      setError(err?.message || 'Failed to submit application.');
+      if (isCurrent(captured)) {
+        setStep(driverRegistrationDetailsMissing(formRef.current) ? 3 : 4);
+        setError(err?.message || 'Failed to submit application. Your draft and selections are retained.');
+      }
     } finally {
-      setLoading(false);
+      if (isCurrent(captured)) {
+        submissionRef.current = false;
+        setLoading(false);
+      }
     }
   };
+
+  const retryRecovery = () => {
+    setRecoveryError('');
+    setHydrationError('');
+    if (!hydrated || recoveryError || verifiedUID !== uid) setRetry(value => value + 1);
+    else void recheck();
+  };
+  const verificationFailed = hydrationError || recoveryError || (verifiedUID === uid && manifestStatus === 'error' ? manifestError || 'Documents could not be checked. Retry; their status is unknown.' : '');
+  const checkingRecovery = authLoading || !hydrated || (!!uid && (emailCheckedUID !== uid
+    || (verifiedUID === uid && (approved || manifestStatus === 'idle' || manifestStatus === 'checking'
+      || (manifestStatus === 'ready' && recoveredRevision !== driverRegistrationRevision(manifest))))));
+  const canShowSubmitted = step === 5 && !!uid && confirmed?.uid === uid && !pendingEdits && !rejected
+    && confirmed.revision === driverRegistrationRevision(manifest) && manifestStatus === 'ready'
+    && canConfirmDriverSubmission(manifest, uid);
+  const visibleStep = checkingRecovery || verificationFailed ? 1 : step === 5 && !canShowSubmitted ? 4 : step;
 
   const TOTAL_STEPS = 5;
   const stepLabels = ['Account', 'Verify', 'Details', 'Documents', 'Done'];
@@ -484,14 +653,16 @@ export default function DriverRegisterScreen() {
         <Text style={styles.infoText}>This page will advance automatically once verified.</Text>
       </View>
       <TouchableOpacity style={styles.outlineBtn} onPress={async () => {
+        const captured = { ...identityRef.current };
         try {
-          const user = firebaseAuthObj.currentUser;
-          if (user) {
+          const currentUser = firebaseAuthObj.currentUser;
+          if (currentUser && isCurrent(captured)) {
             const { sendEmailVerification: sendVerif } = await import('firebase/auth');
-            await sendVerif(user);
+            if (!isCurrent(captured)) return;
+            await sendVerif(currentUser);
           }
-          Alert.alert('Sent!', 'Verification email resent. Check your inbox.');
-        } catch { Alert.alert('Error', 'Could not resend email.'); }
+          if (isCurrent(captured)) Alert.alert('Sent!', 'Verification email resent. Check your inbox.');
+        } catch { if (isCurrent(captured)) Alert.alert('Error', 'Could not resend email.'); }
       }}>
         <MaterialIcons name="refresh" size={18} color={TEXT} />
         <Text style={styles.outlineBtnText}>Resend Email</Text>
@@ -653,6 +824,11 @@ export default function DriverRegisterScreen() {
         {loading ? <ActivityIndicator color="#000" /> : <Text style={styles.primaryBtnText}>Submit Application</Text>}
       </TouchableOpacity>
 
+      {!!error && <TouchableOpacity style={[styles.outlineBtn, { marginTop: 8 }]} onPress={retryRecovery} disabled={loading}>
+        <MaterialIcons name="refresh" size={18} color={TEXT} />
+        <Text style={styles.outlineBtnText}>Retry document verification</Text>
+      </TouchableOpacity>}
+
       <TouchableOpacity style={[styles.outlineBtn, { marginTop: 8 }]} onPress={() => setStep(3)}>
         <MaterialIcons name="arrow-back" size={18} color={TEXT} />
         <Text style={styles.outlineBtnText}>Back</Text>
@@ -725,32 +901,53 @@ export default function DriverRegisterScreen() {
       <View style={[styles.container, { paddingTop: insets.top }]}>
         {/* Header */}
         <View style={styles.header}>
-          {step > 1 && step < 5 && (
+          {!checkingRecovery && !verificationFailed && visibleStep > 1 && visibleStep < 5 && (
             <TouchableOpacity onPress={() => setStep(s => Math.max(1, s - 1))} style={styles.backBtn}>
               <MaterialIcons name="arrow-back" size={22} color={TEXT} />
             </TouchableOpacity>
           )}
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>Apply to Drive</Text>
-            <Text style={styles.headerStep}>Step {step} of {TOTAL_STEPS}</Text>
+            <Text style={styles.headerStep}>Step {visibleStep} of {TOTAL_STEPS}</Text>
           </View>
         </View>
 
         {/* Progress bar */}
         <View style={styles.progressBar}>
-          <View style={[styles.progressFill, { width: `${(step / TOTAL_STEPS) * 100}%` }]} />
+          <View style={[styles.progressFill, { width: `${(visibleStep / TOTAL_STEPS) * 100}%` }]} />
         </View>
         <View style={styles.stepLabelsRow}>
           {stepLabels.map((label, i) => (
-            <Text key={label} style={[styles.stepLabelText, { color: i + 1 <= step ? GOLD : MUTED }]}>{label}</Text>
+            <Text key={label} style={[styles.stepLabelText, { color: i + 1 <= visibleStep ? GOLD : MUTED }]}>{label}</Text>
           ))}
         </View>
 
-        {step === 1 && renderStep1()}
-        {step === 2 && renderStep2()}
-        {step === 3 && renderStep3()}
-        {step === 4 && renderStep4()}
-        {step === 5 && renderStep5()}
+        {verificationFailed ? (
+          <View style={{ flex: 1, justifyContent: 'center', padding: 24, gap: 16 }}>
+            <Text style={styles.stepTitle}>Verification unavailable</Text>
+            <Text style={styles.stepSubtitle}>{verificationFailed}</Text>
+            <Text style={styles.infoText}>Your draft has not been deleted. We cannot confirm whether documents are complete until verification succeeds.</Text>
+            <TouchableOpacity style={styles.primaryBtn} onPress={retryRecovery}>
+              <Text style={styles.primaryBtnText}>Retry verification</Text>
+            </TouchableOpacity>
+          </View>
+        ) : checkingRecovery ? (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, gap: 16 }}>
+            <ActivityIndicator color={GOLD} />
+            <Text style={styles.stepSubtitle}>Checking your account and saved application…</Text>
+          </View>
+        ) : (
+          <>
+            {rejected && <View style={[styles.infoBox, { marginHorizontal: 20 }]}>
+              <Text style={styles.infoText}>Your application needs changes. {rejectionReason || 'Please review your details and documents before resubmitting.'}</Text>
+            </View>}
+            {visibleStep === 1 && renderStep1()}
+            {visibleStep === 2 && renderStep2()}
+            {visibleStep === 3 && renderStep3()}
+            {visibleStep === 4 && renderStep4()}
+            {canShowSubmitted && renderStep5()}
+          </>
+        )}
       </View>
     </KeyboardAvoidingView>
   );
