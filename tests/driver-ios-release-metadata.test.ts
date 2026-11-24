@@ -76,8 +76,30 @@ test('production EAS profile and existing Driver Apple submission destination ar
   assert.equal(eas.submit.production.ios.appleTeamId, '49Q5ZSPMZ9');
 });
 
-test('no dependency, lockfile or native Maps plugin drift is introduced for the iOS port', () => {
-  for (const file of ['package.json', 'pnpm-lock.yaml', 'plugins/with-google-navigation.js']) {
-    assert.equal(current(file), previous(file), `${file} must remain unchanged`);
-  }
+test('the approved Apple sign-in pin is the only dependency manifest change', () => {
+  const expected = JSON.parse(previous('package.json'));
+  expected.dependencies['expo-apple-authentication'] = '8.0.8';
+  assert.deepEqual(JSON.parse(current('package.json')), expected);
+  assert.equal(current('plugins/with-google-navigation.js'), previous('plugins/with-google-navigation.js'));
+});
+
+test('every other lock resolution, including the backend Git pin, remains unchanged', () => {
+  const withoutApple = (source: string) => source
+    .replace(/^      expo-apple-authentication:\n.*?(?=^      \S|^    \S|^\S|$(?![\s\S]))/gms, '')
+    .replace(/^  expo-apple-authentication@[^\n]*:\n.*?(?=^  \S|^\S|$(?![\s\S]))/gms, '');
+  assert.equal(withoutApple(current('pnpm-lock.yaml')), withoutApple(previous('pnpm-lock.yaml')));
+  assert.match(current('pnpm-lock.yaml'), /expo-apple-authentication:\n        specifier: 8\.0\.8\n        version: 8\.0\.8\(/);
+  assert.doesNotMatch(current('pnpm-lock.yaml'), /expo-apple-authentication@58\./);
+});
+
+test('installed Apple sign-in source passes the iOS 16 target and avoids the missing Core API', () => {
+  const moduleRoot = path.dirname(require.resolve('expo-apple-authentication/package.json'));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(moduleRoot, 'package.json'), 'utf8')).version, '8.0.8');
+  const podspec = fs.readFileSync(path.join(moduleRoot, 'ios/ExpoAppleAuthentication.podspec'), 'utf8');
+  assert.match(podspec, /:ios\s*=>\s*'15\.1'/);
+  const request = fs.readFileSync(path.join(moduleRoot, 'ios/AppleAuthenticationRequest.swift'), 'utf8');
+  assert.doesNotMatch(request, /Utilities\.keyWindow\(/);
+  const modules = JSON.parse(fs.readFileSync(path.join(moduleRoot, 'expo-module.config.json'), 'utf8'));
+  assert.ok(modules.platforms.includes('apple'));
+  assert.ok(modules.apple.modules.includes('AppleAuthenticationModule'));
 });
