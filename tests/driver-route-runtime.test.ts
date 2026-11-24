@@ -15,7 +15,7 @@ const corner = { lat: 5.704, lng: -0.1 };
 const destination = { lat: 5.704, lng: -0.096 };
 const road = [origin, corner, destination];
 
-async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng }, platform: 'ios' | 'android' = 'ios') {
+async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng }, platform: 'ios' | 'android' = 'ios', options: { manualMapReady?: boolean; manualController?: boolean } = {}) {
   let segments = road;
   let currentSegments: typeof road | null = null;
   let currentTraffic: any = undefined;
@@ -35,11 +35,23 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
   const backgroundLocationCalls: boolean[] = [];
   const keepAwakeCalls: string[] = [];
   let locationStarts = 0;
+  let mapReady = !options.manualMapReady;
+  let controllerCreated: ((controller: any) => void) | null = null;
+  let geometryWaypoint: typeof destination | null = null;
+  let onCurrentSegment: (() => Promise<any>) | null = null;
+  let onCompleteSegments: (() => Promise<any>) | null = null;
+  let beforeReadyWrites = 0;
   let appStateListener: ((state: string) => void) | null = null;
   const controller = {
     addMarker: async () => ({}), removeMarker: async () => {}, moveCamera: (camera: any) => { cameraCalls.push(camera); },
-    addPolyline: async (line: any) => { polylines.set(line.id, line); return line; },
-    removePolyline: async (id: string) => { polylineRemovals.push(id); polylines.delete(id); },
+    addPolyline: async (line: any) => {
+      if (!mapReady) { beforeReadyWrites++; throw new Error('Native Android map controller is not ready'); }
+      polylines.set(line.id, line); return line;
+    },
+    removePolyline: async (id: string) => {
+      if (!mapReady) { beforeReadyWrites++; throw new Error('Native Android map controller is not ready'); }
+      polylineRemovals.push(id); polylines.delete(id);
+    },
   };
   const navigationController = {
     showTermsAndConditionsDialog: async () => true, init: async () => 0,
@@ -50,8 +62,10 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
     setTurnByTurnLoggingEnabled: (enabled: boolean) => { loggingCalls.push(enabled); },
     getCurrentTimeAndDistance: async () => ({ ...nativeStamp() }),
     clearDestinations: async () => {}, cleanup: async () => {},
-    getCurrentRouteSegment: async () => ({ segmentLatLngList: currentSegments ?? segments, navigationTrafficData: currentTraffic, ...(hasCurrentContext ? nativeStamp() : {}) }),
-    getRouteSegments: async () => [{ segmentLatLngList: segments, navigationTrafficData: completeTraffic }],
+    getCurrentRouteSegment: async () => onCurrentSegment ? onCurrentSegment() : ({ segmentLatLngList: currentSegments ?? segments, navigationTrafficData: currentTraffic,
+      ...(geometryWaypoint ? { destinationWaypoint: { position: geometryWaypoint } } : {}), ...(hasCurrentContext ? nativeStamp() : {}) }),
+    getRouteSegments: async () => onCompleteSegments ? onCompleteSegments() : [{ segmentLatLngList: segments, navigationTrafficData: completeTraffic,
+      ...(geometryWaypoint ? { destinationWaypoint: { position: geometryWaypoint } } : {}) }],
     setDestination: async (point: any) => {
       nativeGeneration++;
       nativeTarget = { ...point.position };
@@ -71,7 +85,11 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
     setOnTrafficUpdated: (cb: any) => { listeners.traffic = cb; },
   }), []);
   const MapView = ({ onMapViewControllerCreated, ...props }: any) => {
-    React.useEffect(() => { onMapViewControllerCreated(controller); }, [onMapViewControllerCreated]);
+    React.useEffect(() => {
+      controllerCreated = onMapViewControllerCreated;
+      if (!options.manualController) onMapViewControllerCreated(controller);
+      if (mapReady) props.onMapReady?.();
+    }, [onMapViewControllerCreated]);
     return React.createElement('map', props);
   };
   const sdk = {
@@ -136,6 +154,14 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
     setSegments: (v: typeof road) => { segments = v; },
     setCurrentSegments: (v: typeof road | null) => { currentSegments = v; },
     setTraffic: (current: any, complete = current) => { currentTraffic = current; completeTraffic = complete; },
+    beforeReadyWrites: () => beforeReadyWrites,
+    ready: async () => { mapReady = true; await act(async () => { tree!.root.findByType('map').props.onMapReady?.(); await flush(); }); },
+    notReady: () => { mapReady = false; },
+    createController: async () => { await act(async () => { controllerCreated?.(controller); await flush(); }); },
+    setGeometryWaypoint: (value: typeof destination | null) => { geometryWaypoint = value; },
+    setGeometryHandlers: (current: (() => Promise<any>) | null, complete: (() => Promise<any>) | null) => {
+      onCurrentSegment = current; onCompleteSegments = complete;
+    },
     setCurrentContext: (value: boolean) => { hasCurrentContext = value; },
     emit: async (name: string, value?: any) => { await act(async () => { listeners[name]?.(value); await flush(); }); },
     setDestinationHandler: (handler: (point: any) => Promise<number>) => { onDestination = handler; },
@@ -150,6 +176,111 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
     dispose: async () => { await act(async () => { tree!.unmount(); await flush(); }); },
   };
 }
+
+for (const manualController of [false, true]) {
+  test(`Android joins independent map ready and controller callbacks (${manualController ? 'ready first' : 'controller first'}) without premature route writes`, async () => {
+    const map = await mountMap(undefined, 'android', { manualMapReady: true, manualController });
+    try {
+      assert.equal(map.beforeReadyWrites(), 0, 'SDK controller-created is only a JS handle, not native map readiness');
+      map.setTraffic(providerTraffic);
+      if (manualController) {
+        await map.ready();
+        await map.emit('changed');
+        assert.equal(map.polylines.size, 0, 'map ready alone does not provide a controller');
+        await map.createController();
+      } else {
+        await map.emit('changed');
+        assert.equal(map.beforeReadyWrites(), 0, 'early route callback must not write through an unready native controller');
+        await map.ready();
+      }
+      await map.flush();
+      assert.deepEqual(map.polylines.get('hy3n-driver-route')?.points, road, 'accepted real geometry is painted promptly, without waiting for the polling timer');
+      assert.equal(trafficLines(map).length, 2, 'real provider congestion survives readiness recovery');
+      assert.equal(map.destinationCalls.length, 1, 'map readiness must not issue another destination request');
+    } finally { await map.dispose(); }
+  });
+}
+
+test('Android accepts a real snapped-road endpoint when its native destination waypoint matches the server target', async () => {
+  const map = await mountMap(undefined, 'android');
+  try {
+    const snappedRoad = [origin, corner, { lat: 5.704, lng: -0.098 }];
+    map.setSegments(snappedRoad);
+    map.setGeometryWaypoint(destination);
+    await map.update({ target: { latitude: destination.lat, longitude: destination.lng, label: 'Approved off-road pickup' }, tripStatus: 'pickup' });
+    assert.deepEqual(map.polylines.get('hy3n-driver-route')?.points, snappedRoad, 'the SDK road endpoint is not required to be the off-road waypoint');
+    assert.notDeepEqual(map.polylines.get('hy3n-driver-route')?.points.at(-1), destination, 'never append a fake straight driving connector');
+    map.setGeometryWaypoint({ lat: 5.73, lng: -0.11 });
+    await map.update({ target: { latitude: destination.lat, longitude: destination.lng, label: 'Next server pickup' } });
+    assert.equal(map.polylines.has('hy3n-driver-route'), false, 'another native waypoint is never accepted for this server target');
+  } finally { await map.dispose(); }
+});
+
+test('Android rejoins map readiness after GPS removes and remounts the map without resetting a healthy server destination', async () => {
+  const map = await mountMap(undefined, 'android');
+  try {
+    map.notReady();
+    await map.update({ latitude: undefined, longitude: undefined });
+    map.polylines.clear(); // The destroyed native map no longer has its overlays.
+    await map.update({ latitude: origin.lat, longitude: origin.lng });
+    await map.emit('changed');
+    assert.equal(map.beforeReadyWrites(), 0, 'the previous map readiness cannot authorize writes on a recreated Android map');
+    await map.ready();
+    assert.deepEqual(map.polylines.get('hy3n-driver-route')?.points, road, 'the ready replacement map promptly recovers the accepted native route');
+    assert.equal(map.destinationCalls.length, 1, 'recover the map, do not reset the healthy navigation engine');
+  } finally { await map.dispose(); }
+});
+
+test('Android retries a route callback preceding readable native geometry without inventing a route or resetting the destination', async () => {
+  const clock = requireHere('@sinonjs/fake-timers').install({ now: 100_000, toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+  const map = await mountMap(undefined, 'android');
+  try {
+    map.setSegments([]);
+    await map.update({ navigationId: 'new-server-ride' });
+    await map.emit('changed');
+    assert.equal(map.polylines.size, 0, 'no straight-line fallback when native road geometry is not ready');
+    map.setSegments(road);
+    map.setTraffic(providerTraffic);
+    await act(async () => { await clock.tickAsync(250); });
+    await map.flush();
+    assert.deepEqual(map.polylines.get('hy3n-driver-route')?.points, road);
+    assert.equal(trafficLines(map).length, 2);
+    assert.equal(map.destinationCalls.length, 2, 'only the new server ride triggers another destination mutation');
+  } finally { await map.dispose(); clock.uninstall(); }
+});
+
+test('Android pending native geometry cannot repaint a route after the active server target clears', async () => {
+  const map = await mountMap(undefined, 'android');
+  let resolveCurrent!: (value: any) => void;
+  let resolveComplete!: (value: any) => void;
+  try {
+    map.setGeometryHandlers(
+      () => new Promise(resolve => { resolveCurrent = resolve; }),
+      () => new Promise(resolve => { resolveComplete = resolve; }),
+    );
+    await map.emit('changed');
+    await map.update({ target: null, tripStatus: null });
+    resolveCurrent({ segmentLatLngList: road, ...map.nativeStamp() });
+    resolveComplete([{ segmentLatLngList: road }]);
+    await map.flush();
+    assert.equal(map.polylines.size, 0, 'late accepted geometry and traffic must stay fenced from an idle map');
+  } finally { await map.dispose(); }
+});
+
+test('Android ignores stale-target arrival and removes the route only for independently confirmed current arrival', async () => {
+  const map = await mountMap(undefined, 'android');
+  try {
+    await map.emit('arrival', { waypoint: { position: { lat: 5.73, lng: -0.11 } } });
+    assert.ok(map.polylines.has('hy3n-driver-route'));
+    await map.emit('arrival', { waypoint: { position: destination } });
+    assert.ok(map.polylines.has('hy3n-driver-route'), 'correct waypoint but distant GPS cannot clear the route');
+    await map.update({ latitude: destination.lat, longitude: destination.lng, locationTimestamp: Date.now(), locationAccuracy: 5 });
+    await map.emit('arrival', { waypoint: { position: destination } });
+    assert.equal(map.polylines.has('hy3n-driver-route'), false);
+    await map.emit('changed');
+    assert.equal(map.polylines.has('hy3n-driver-route'), false, 'confirmed display-only arrival remains cleared until the server target changes');
+  } finally { await map.dispose(); }
+});
 
 for (const platform of ['ios', 'android'] as const) {
   test(`${platform} follows by default, lets Explore map pause GPS camera writes, and recenters explicitly`, async () => {

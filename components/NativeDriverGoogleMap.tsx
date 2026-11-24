@@ -43,6 +43,7 @@ import { normalizeDriverGuidanceEvents, type DriverGuidance } from '@/lib/driver
 import { driverNavigationCamera, driverNavigationMapPadding, type DriverFollowCameraSample } from '@/lib/driver-navigation-camera';
 import { driverNavigationFeedMatchesTarget, driverNavigationRemainingMetrics } from '@/lib/driver-navigation-feed';
 import { normalizeDriverRouteTraffic } from '@/lib/driver-route-traffic';
+import { driverAndroidRouteMatchesTarget } from '@/lib/driver-android-route-target';
 
 type MapTarget = { latitude: number; longitude: number; label: string; kind?: 'pickup' | 'destination' | 'stop' };
 type Props = {
@@ -221,7 +222,15 @@ function DriverNavigationSurface({
     setOnRemainingTimeOrDistanceChanged,
     setOnTrafficUpdated,
   } = useNavigation();
-  const [mapViewController, setMapViewController] = useState<MapViewController | null>(null);
+  const [createdMapViewController, setMapViewController] = useState<MapViewController | null>(null);
+  // SDK 0.16.3 creates the JS handle before Android getMapAsync initializes
+  // its native controller. Join both independent callbacks before route writes.
+  // iOS retains its existing controller-created lifecycle.
+  const [androidMapReady, setAndroidMapReady] = useState(false);
+  const mapViewController = Platform.OS === 'android' && (!androidMapReady || !hasPoint(latitude, longitude))
+    ? null : createdMapViewController;
+  const routeMapReadyRef = useRef(Platform.OS !== 'android');
+  routeMapReadyRef.current = Platform.OS !== 'android' || (androidMapReady && hasPoint(latitude, longitude));
   const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
   const [remainingDistanceMeters, setRemainingDistanceMeters] = useState<number | null>(null);
   const [guidance, setGuidance] = useState<{ targetKey: string; data: DriverGuidance; atMs: number } | null>(null);
@@ -310,6 +319,15 @@ function DriverNavigationSurface({
     liveLocationRef.current = current;
     return current;
   }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android' || hasDeviceLocation) return;
+    // The location gate unmounts MapView. Its replacement has a new nativeID;
+    // old readiness and the old JS controller cannot authorize new route work.
+    setAndroidMapReady(false);
+    setMapViewController(null);
+    trafficPolylineIdsRef.current.clear();
+  }, [hasDeviceLocation]);
 
   const clearGuidance = useCallback(() => {
     guidanceReadyRef.current = false;
@@ -521,7 +539,7 @@ function DriverNavigationSurface({
   }, [applyVehiclePosition, clearVehicleMotion, currentNavigationLocation, hasDeviceLocation, hasTarget, heading, latitude, locationAccuracy, locationTimestamp, longitude, mapViewController]);
 
   const clearRouteLines = useCallback(async () => {
-    if (!mapViewController) return;
+    if (!mapViewController || !routeMapReadyRef.current) return;
 
     // Unlike the native navigation engine, these two branded polylines are
     // HY3N-owned overlays. Remove them as one awaited operation before drawing
@@ -540,7 +558,7 @@ function DriverNavigationSurface({
   // snapshot. The installed iOS bridge supplies no route-stretch traffic;
   // retain its genuine native road traffic layer without inventing red roads.
   const drawRouteTraffic = useCallback(async (isCurrent: () => boolean) => {
-    if (!mapViewController || !isCurrent()) return;
+    if (!mapViewController || !routeMapReadyRef.current || !isCurrent()) return;
     const location = currentNavigationLocation();
     const remaining = remainingDriverRoute(location, routePointsRef.current);
     const projection = location && remaining.length >= 2 ? projectDriverOnRoute(location, routePointsRef.current) : null;
@@ -581,7 +599,7 @@ function DriverNavigationSurface({
     if (arrivedTargetKeyRef.current && arrivedTargetKeyRef.current === activeTargetRef.current?.key) return;
     const request = navigationRequestRef.current;
     const work = routeOverlayWorkRef.current.then(async () => {
-      if (!mapViewController || navigationRequestRef.current !== request) return;
+      if (!mapViewController || !routeMapReadyRef.current || navigationRequestRef.current !== request) return;
       const currentLocation = currentNavigationLocation();
       const points = staleRoutePlanRef.current && isSameDriverRoadPlan(routePointsRef.current, staleRoutePlanRef.current)
         ? [] : remainingDriverRoute(currentLocation, routePointsRef.current);
@@ -610,8 +628,14 @@ function DriverNavigationSurface({
   }, [clearRouteLines, currentNavigationLocation, diagnostics, drawRouteTraffic, mapViewController]);
 
   const drawNavigationRoute = useCallback((isCurrent: () => boolean = () => true) => {
+    const request = navigationRequestRef.current;
+    const key = activeTargetRef.current?.key;
+    const requestIsCurrent = isCurrent;
+    isCurrent = () => requestIsCurrent() && (Platform.OS !== 'android'
+      || (navigationRequestRef.current === request && activeTargetRef.current?.key === key
+        && cameraControllerRef.current === mapViewController && routeMapReadyRef.current));
     const work = routeOverlayWorkRef.current.then(async () => {
-      if (!mapViewController || !hasTarget || !isCurrent() || arrivedTargetKeyRef.current === activeTargetRef.current?.key) return false;
+      if (!mapViewController || !routeMapReadyRef.current || !hasTarget || !isCurrent() || arrivedTargetKeyRef.current === activeTargetRef.current?.key) return false;
       let stage: 'geometry' | 'polyline' = 'geometry';
       try {
         // Android and iOS can expose different route snapshots immediately
@@ -636,10 +660,13 @@ function DriverNavigationSurface({
           { points: routePointsForMap(completeSegments), segments: completeSegments },
         ].filter((candidate) => candidate.points.length >= 2);
         const iosCurrentLeg = Platform.OS === 'ios';
-        const selected = routeCandidates.find((candidate) => driverRouteReachesTarget(candidate.points, { lat: targetLatitude, lng: targetLongitude }))
+        const candidateMatchesTarget = (candidate: typeof routeCandidates[number]) => Platform.OS === 'android'
+          ? driverAndroidRouteMatchesTarget(candidate.segments, candidate.points, { lat: targetLatitude, lng: targetLongitude })
+          : driverRouteReachesTarget(candidate.points, { lat: targetLatitude, lng: targetLongitude });
+        const selected = routeCandidates.find(candidateMatchesTarget)
           ?? routeCandidates.sort((a, b) => b.points.length - a.points.length)[0];
         const points = selected?.points ?? [];
-        const targetMatches = driverRouteReachesTarget(points, { lat: targetLatitude, lng: targetLongitude });
+        const targetMatches = Boolean(selected && candidateMatchesTarget(selected));
         diagnostics('geometry.received', { request: navigationRequestRef.current, points: points.length, targetMatches, source: iosCurrentLeg ? 'ios-current-and-complete' : 'android-current-and-complete' });
         if (!isCurrent() || points.length < 2 || !targetMatches) {
           diagnostics('geometry.rejected', { reason: !isCurrent() ? 'stale_request' : points.length < 2 ? 'invalid_points' : 'wrong_target' });
@@ -790,6 +817,15 @@ function DriverNavigationSurface({
 
     redraw(0);
   }, [clearGuidance, clearRouteRefresh, drawNavigationRoute]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !androidMapReady || !mapViewController
+      || !hasDeviceLocation || navigationPaused || !targetKey
+      || lastTargetKeyRef.current !== targetKey || !initializedRef.current) return;
+    // A ready replacement map needs the existing accepted route immediately.
+    // Recover overlays only; the native destination/guidance engine stays live.
+    refreshBrandedRouteAfterNativeChange(false);
+  }, [androidMapReady, hasDeviceLocation, mapViewController, navigationPaused, refreshBrandedRouteAfterNativeChange, targetKey]);
 
   /**
    * The iOS bridge forwards route-change events, but a real road test showed
@@ -1154,6 +1190,8 @@ function DriverNavigationSurface({
   }, [clearRouteRefresh, clearVehicleMotion, navigationController]);
 
   useEffect(() => {
+    if (Platform.OS === 'android' && hasTarget && !navigationPaused
+      && (!androidMapReady || !mapViewController)) return;
     if (hasTarget && targetKey && !navigationPaused && lastTargetKeyRef.current === targetKey) return;
     const request = ++navigationRequestRef.current;
     confirmedRerouteRef.current = null;
@@ -1285,7 +1323,7 @@ function DriverNavigationSurface({
     });
 
     return () => { cancelled = true; };
-  }, [clearGuidance, clearRoute, clearRouteRefresh, diagnostics, drawNavigationRoute, hasDeviceLocation, hasTarget, navigationController, navigationPaused, refreshRemainingMetrics, runNavigationWork, targetKey, targetLabel, targetLatitude, targetLongitude, updateFollowingCamera]);
+  }, [androidMapReady, clearGuidance, clearRoute, clearRouteRefresh, diagnostics, drawNavigationRoute, hasDeviceLocation, hasTarget, mapViewController, navigationController, navigationPaused, refreshRemainingMetrics, runNavigationWork, targetKey, targetLabel, targetLatitude, targetLongitude, updateFollowingCamera]);
 
   const visibleGuidance = !navigationPaused && guidance?.targetKey === targetKey ? guidance.data : null;
   const visibleMetrics = !navigationPaused && nativeMetrics?.targetKey === targetKey ? nativeMetrics : null;
@@ -1333,6 +1371,7 @@ function DriverNavigationSurface({
           mapToolbarEnabled={false}
           onMapClick={pauseFollowing}
           onMapViewControllerCreated={setMapViewController}
+          onMapReady={Platform.OS === 'android' ? () => setAndroidMapReady(true) : undefined}
         />
       ) : (
         <View style={styles.locationGate}>

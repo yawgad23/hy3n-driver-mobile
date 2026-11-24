@@ -79,7 +79,10 @@ async function mountIos(options: { initialNetworkFailure?: boolean; partialCurre
     setOnTrafficUpdated: (cb: any) => { listeners.traffic = cb; },
   }), []);
   const sdk = { useNavigation,
-    MapView: ({ onMapViewControllerCreated, ...viewProps }: any) => { React.useEffect(() => onMapViewControllerCreated(mapController), [onMapViewControllerCreated]); return React.createElement('map', viewProps); },
+    MapView: ({ onMapViewControllerCreated, ...viewProps }: any) => { React.useEffect(() => {
+      onMapViewControllerCreated(mapController);
+      if (options.platform === 'android') viewProps.onMapReady?.();
+    }, [onMapViewControllerCreated]); return React.createElement('map', viewProps); },
     NavigationView: ({ onMapViewControllerCreated, ...viewProps }: any) => { React.useEffect(() => onMapViewControllerCreated(mapController), [onMapViewControllerCreated]); return React.createElement('map', viewProps); },
     NavigationProvider: ({ children }: any) => children,
     AudioGuidance: { VOICE_ALERTS_AND_GUIDANCE: 1, BLUETOOTH_AUDIO: 2 }, MapColorScheme: { FOLLOW_SYSTEM: 0 },

@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import { execFileSync } from 'node:child_process';
+import vm from 'node:vm';
+import ts from 'typescript';
 
 const component = readFileSync(path.join(process.cwd(), 'components/NativeDriverGoogleMap.tsx'), 'utf8');
 const screen = readFileSync(path.join(process.cwd(), 'app/(tabs)/home.tsx'), 'utf8');
@@ -135,7 +138,21 @@ test('Driver presents a map-app choice when Navigate is tapped during a trip', (
   assert.match(screen, /accessibilityHint=\{Platform\.OS === 'ios' \? 'Choose Apple Maps, Google Maps, or Waze for this trip' : 'Choose Google Maps, Waze, or another installed map app for this trip'\}/);
   assert.match(screen, /<MaterialIcons name="navigation" size=\{22\} color="#FFF" \/>/);
   assert.doesNotMatch(screen, /<Text style=\{styles\.actionBtnText\}>Navigate<\/Text>/);
-  assert.match(screen, /navigateTripIconBtn: \{ alignItems: 'center', borderRadius: 12, height: 48, justifyContent: 'center', width: 48 \}/);
+  const releasedHome = execFileSync('git', ['show', 'a7209d6a32f6e1df10a6760a66141e0242a56cf6:app/(tabs)/home.tsx'], { encoding: 'utf8' });
+  const evaluateNavigationStyle = (source: string, platform: string) => {
+    const file = ts.createSourceFile('home.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const statement = file.statements.find((node) => ts.isVariableStatement(node) && node.declarationList.declarations.some((d) => d.name.getText(file) === 'styles'))!;
+    const context = { StyleSheet: { create: (styles: unknown) => styles }, Platform: { OS: platform }, GOLD: '#D4AF37', GREEN: '#22C55E', RED: '#EF4444', result: {} as { height: number; width: number } };
+    vm.runInNewContext(ts.transpileModule(`${statement.getText(file)}\nresult = styles.navigateTripIconBtn;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, context);
+    return context.result;
+  };
+  for (const platform of ['android', 'ios']) {
+    const actual = evaluateNavigationStyle(screen, platform);
+    const released = evaluateNavigationStyle(releasedHome, platform);
+    assert.equal(actual.height, released.height, `${platform} retains released navigation target height`);
+    assert.equal(actual.width, released.width, `${platform} retains released navigation target width`);
+    assert.ok(actual.height >= 44 && actual.width >= 44, `${platform} navigation remains a usable touch target`);
+  }
 });
 
 test('native build configuration persists the Navigation SDK API key and Android desugaring support', () => {

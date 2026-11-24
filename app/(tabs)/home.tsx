@@ -11,7 +11,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Notifications from 'expo-notifications';
-import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { createAudioPlayer, setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { useDriverAuth } from '@/lib/driver-auth-context';
 import { firestoreDB, COLLECTIONS } from '@/lib/firebase';
 import { trpc } from '@/lib/trpc';
@@ -78,6 +78,7 @@ import {
 import { shouldPlayIncomingTripAlert } from '@/lib/incoming-trip-alert';
 import { createDriverRequestAudio } from '@/lib/driver-request-audio';
 import { offerMatchesDriverPreferences } from '@/lib/driver-offer-preferences';
+import { DriverHomeLayoutRegion, getDriverAndroidHomeLayout } from '@/lib/driver-android-home-layout';
 
 // These guards live at module scope so an Expo Router Home remount cannot
 // reopen the same Android location prompt during one online session.
@@ -177,15 +178,22 @@ export default function DriverHomeScreen() {
   const [tripStartedAt, setTripStartedAt] = useState<string | null>(null);
   const [mapBottomInset, setMapBottomInset] = useState(160);
   const [mapTopInset, setMapTopInset] = useState(insets.top + 68);
-  // One player is retained for the whole Home-screen lifetime. It plays the
-  // bundled request tone only for a new foreground offer, rather than creating
-  // a player during rendering or relying on a provider notification tone.
+  const [androidHomeHeight, setAndroidHomeHeight] = useState(0);
+  const [androidDockHeight, setAndroidDockHeight] = useState(0);
+  // iOS retains its existing hook-owned player. Android request sources are
+  // controller-owned per offer so a stopped source cannot natively auto-resume.
   const incomingTripAlertPlayer = useAudioPlayer(
-    require('@/assets/audio/incoming-trip-alert.wav'),
+    Platform.OS === 'android' ? null : require('@/assets/audio/incoming-trip-alert.wav'),
     { keepAudioSessionActive: false },
   );
   const incomingTripAlertStatus = useAudioPlayerStatus(incomingTripAlertPlayer);
-  const incomingTripAudioRuntimeRef = useRef(createDriverRequestAudio());
+  const incomingTripAudioRuntimeRef = useRef(createDriverRequestAudio({
+    platform: Platform.OS,
+    createPlayer: () => createAudioPlayer(
+      require('@/assets/audio/incoming-trip-alert.wav'),
+      { keepAudioSessionActive: false },
+    ),
+  }));
   const incomingOfferReceivedAtRef = useRef<number | null>(null);
   // Once Accept is tapped, suppress this offer's sound immediately while the server confirms assignment.
   const acceptedOfferAudioSuppressionRef = useRef<string | null>(null);
@@ -651,7 +659,7 @@ export default function DriverHomeScreen() {
 
   useEffect(() => {
     const incomingRideId = incomingRide?.id ? String(incomingRide.id) : null;
-    if (acceptedOfferAudioSuppressionRef.current === incomingRideId || !shouldPlayIncomingTripAlert({
+    if ((Platform.OS === 'android' && tripActionPending) || acceptedOfferAudioSuppressionRef.current === incomingRideId || !shouldPlayIncomingTripAlert({
       isOnline,
       incomingRideId,
       activeTripId: activeTrip?.id || null,
@@ -660,11 +668,12 @@ export default function DriverHomeScreen() {
       stopIncomingTripAlert(true);
       return;
     }
-    // An offer may arrive before native AVPlayer finishes loading. Subscribe to
-    // readiness so that same pending request is tried when the WAV becomes ready.
-    if (!incomingRideId || !incomingTripAlertStatus.isLoaded) return;
+    // iOS keeps its existing hook readiness subscription. Android's controller
+    // waits for the per-offer player and cancels that wait on acceptance/cleanup.
+    if (!incomingRideId || (Platform.OS !== 'android' && !incomingTripAlertStatus.isLoaded)) return;
     playIncomingTripAlert(incomingRideId);
-  }, [activeTrip?.id, incomingRide?.id, incomingTripAlertStatus.isLoaded, isOnline, playIncomingTripAlert, prefs.soundAlerts, stopIncomingTripAlert]);
+    // A failed Android Accept clears suppression before pending becomes false.
+  }, [activeTrip?.id, incomingRide?.id, incomingTripAlertStatus.isLoaded, isOnline, playIncomingTripAlert, prefs.soundAlerts, stopIncomingTripAlert, Platform.OS === 'android' && tripActionPending]);
 
   useEffect(() => () => stopIncomingTripAlert(true), [stopIncomingTripAlert]);
 
@@ -1365,6 +1374,13 @@ export default function DriverHomeScreen() {
   const activeNavigationId = activeTrip && activeNavigationTarget
     ? `${activeTrip.id}:${activeNavigationTarget.kind}:${activeNavigationTarget.kind === 'stop' ? activeTrip.route_target?.stop_id || 'approved-stop' : activeNavigationTarget.kind}`
     : null;
+  const androidHomeLayout = getDriverAndroidHomeLayout({
+    homeHeight: androidHomeHeight,
+    headerInset: mapTopInset,
+    dockHeight: androidDockHeight,
+    leftInset: insets.left,
+    rightInset: insets.right,
+  });
 
   // Check approval status
   if (driverProfile?.approval_status === "pending") {
@@ -1397,7 +1413,8 @@ export default function DriverHomeScreen() {
   };
 
   return (
-    <View style={[styles.container, dynamicStyles.container]}>
+    <View style={[styles.container, dynamicStyles.container]}
+      {...(Platform.OS === 'android' ? { onLayout: (event: import('react-native').LayoutChangeEvent) => setAndroidHomeHeight(event.nativeEvent.layout.height) } : {})}>
       <StatusBar style={isDark ? "light" : "dark"} />
 
       {/* Map Layer */}
@@ -1456,8 +1473,9 @@ export default function DriverHomeScreen() {
       </View>
 
       {/* Bottom Interface */}
-      <View style={[styles.bottomContainer, { paddingBottom: insets.bottom + 20 }]}
+      <View style={[styles.bottomContainer, Platform.OS === 'android' ? androidHomeLayout.bottomStyle : { paddingBottom: insets.bottom + 20 }]}
         onLayout={(event) => setMapBottomInset(event.nativeEvent.layout.height + 12)}>
+        <DriverHomeLayoutRegion maxHeight={androidHomeLayout.auxiliaryMaxHeight}>
         {/* Incoming Ride Request */}
         {incomingRide && !activeTrip && (
           <Animated.View {...offerPanResponder.panHandlers} style={[styles.rideRequestCard, dynamicStyles.card, { transform: [{ translateX: offerSwipeX }] }]}>
@@ -1609,9 +1627,12 @@ export default function DriverHomeScreen() {
             )}
           </TouchableOpacity>
         )}
+        </DriverHomeLayoutRegion>
 
+        <DriverHomeLayoutRegion maxHeight={androidHomeLayout.dockMaxHeight}
+          onContentSizeChange={(_width, height) => setAndroidDockHeight(height)}>
         {/* Action Buttons */}
-        <View style={[styles.activeTripActions, activeTrip && { paddingBottom: insets.bottom + 2 }]}>
+        <View style={[styles.activeTripActions, activeTrip && { paddingBottom: Platform.OS === 'android' ? 0 : insets.bottom + 2 }]}>
           {activeTrip && (
             <>
               <View style={styles.secondaryTripActions}>
@@ -1677,19 +1698,20 @@ export default function DriverHomeScreen() {
         {/* Keep the Driver's existing availability control visible while an
             assigned ride is being navigated. It is hidden only by the full
             incoming-offer card, never removed by the navigation experience. */}
-        {!incomingRide && <View style={[styles.onlineCard, dynamicStyles.card]}>
-          <View style={styles.onlineLeft}>
+        {!incomingRide && <View style={[styles.onlineCard, dynamicStyles.card, Platform.OS === 'android' && androidLayoutStyles.onlineCard]}>
+          <View style={[styles.onlineLeft, Platform.OS === 'android' && androidLayoutStyles.onlineLeft]}>
             <Animated.View style={[styles.onlineDot, { backgroundColor: isOnline ? GREEN : themeColors.muted, transform: [{ scale: isOnline ? pulseAnim : 1 }] }]} />
-            <Text style={[styles.onlineStatus, dynamicStyles.text]}>{isOnline ? (hasCurrentLocation ? 'You are Online' : 'Getting your location…') : 'You are Offline'}</Text>
+            <Text style={[styles.onlineStatus, dynamicStyles.text, Platform.OS === 'android' && androidLayoutStyles.onlineStatus]}>{isOnline ? (hasCurrentLocation ? 'You are Online' : 'Getting your location…') : 'You are Offline'}</Text>
           </View>
           <TouchableOpacity
-            style={[styles.toggleBtn, { backgroundColor: isOnline ? RED : GREEN }]}
+            style={[styles.toggleBtn, { backgroundColor: isOnline ? RED : GREEN }, Platform.OS === 'android' && androidLayoutStyles.toggleBtn]}
             onPress={handleToggleOnline}
             disabled={togglingOnline}
           >
             {togglingOnline ? <ActivityIndicator color="#fff" /> : <Text style={styles.toggleBtnText}>{isOnline ? 'Go Offline' : 'Go Online'}</Text>}
           </TouchableOpacity>
         </View>}
+        </DriverHomeLayoutRegion>
       </View>
 
       {/* Destination Modal */}
@@ -2035,4 +2057,11 @@ const styles = StyleSheet.create({
   ratingActions: { flexDirection: 'row', gap: 12, paddingBottom: 2 },
   ratingBtn: { height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   ratingBtnText: { fontSize: 15, fontWeight: '800', color: '#000' }
+});
+
+const androidLayoutStyles = StyleSheet.create({
+  onlineCard: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 14, gap: 8 },
+  onlineLeft: { flex: 1, minWidth: 0, gap: 8 },
+  onlineStatus: { flexShrink: 1, fontSize: 13 },
+  toggleBtn: { height: undefined, minHeight: 44, paddingHorizontal: 12, paddingVertical: 8, flexShrink: 0 },
 });
