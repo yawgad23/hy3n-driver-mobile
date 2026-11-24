@@ -44,6 +44,7 @@ import { driverNavigationCamera, driverNavigationMapPadding, type DriverFollowCa
 import { driverNavigationFeedMatchesTarget, driverNavigationRemainingMetrics } from '@/lib/driver-navigation-feed';
 import { normalizeDriverRouteTraffic } from '@/lib/driver-route-traffic';
 import { driverAndroidRouteMatchesTarget } from '@/lib/driver-android-route-target';
+import { driverIosRouteMatchesTarget } from '@/lib/driver-ios-route-target';
 
 type MapTarget = { latitude: number; longitude: number; label: string; kind?: 'pickup' | 'destination' | 'stop' };
 type Props = {
@@ -662,7 +663,9 @@ function DriverNavigationSurface({
         const iosCurrentLeg = Platform.OS === 'ios';
         const candidateMatchesTarget = (candidate: typeof routeCandidates[number]) => Platform.OS === 'android'
           ? driverAndroidRouteMatchesTarget(candidate.segments, candidate.points, { lat: targetLatitude, lng: targetLongitude })
-          : driverRouteReachesTarget(candidate.points, { lat: targetLatitude, lng: targetLongitude });
+          : Platform.OS === 'ios'
+            ? driverIosRouteMatchesTarget(candidate.segments, candidate.points, { lat: targetLatitude, lng: targetLongitude })
+            : driverRouteReachesTarget(candidate.points, { lat: targetLatitude, lng: targetLongitude });
         const selected = routeCandidates.find(candidateMatchesTarget)
           ?? routeCandidates.sort((a, b) => b.points.length - a.points.length)[0];
         const points = selected?.points ?? [];

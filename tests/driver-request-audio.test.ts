@@ -120,3 +120,41 @@ test('Accept force-stop pauses before attempting native audio property setters',
   runtime.stop(p, { force: true });
   assert.deepEqual(calls, ['pause', 'loop-set']);
 });
+
+test('iOS failed-Accept rearm only clears the matching played-ride latch once', async () => {
+  const runtime = createDriverRequestAudio({ platform: 'ios' }); const p = player();
+  assert.equal(await runtime.play('offer-A', p, async () => {}), true);
+  runtime.stop(p, { force: true });
+  assert.equal(await runtime.play('offer-A', p, async () => {}), false);
+  assert.equal(runtime.rearmAfterFailedAccept('offer-B'), false);
+  assert.equal(runtime.rearmAfterFailedAccept(''), false);
+  assert.equal(runtime.rearmAfterFailedAccept('offer-A'), true);
+  assert.equal(runtime.rearmAfterFailedAccept('offer-A'), false);
+  assert.equal(await runtime.play('offer-A', p, async () => {}), true);
+  assert.equal(await runtime.play('offer-A', p, async () => {}), false);
+  assert.equal(p.calls.filter(call => call === 'play').length, 2);
+});
+
+for (const platform of ['android', 'web', undefined]) {
+  test(`failed-Accept explicit iOS rearm does not alter ${String(platform)} controller behavior`, async () => {
+    const runtime = createDriverRequestAudio({ platform }); const p = player();
+    assert.equal(await runtime.play('offer-A', p, async () => {}), true);
+    runtime.stop(p, { force: true });
+    assert.equal(runtime.rearmAfterFailedAccept('offer-A'), false);
+    assert.equal(await runtime.play('offer-A', p, async () => {}), false);
+  });
+}
+
+for (const stage of ['configure', 'seek'] as const) {
+  test(`iOS explicit rearm does not undo stop cancellation during asynchronous ${stage}`, async () => {
+    const runtime = createDriverRequestAudio({ platform: 'ios' }); const p = player(); const wait = deferred();
+    assert.equal(await runtime.play('offer-A', p, async () => {}), true);
+    runtime.stop(p, { force: true }); assert.equal(runtime.rearmAfterFailedAccept('offer-A'), true);
+    if (stage === 'seek') p.seekTo = () => wait.promise;
+    const pending = runtime.play('offer-A', p, stage === 'configure' ? () => wait.promise : async () => {});
+    await Promise.resolve(); await Promise.resolve();
+    runtime.stop(p, { force: true }); assert.equal(runtime.rearmAfterFailedAccept('offer-A'), false);
+    wait.resolve(); assert.equal(await pending, false);
+    assert.equal(p.calls.filter(call => call === 'play').length, 1);
+  });
+}

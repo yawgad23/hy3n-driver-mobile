@@ -195,6 +195,10 @@ export default function DriverHomeScreen() {
     ),
   }));
   const incomingOfferReceivedAtRef = useRef<number | null>(null);
+  // An async Accept must not re-arm an old render's offer after a poll,
+  // availability/preference change, expiry, or a reconciled assignment.
+  const incomingOfferAudioEligibilityRef = useRef({ incomingRide, activeTripId: activeTrip?.id || null, isOnline, hasCurrentLocation, prefs, driverId: user?.uid });
+  incomingOfferAudioEligibilityRef.current = { incomingRide, activeTripId: activeTrip?.id || null, isOnline, hasCurrentLocation, prefs, driverId: user?.uid };
   // Once Accept is tapped, suppress this offer's sound immediately while the server confirms assignment.
   const acceptedOfferAudioSuppressionRef = useRef<string | null>(null);
   const retiredOfferLeaseRef = useRef<string | null>(null);
@@ -659,7 +663,7 @@ export default function DriverHomeScreen() {
 
   useEffect(() => {
     const incomingRideId = incomingRide?.id ? String(incomingRide.id) : null;
-    if ((Platform.OS === 'android' && tripActionPending) || acceptedOfferAudioSuppressionRef.current === incomingRideId || !shouldPlayIncomingTripAlert({
+    if (((Platform.OS === 'android' || Platform.OS === 'ios') && tripActionPending) || acceptedOfferAudioSuppressionRef.current === incomingRideId || !shouldPlayIncomingTripAlert({
       isOnline,
       incomingRideId,
       activeTripId: activeTrip?.id || null,
@@ -672,8 +676,8 @@ export default function DriverHomeScreen() {
     // waits for the per-offer player and cancels that wait on acceptance/cleanup.
     if (!incomingRideId || (Platform.OS !== 'android' && !incomingTripAlertStatus.isLoaded)) return;
     playIncomingTripAlert(incomingRideId);
-    // A failed Android Accept clears suppression before pending becomes false.
-  }, [activeTrip?.id, incomingRide?.id, incomingTripAlertStatus.isLoaded, isOnline, playIncomingTripAlert, prefs.soundAlerts, stopIncomingTripAlert, Platform.OS === 'android' && tripActionPending]);
+    // Failed mobile Accept re-arms eligibility before pending becomes false.
+  }, [activeTrip?.id, incomingRide?.id, incomingTripAlertStatus.isLoaded, isOnline, playIncomingTripAlert, prefs.soundAlerts, stopIncomingTripAlert, (Platform.OS === 'android' || Platform.OS === 'ios') && tripActionPending]);
 
   useEffect(() => () => stopIncomingTripAlert(true), [stopIncomingTripAlert]);
 
@@ -906,7 +910,9 @@ export default function DriverHomeScreen() {
   const handleAcceptRide = async () => {
     if (!incomingRide || !user?.uid || tripActionInFlightRef.current) return;
     const rideId = String(incomingRide.id);
+    const offerReceivedAtMs = incomingOfferReceivedAtRef.current ?? Date.now();
     let serverConfirmed = false;
+    let failedAcceptConfirmedUnassigned = false;
     const showAcceptedRide = (ride: any) => {
       serverConfirmed = true;
       // The native player status can lag the audible AVPlayer state. Stop the
@@ -922,10 +928,13 @@ export default function DriverHomeScreen() {
       tripActionInFlightRef.current = false;
       setTripActionPending(false);
     };
-    const reconcileAcceptedRide = async () => {
+    const reconcileAcceptedRide = async (confirmFailedAccept = false) => {
       try {
         const serverRide = await firestoreDB.get(COLLECTIONS.RIDES, rideId);
-        if (!driverOfferAcceptedByServer(serverRide, user.uid)) return false;
+        if (!driverOfferAcceptedByServer(serverRide, user.uid)) {
+          if (confirmFailedAccept) failedAcceptConfirmedUnassigned = true;
+          return false;
+        }
         showAcceptedRide(serverRide);
         return true;
       } catch {
@@ -958,11 +967,33 @@ export default function DriverHomeScreen() {
       });
       showAcceptedRide(result.ride);
     } catch (err: any) {
-      if (!await reconcileAcceptedRide()) {
-        // Acceptance failed and the offer is still on screen: allow its alert again.
-        if (String(incomingRide?.id || '') === rideId) acceptedOfferAudioSuppressionRef.current = null;
+      if (!await reconcileAcceptedRide(true)) {
         const message = String(err?.message || '');
-        if (/no longer available|already been accepted|has expired/i.test(message)) {
+        const unavailable = /no longer available|already been accepted|has expired/i.test(message);
+        if (Platform.OS === 'ios') {
+          const current = incomingOfferAudioEligibilityRef.current;
+          if (!serverConfirmed && failedAcceptConfirmedUnassigned && !unavailable && !isUnavailableDriverOfferError(err)
+            && current.driverId === user.uid && current.hasCurrentLocation
+            && String(current.incomingRide?.id || '') === rideId
+            && shouldPresentDriverOffer(current.incomingRide, retiredOfferLeaseRef.current)
+            && offerMatchesDriverPreferences(current.incomingRide, current.prefs)
+            && isDriverOfferWithinWindow(driverOfferExpiryMs(current.incomingRide?.driver_offer_expires_at, offerReceivedAtMs), Date.now())
+            && shouldPlayIncomingTripAlert({
+              isOnline: current.isOnline,
+              incomingRideId: rideId,
+              activeTripId: current.activeTripId,
+              soundAlerts: current.prefs.soundAlerts,
+            })) {
+            // Keep iOS hook/native ownership. Clear only this played-ride latch
+            // before lifting suppression and the pending dependency reruns.
+            incomingTripAudioRuntimeRef.current.rearmAfterFailedAccept(rideId);
+            acceptedOfferAudioSuppressionRef.current = null;
+          }
+        } else if (String(incomingRide?.id || '') === rideId) {
+          // Preserve Android's existing per-offer retirement/retry behavior.
+          acceptedOfferAudioSuppressionRef.current = null;
+        }
+        if (unavailable) {
           setIncomingRide(null);
           setRideOfferSeconds(DRIVER_OFFER_REVIEW_SECONDS);
           void refreshAvailableOffers();

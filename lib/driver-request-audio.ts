@@ -126,6 +126,14 @@ export function createDriverRequestAudio(options: DriverRequestAudioOptions = {}
         if (generation === current) pendingRide = null;
       }
     },
+    rearmAfterFailedAccept(rideId: string) {
+      // Home calls this only after failed server reconciliation for the same
+      // current, eligible, unexpired iOS offer. Ordinary stops keep the latch:
+      // never release/replace the hook player or restart an accepted request.
+      if (options.platform !== 'ios' || !rideId || lastPlayedRide !== rideId) return false;
+      lastPlayedRide = null;
+      return true;
+    },
     stop(player: DriverRequestAudioPlayer, stopOptions: { force?: boolean } = {}) {
       // Invalidate configure/seek/readiness before touching the native player.
       generation++;

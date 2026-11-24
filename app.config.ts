@@ -41,9 +41,10 @@ const env = {
   androidPackage: "com.hy3n.driver",
 };
 // EAS supplies this platform on native workers. Set it locally when invoking
-// the Android release command too, so CLI metadata and the native binary agree.
-// Unspecified/iOS configuration retains the existing iOS version unchanged.
-const appVersion = process.env.EAS_BUILD_PLATFORM === "android" ? "1.0.3" : "1.0.2";
+// either native release command too, so CLI metadata and the binary agree.
+// Preserve unspecified/web and the released Android configuration unchanged.
+const buildPlatform = process.env.EAS_BUILD_PLATFORM;
+const appVersion = buildPlatform === "android" || buildPlatform === "ios" ? "1.0.3" : "1.0.2";
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
@@ -60,9 +61,9 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // Build 124 contains the route-line preservation fix for transient GPS
-    // and incomplete native route geometry responses.
-    buildNumber: "124",
+    // 125 ports eligible-offer audio recovery, verified snapped-road routes and
+    // clearer turn guidance, retaining the working iPhone map and lower controls.
+    buildNumber: buildPlatform === "ios" ? "125" : "124",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     infoPlist: {

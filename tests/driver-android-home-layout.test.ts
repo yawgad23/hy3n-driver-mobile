@@ -253,7 +253,7 @@ test('Android preserves every label, handler and disabled-state contract includi
   }
 });
 
-test('scope proof: old styles, server/offer handlers and keyboard/rating JSX stay unchanged except the verified Android audio opt-in/gate', () => {
+test('scope proof: old styles, server/offer handlers and keyboard/rating JSX stay unchanged except verified Android/iOS audio deltas', () => {
   const oldFile = parse(baseline), newFile = parse(current);
   const styleProperties = (file: ts.SourceFile) => {
     const node = file.statements.find((s) => ts.isVariableStatement(s) && s.declarationList.declarations.some((d) => d.name.getText(file) === 'styles')) as ts.VariableStatement;
@@ -262,14 +262,46 @@ test('scope proof: old styles, server/offer handlers and keyboard/rating JSX sta
   };
   const newStyles = styleProperties(newFile);
   for (const prop of styleProperties(oldFile)) assert.equal(newStyles.find((p) => p.name?.getText(newFile) === prop.name?.getText(oldFile))?.getText(newFile), prop.getText(oldFile));
-  // Reverse only these exact separately tested Android audio expressions for
+  // Reverse only these exact separately behavior-tested audio expressions for
   // the layout scope comparison. Do not whitelist whole handlers or effects.
   const audioDeltas = [
     ["Platform.OS === 'android' ? null : require('@/assets/audio/incoming-trip-alert.wav')", "require('@/assets/audio/incoming-trip-alert.wav')"],
     ["createDriverRequestAudio({\n    platform: Platform.OS,\n    createPlayer: () => createAudioPlayer(\n      require('@/assets/audio/incoming-trip-alert.wav'),\n      { keepAudioSessionActive: false },\n    ),\n  })", 'createDriverRequestAudio()'],
-    ["(Platform.OS === 'android' && tripActionPending) || acceptedOfferAudioSuppressionRef.current", 'acceptedOfferAudioSuppressionRef.current'],
+    ["((Platform.OS === 'android' || Platform.OS === 'ios') && tripActionPending) || acceptedOfferAudioSuppressionRef.current", 'acceptedOfferAudioSuppressionRef.current'],
     ["(Platform.OS !== 'android' && !incomingTripAlertStatus.isLoaded)", '!incomingTripAlertStatus.isLoaded'],
-    [", Platform.OS === 'android' && tripActionPending]);", ']);'],
+    [", (Platform.OS === 'android' || Platform.OS === 'ios') && tripActionPending]);", ']);'],
+    ['  const incomingOfferAudioEligibilityRef = useRef({ incomingRide, activeTripId: activeTrip?.id || null, isOnline, hasCurrentLocation, prefs, driverId: user?.uid });\n  incomingOfferAudioEligibilityRef.current = { incomingRide, activeTripId: activeTrip?.id || null, isOnline, hasCurrentLocation, prefs, driverId: user?.uid };\n', ''],
+    ['    const offerReceivedAtMs = incomingOfferReceivedAtRef.current ?? Date.now();\n', ''],
+    ['    let failedAcceptConfirmedUnassigned = false;\n', ''],
+    ['const reconcileAcceptedRide = async (confirmFailedAccept = false) => {', 'const reconcileAcceptedRide = async () => {'],
+    ['        if (!driverOfferAcceptedByServer(serverRide, user.uid)) {\n          if (confirmFailedAccept) failedAcceptConfirmedUnassigned = true;\n          return false;\n        }', '        if (!driverOfferAcceptedByServer(serverRide, user.uid)) return false;'],
+    ['if (!await reconcileAcceptedRide(true)) {', 'if (!await reconcileAcceptedRide()) {'],
+    [`        const message = String(err?.message || '');
+        const unavailable = /no longer available|already been accepted|has expired/i.test(message);
+        if (Platform.OS === 'ios') {
+          const current = incomingOfferAudioEligibilityRef.current;
+          if (!serverConfirmed && failedAcceptConfirmedUnassigned && !unavailable && !isUnavailableDriverOfferError(err)
+            && current.driverId === user.uid && current.hasCurrentLocation
+            && String(current.incomingRide?.id || '') === rideId
+            && shouldPresentDriverOffer(current.incomingRide, retiredOfferLeaseRef.current)
+            && offerMatchesDriverPreferences(current.incomingRide, current.prefs)
+            && isDriverOfferWithinWindow(driverOfferExpiryMs(current.incomingRide?.driver_offer_expires_at, offerReceivedAtMs), Date.now())
+            && shouldPlayIncomingTripAlert({
+              isOnline: current.isOnline,
+              incomingRideId: rideId,
+              activeTripId: current.activeTripId,
+              soundAlerts: current.prefs.soundAlerts,
+            })) {
+            // Keep iOS hook/native ownership. Clear only this played-ride latch
+            // before lifting suppression and the pending dependency reruns.
+            incomingTripAudioRuntimeRef.current.rearmAfterFailedAccept(rideId);
+            acceptedOfferAudioSuppressionRef.current = null;
+          }
+        } else if (String(incomingRide?.id || '') === rideId) {
+          // Preserve Android's existing per-offer retirement/retry behavior.
+          acceptedOfferAudioSuppressionRef.current = null;
+        }`, "        if (String(incomingRide?.id || '') === rideId) acceptedOfferAudioSuppressionRef.current = null;\n        const message = String(err?.message || '');"],
+    ['if (unavailable) {', 'if (/no longer available|already been accepted|has expired/i.test(message)) {'],
   ];
   let compatibleSource = current;
   for (const [approved, original] of audioDeltas) {

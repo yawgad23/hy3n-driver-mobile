@@ -15,9 +15,10 @@ const initialRoad = [origin, corner, target];
 
 // Execute the real React effects with mocked bridge calls. Passing here is not
 // proof of native SDK delivery, road traffic, or camera behavior on a device.
-async function mountIos(options: { initialNetworkFailure?: boolean; partialCurrentLeg?: boolean; platform?: 'ios' | 'android' } = {}) {
-  let route = initialRoad;
-  let currentLeg = options.partialCurrentLeg ? [origin, corner] : initialRoad;
+async function mountIos(options: { initialNetworkFailure?: boolean; partialCurrentLeg?: boolean; platform?: 'ios' | 'android';
+  initialRoute?: typeof initialRoad; routeMetadata?: Record<string, unknown> } = {}) {
+  let route = options.initialRoute ?? initialRoad;
+  let currentLeg = options.partialCurrentLeg ? route.slice(0, 2) : route;
   let props: any = { latitude: 5.703, longitude: origin.lng, locationTimestamp: Date.now(), locationAccuracy: 5,
     target: { latitude: target.lat, longitude: target.lng, label: 'Drop-off' }, tripStatus: 'dropoff', navigationId: 'ride-one' };
   const lines = new Map<string, any>();
@@ -30,6 +31,10 @@ async function mountIos(options: { initialNetworkFailure?: boolean; partialCurre
   let nativeTarget = target;
   let metricsReads = 0;
   let metricsHandler: (() => Promise<any>) | null = null;
+  let routeMetadata = options.routeMetadata ?? {};
+  let currentGeometryHandler: (() => Promise<any>) | null = null;
+  let completeGeometryHandler: (() => Promise<any>) | null = null;
+  const polylineWrites: any[] = [];
   // Captured by the mock native source, before any Promise/bridge delay. Tests
   // must never stamp a late old callback as fresh on its JS receipt.
   const nativeStamp = () => ({ hy3nTargetLatitude: nativeTarget.lat, hy3nTargetLongitude: nativeTarget.lng,
@@ -43,7 +48,7 @@ async function mountIos(options: { initialNetworkFailure?: boolean; partialCurre
   const mapController = {
     addMarker: async (marker: any) => { markers.set(marker.id, marker); return marker; },
     removeMarker: async (id: string) => { markers.delete(id); }, moveCamera: async (camera: any) => { cameraCalls.push(camera); },
-    addPolyline: async (line: any) => { if (overlayFails) throw { code: 'NO_VIEW_CONTROLLER' }; lines.set(line.id, line); return line; },
+    addPolyline: async (line: any) => { if (overlayFails) throw { code: 'NO_VIEW_CONTROLLER' }; polylineWrites.push(line); lines.set(line.id, line); return line; },
     removePolyline: async (id: string) => { lines.delete(id); },
     getPolylines: async () => [...lines.values()],
   };
@@ -57,8 +62,9 @@ async function mountIos(options: { initialNetworkFailure?: boolean; partialCurre
       return metricsHandler ? metricsHandler() : { ...nativeStamp() };
     },
     clearDestinations: async () => {}, cleanup: async () => {},
-    getRouteSegments: async () => [{ segmentLatLngList: route, ...nativeStamp() }],
-    getCurrentRouteSegment: async () => { currentLegReads++; if (geometryFails) throw { code: 'route_not_available' }; return { segmentLatLngList: currentLeg, ...nativeStamp() }; },
+    getRouteSegments: async () => completeGeometryHandler ? completeGeometryHandler() : [{ segmentLatLngList: route, ...routeMetadata, ...nativeStamp() }],
+    getCurrentRouteSegment: async () => { currentLegReads++; if (geometryFails) throw { code: 'route_not_available' };
+      return currentGeometryHandler ? currentGeometryHandler() : { segmentLatLngList: currentLeg, ...routeMetadata, ...nativeStamp() }; },
     setDestination: async (point: any) => {
       nativeGeneration++;
       nativeTarget = { ...point.position };
@@ -112,7 +118,7 @@ async function mountIos(options: { initialNetworkFailure?: boolean; partialCurre
   await act(async () => { tree = create(React.createElement(Component, props)); await flush(); });
   await act(async () => { await flush(); });
   return { lines, markers, calls, logs, listeners, currentLegReads: () => currentLegReads,
-    loggingCalls, cameraCalls, nativeStamp, metricsReads: () => metricsReads,
+    loggingCalls, cameraCalls, nativeStamp, polylineWrites, metricsReads: () => metricsReads,
     setMetricsHandler: (handler: (() => Promise<any>) | null) => { metricsHandler = handler; },
     emit: async (name: string, value?: any) => { await act(async () => { listeners[name]?.(value); await flush(); }); },
     rendered: () => JSON.stringify(tree.toJSON()),
@@ -124,6 +130,10 @@ async function mountIos(options: { initialNetworkFailure?: boolean; partialCurre
     geometryFails: (value: boolean) => { geometryFails = value; },
     overlayFails: (value: boolean) => { overlayFails = value; },
     currentLeg: (points: typeof initialRoad) => { currentLeg = points; },
+    setRouteMetadata: (value: Record<string, unknown>) => { routeMetadata = value; },
+    setGeometryHandlers: (current: (() => Promise<any>) | null, complete: (() => Promise<any>) | null) => {
+      currentGeometryHandler = current; completeGeometryHandler = complete;
+    },
     nextRoute: (points: typeof initialRoad) => { newRoadOnRequest = points; },
     update: async (values: any) => { props = { ...props, ...values }; await act(async () => { tree.update(React.createElement(Component, props)); await flush(); }); },
     flush: async () => { await act(async () => { await flush(); }); },
@@ -634,6 +644,129 @@ for (const platform of ['ios', 'android'] as const) {
       assert.doesNotMatch(map.rendered(), /OLD captured instruction before resume/);
       await map.emit('turn', [liveTurn(map.nativeStamp(), 'NEW instruction after resume')]);
       assert.match(map.rendered(), /NEW instruction after resume/);
+    } finally { await map.dispose(); }
+  });
+}
+
+const snappedEndpoint = { lat: target.lat, lng: -0.098 };
+const snappedRoad = [origin, corner, snappedEndpoint];
+const iosRouteMetadata = { destinationWaypoint: { position: target }, destinationLatLng: snappedEndpoint };
+
+test('iOS metadata accepts a genuine off-road snapped route without a fake target connector or destination resets', async () => {
+  const map = await mountIos({ initialRoute: snappedRoad, routeMetadata: iosRouteMetadata });
+  try {
+    assert.deepEqual(map.lines.get('hy3n-driver-route')?.points.at(-1), snappedEndpoint);
+    assert.equal(map.calls.length, 1);
+    assert.deepEqual(map.calls[0].point.position, target, 'only the server waypoint is sent to the route engine');
+    assert.equal(map.polylineWrites.some(line => line.points.some((point: any) => point.lat === target.lat && point.lng === target.lng)), false,
+      'the off-road waypoint may not be joined to the real path');
+    await map.routeChanged();
+    await map.emit('traffic');
+    assert.equal(map.calls.length, 1, 'route and ETA refreshes cannot mutate the destination');
+    assert.deepEqual(map.lines.get('hy3n-driver-route')?.points.at(-1), snappedEndpoint);
+  } finally { await map.dispose(); }
+});
+
+test('iOS rejects a conflicting nearby waypoint despite geometry ending exactly at the active server target', async () => {
+  const map = await mountIos({ routeMetadata: {
+    destinationWaypoint: { position: { lat: target.lat + 0.0005, lng: target.lng } }, destinationLatLng: target,
+  } });
+  try {
+    assert.equal(map.lines.has('hy3n-driver-route'), false, 'the old 150 m endpoint check cannot override conflicting identity');
+    assert.equal(map.calls.length, 1, 'candidate rejection must not reset the Google destination');
+    map.setRouteMetadata({ destinationWaypoint: { position: target }, destinationLatLng: target });
+    await map.routeChanged();
+    assert.deepEqual(map.lines.get('hy3n-driver-route')?.points.at(-1), target);
+    assert.equal(map.calls.length, 1, 'native geometry recovery does not add a destination call');
+  } finally { await map.dispose(); }
+});
+
+test('iOS malformed waypoint or absent declared endpoint cannot fall back to nearby legacy geometry', async () => {
+  for (const metadata of [
+    { destinationWaypoint: null, destinationLatLng: target },
+    { destinationWaypoint: {}, destinationLatLng: target },
+    { destinationWaypoint: { position: { lat: '5.704', lng: target.lng } }, destinationLatLng: target },
+    { destinationWaypoint: { position: target } },
+    { destinationWaypoint: { position: target }, destinationLatLng: null },
+    { destinationWaypoint: { position: target }, destinationLatLng: { lat: NaN, lng: target.lng } },
+  ]) {
+    const map = await mountIos({ routeMetadata: metadata });
+    try {
+      assert.equal(map.lines.has('hy3n-driver-route'), false, `must reject malformed metadata ${JSON.stringify(metadata)}`);
+      assert.equal(map.calls.length, 1);
+    } finally { await map.dispose(); }
+  }
+});
+
+test('iOS selects complete metadata-bearing native geometry over a partial current prefix and preserves independent feed generation checks', async () => {
+  const map = await mountIos({ initialRoute: snappedRoad, partialCurrentLeg: true, routeMetadata: iosRouteMetadata });
+  try {
+    assert.deepEqual(map.lines.get('hy3n-driver-route')?.points.at(-1), snappedEndpoint,
+      'matching waypoint alone is not enough to accept a partial current prefix');
+    assert.equal(map.calls.length, 1);
+    const stamp = map.nativeStamp();
+    await map.emit('turn', [liveTurn(stamp, 'CURRENT metadata route turn')]);
+    assert.match(map.rendered(), /CURRENT metadata route turn/);
+    await map.emit('turn', [liveTurn({ ...stamp, hy3nRouteGeneration: stamp.hy3nRouteGeneration + 1 }, 'WRONG generation turn')]);
+    await map.emit('remaining', { ...stamp, hy3nRouteGeneration: stamp.hy3nRouteGeneration + 1, meters: 99_000, seconds: 9_900 });
+    assert.doesNotMatch(map.rendered(), /WRONG generation turn|99 km|2 hr 45 min/);
+    assert.equal(map.calls.length, 1, 'geometry fallback and guidance validation cannot issue new destination calls');
+  } finally { await map.dispose(); }
+});
+
+test('iOS legacy no-waypoint snapshots retain endpoint fallback without accepting farther snapped paths', async () => {
+  const map = await mountIos({ initialRoute: snappedRoad });
+  try {
+    assert.equal(map.lines.has('hy3n-driver-route'), false, 'legacy routes still need an endpoint within 150 m of the server target');
+    map.nextRoute(initialRoad);
+    await map.update({ navigationId: 'legacy-ride-two' });
+    assert.deepEqual(map.lines.get('hy3n-driver-route')?.points.at(-1), target);
+    assert.equal(map.calls.length, 2, 'only the server ride identity change requires another destination');
+    await map.routeChanged();
+    assert.equal(map.calls.length, 2);
+  } finally { await map.dispose(); }
+});
+
+for (const transition of ['replacement', 'removal'] as const) {
+  test(`iOS pending metadata-bearing route read cannot repaint old geometry after target ${transition}`, async () => {
+    const map = await mountIos({ initialRoute: snappedRoad, routeMetadata: iosRouteMetadata });
+    let resolveCurrent!: (value: any) => void;
+    let resolveComplete!: (value: any) => void;
+    try {
+      const capturedCurrent = { segmentLatLngList: snappedRoad, ...iosRouteMetadata, ...map.nativeStamp() };
+      const capturedComplete = [{ segmentLatLngList: snappedRoad, ...iosRouteMetadata }];
+      map.setGeometryHandlers(
+        () => new Promise(resolve => { resolveCurrent = resolve; }),
+        () => new Promise(resolve => { resolveComplete = resolve; }),
+      );
+      await map.routeChanged();
+      assert.equal(typeof resolveCurrent, 'function', 'the current native read must actually be pending');
+      assert.equal(typeof resolveComplete, 'function', 'the complete native read must actually be pending');
+      map.setGeometryHandlers(null, null);
+      const nextTarget = { lat: 5.708, lng: -0.096 };
+      if (transition === 'replacement') {
+        map.nextRoute([origin, corner, nextTarget]);
+        map.setRouteMetadata({ destinationWaypoint: { position: nextTarget }, destinationLatLng: nextTarget });
+        await map.update({ target: { latitude: nextTarget.lat, longitude: nextTarget.lng, label: 'Approved next stop', kind: 'stop' } });
+      } else {
+        await map.update({ target: null, tripStatus: null });
+      }
+      const writesAtTransition = map.polylineWrites.length;
+      resolveCurrent(capturedCurrent);
+      resolveComplete(capturedComplete);
+      await map.flush();
+      const lateWrites = map.polylineWrites.slice(writesAtTransition);
+      assert.equal(lateWrites.some(line => line.points.at(-1)?.lng === snappedEndpoint.lng), false,
+        'a source-captured old waypoint must never draw after target invalidation');
+      if (transition === 'replacement') {
+        assert.deepEqual(map.lines.get('hy3n-driver-route')?.points.at(-1), nextTarget);
+        assert.deepEqual(map.calls.at(-1).point.position, nextTarget);
+        assert.equal(map.calls.length, 2, 'only the replacement server target requires a second destination');
+      } else {
+        assert.equal(map.lines.size, 0, 'removed server target must stay clear');
+        assert.equal(lateWrites.length, 0);
+        assert.equal(map.calls.length, 1, 'target removal and a delayed read cannot create new destinations');
+      }
     } finally { await map.dispose(); }
   });
 }

@@ -6,12 +6,12 @@ import ts from 'typescript';
 import { createDriverRequestAudio } from '../lib/driver-request-audio';
 
 // Execute the actual Home callback, not a regex assertion that an API name exists.
-function actualHomeCallback(extra: Record<string, any> = {}) {
+function actualHomeCallback(extra: Record<string, any> = {}, name = 'playIncomingTripAlert') {
   const source = fs.readFileSync(path.join(__dirname, '../app/(tabs)/home.tsx'), 'utf8');
   const tree = ts.createSourceFile('home.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let arrow: ts.Expression | undefined;
   function visit(node: ts.Node) {
-    if (ts.isVariableDeclaration(node) && node.name.getText(tree) === 'playIncomingTripAlert' && node.initializer && ts.isCallExpression(node.initializer)) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(tree) === name && node.initializer && ts.isCallExpression(node.initializer)) {
       arrow = node.initializer.arguments[0];
     }
     ts.forEachChild(node, visit);
@@ -24,17 +24,11 @@ function actualHomeCallback(extra: Record<string, any> = {}) {
 
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
-// The corrected shared runtime is injected when it exists. Before correction,
-// the actual old callback still executes and fails these same assertions.
+// iOS explicitly uses the hook-owned runtime; native ownership is not mocked
+// as Android and source-name assertions cannot prove failed-Accept replay.
 async function dependencies(player: any, configure: (mode: any) => Promise<void>) {
-  let runtime: any = null;
-  const filename = path.join(__dirname, '../lib/driver-request-audio.ts');
-  if (fs.existsSync(filename)) {
-    const mod = await import('../lib/driver-request-audio');
-    runtime = mod.createDriverRequestAudio();
-  }
-  return { incomingTripAlertPlayer: player, incomingTripAlertedRideIdRef: { current: null },
-    incomingTripAudioRuntimeRef: { current: runtime }, setAudioModeAsync: configure };
+  return { incomingTripAlertPlayer: player,
+    incomingTripAudioRuntimeRef: { current: createDriverRequestAudio({ platform: 'ios' }) }, setAudioModeAsync: configure };
 }
 
 test('actual Home configures iPhone silent-mode playback before starting its request song', async () => {
@@ -134,8 +128,18 @@ test('audio stop still pauses playback if a native audio property setter throws'
   assert.equal(paused, true, 'native property failures must not prevent pause');
 });
 
-test('failed Accept restores sound eligibility while the same offer remains visible', () => {
-  const body = homeHandlerBody('handleAcceptRide');
-  assert.match(body, /if \(String\(incomingRide\?\.id \|\| ''\) === rideId\) acceptedOfferAudioSuppressionRef\.current = null/);
-  assert.match(homeSource, /acceptedOfferAudioSuppressionRef\.current === incomingRideId \|\| !shouldPlayIncomingTripAlert/);
+test('actual Home iOS stop keeps the same-offer latch until explicit failed-Accept rearm', async () => {
+  let plays = 0;
+  const player = { isLoaded: true, playing: false, muted: true, volume: 0, loop: false,
+    pause() { this.playing = false; }, seekTo: async () => {}, play() { this.playing = true; plays++; } };
+  const env = await dependencies(player, async () => {});
+  const play = actualHomeCallback(env);
+  const stop = actualHomeCallback(env, 'stopIncomingTripAlert');
+  play('offer-A'); await flush(); assert.equal(plays, 1);
+  stop(true); play('offer-A'); await flush();
+  assert.equal(player.playing, false); assert.equal(plays, 1, 'ordinary stop cannot clear iOS ride latch');
+  assert.equal(env.incomingTripAudioRuntimeRef.current.rearmAfterFailedAccept('offer-B'), false);
+  assert.equal(env.incomingTripAudioRuntimeRef.current.rearmAfterFailedAccept('offer-A'), true);
+  play('offer-A'); await flush(); play('offer-A'); await flush();
+  assert.equal(plays, 2, 'explicit eligible retry replays once without replacing the player');
 });

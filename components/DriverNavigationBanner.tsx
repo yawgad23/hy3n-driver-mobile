@@ -121,7 +121,10 @@ function OriginalDriverNavigationBanner({
 }: Props) {
   const instruction = !message && guidance?.navState === 'enroute' ? guidance.instruction : null;
   const distance = instruction ? formatNavigationDistance(guidance?.distanceToManeuverMeters ?? null) : null;
-  const icon = instruction ? maneuverIcon(guidance) : 'navigation';
+  const isIos = Platform.OS === 'ios';
+  // Keep the original known-turn mapper; unavailable iOS guidance is not an arrow.
+  const icon = isIos && (!instruction || guidance?.maneuver === 'unknown')
+    ? 'info-outline' : instruction ? maneuverIcon(guidance) : 'navigation';
   const duration = formatNavigationDuration(remainingTimeSeconds);
   const remaining = formatNavigationDistance(remainingDistanceMeters);
   const arrival = formatNavigationArrivalTime(remainingTimeSeconds);
@@ -131,14 +134,15 @@ function OriginalDriverNavigationBanner({
   return (
     <View testID="driver-navigation-banner" onLayout={onLayout} style={styles.container} pointerEvents="none">
       <View style={[styles.instructionPanel, isDark && styles.darkInstructionPanel]} accessibilityLabel={[instruction || stateMessage, distance && `in ${distance}`, guidance?.roadName].filter(Boolean).join('. ')}>
-        <View style={styles.iconColumn}>
-          <MaterialIcons name={icon} size={48} color="#FFFFFF" />
-          {distance ? <Text style={styles.turnDistance} numberOfLines={1}>{distance}</Text> : null}
+        <View style={isIos ? [styles.iconColumn, iosStyles.iconColumn] : styles.iconColumn}>
+          <MaterialIcons name={icon} size={isIos ? 44 : 48} color="#FFFFFF" />
+          {!isIos && distance ? <Text style={styles.turnDistance} numberOfLines={1}>{distance}</Text> : null}
         </View>
         <View style={styles.instructionColumn}>
-          <Text style={styles.instruction} numberOfLines={2}>{instruction || stateMessage}</Text>
+          {isIos && distance ? <Text style={[styles.turnDistance, iosStyles.turnDistance]}>{distance}</Text> : null}
+          <Text style={styles.instruction} numberOfLines={isIos ? undefined : 2}>{instruction || stateMessage}</Text>
           {instruction && guidance?.roadName && guidance.roadName !== instruction ? (
-            <Text style={styles.roadName} numberOfLines={1}>{guidance.roadName}</Text>
+            <Text style={styles.roadName} numberOfLines={isIos ? undefined : 1}>{guidance.roadName}</Text>
           ) : null}
         </View>
       </View>
@@ -172,6 +176,12 @@ const styles = StyleSheet.create({
   summaryPrimary: { fontSize: 19, fontWeight: '800', includeFontPadding: false },
   summarySecondary: { fontSize: 14, fontWeight: '700', includeFontPadding: false },
   target: { fontSize: 12, lineHeight: 17, fontWeight: '600', includeFontPadding: false },
+});
+
+// Override only the iOS hierarchy metrics; web retains the original styles.
+const iosStyles = StyleSheet.create({
+  iconColumn: { width: 56 },
+  turnDistance: { fontSize: 24, lineHeight: 28 },
 });
 
 const androidStyles = StyleSheet.create({
