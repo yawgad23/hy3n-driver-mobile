@@ -40,11 +40,15 @@ const env = {
   iosBundleId: "com.hy3n.driver",
   androidPackage: "com.hy3n.driver",
 };
+// EAS supplies this platform on native workers. Set it locally when invoking
+// the Android release command too, so CLI metadata and the native binary agree.
+// Unspecified/iOS configuration retains the existing iOS version unchanged.
+const appVersion = process.env.EAS_BUILD_PLATFORM === "android" ? "1.0.3" : "1.0.2";
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
   owner: "yawgad",
-  version: "1.0.2",
+  version: appVersion,
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   scheme: env.scheme,
@@ -78,8 +82,8 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    // 57022 packages the active-trip, verification-keyboard, and rating safe-area fixes.
-    versionCode: 57022,
+    // 57023 retains prior fixes and adds Android routes, alerts, dock and turn guidance.
+    versionCode: 57023,
     googleServicesFile: "./firebase/google-services.json",
     permissions: [
       "POST_NOTIFICATIONS",
