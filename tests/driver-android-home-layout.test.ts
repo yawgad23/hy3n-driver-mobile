@@ -6,6 +6,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { activeTripDetails } from '../lib/driver-active-trip-details';
+import { createTranslucentPalette } from '../lib/driver-ios-overlay-theme';
 
 // This evaluates the AST-extracted real JSX, not a separately reimplemented Home.
 // Native host nodes are plain records: this proves render contracts/geometry inputs,
@@ -107,6 +108,7 @@ function render(source: string, platform: string, overrides: any = {}) {
   const events: any = {};
   const context: any = {
     ...native(platform), React,
+    useMemo: (factory: () => any) => factory(),
     GOLD: '#D4AF37', GREEN: '#22C55E', RED: '#EF4444', BLUE: '#3B82F6',
     Animated: { View: 'Animated.View' }, StatusBar: 'StatusBar', MaterialIcons: 'MaterialIcons',
     NativeDriverGoogleMap: 'NativeDriverGoogleMap', RideChatModal: 'RideChatModal',
@@ -147,8 +149,9 @@ function render(source: string, platform: string, overrides: any = {}) {
   }
   for (const name of ['setShowChat', 'setUnreadCount', 'setShowHeatmap', 'setNotifOpen', 'setDestModalVisible', 'setPrefs', 'setShowCancel', 'setDestInput', 'setShowOtp', 'setPickupCode', 'setShowFareScreen', 'setShowRating', 'setRatingValue', 'setRatingFeedback', 'setFoundItem', 'setSafetyReport', 'setShowNavigationChooser']) context[name] = () => {};
   Object.assign(context, overrides);
+  context.iosOverlayPalette = createTranslucentPalette(context.isDark ? 'dark' : 'light', Boolean(overrides.reduceTransparencyEnabled));
   if (existsSync(helperPath)) Object.assign(context, loadHelper(platform));
-  vm.runInNewContext(compile(`${declaration(file, 'styles')}\n${declaration(file, 'androidLayoutStyles')}\n${declaration(file, 'iosLayoutStyles')}\n${declaration(file, 'androidHomeLayout')}\n${declaration(file, 'iosHomeLayout')}\n${declaration(file, 'dynamicStyles')}\nconst result = (${jsx});\nexports.result = result;`), Object.assign(context, { exports: {} }));
+  vm.runInNewContext(compile(`${declaration(file, 'styles')}\n${declaration(file, 'androidLayoutStyles')}\n${declaration(file, 'iosLayoutStyles')}\n${declaration(file, 'iosOverlayStyles')}\n${declaration(file, 'androidHomeLayout')}\n${declaration(file, 'iosHomeLayout')}\n${declaration(file, 'dynamicStyles')}\nconst result = (${jsx});\nexports.result = result;`), Object.assign(context, { exports: {} }));
   const tree = expand(context.exports.result);
   return { tree, nodes: allNodes(tree), events };
 }
@@ -360,8 +363,11 @@ test('iOS preserves all build 125 interactions and pending states except the exp
       if (item.handler === 'handleEndTrip') return { ...item, text: pending ? '' : 'End', label: 'End trip', role: 'button' };
       if (item.handler === 'handleStartTrip') return { ...item, text: pending ? '' : 'Start', label: 'Start trip', role: 'button' };
       if (item.handler === 'handleArrivedAtPickup') return { ...item, label: 'Arrived at pickup', role: 'button' };
+      if (item.handler === 'handleCompleteRouteStop') return { ...item, text: pending ? '' : 'Arrived', label: 'Arrived at approved stop', role: 'button' };
+      if (item.handler === 'handleVerifyPickupCode') return { ...item, text: 'Verify & Start' };
+      if (item.text === 'Accept route') return { ...item, text: 'Accept' };
       return item;
-    });
+    }).filter(item => !(state.name === 'incoming-offer' && /Set destination filter|^Heading to /.test(item.text)));
     assert.deepEqual(interactions(render(current, 'ios', overrides).nodes), expected, state.name);
   }
 });
@@ -436,5 +442,75 @@ test('scope proof: old styles, server/offer handlers and keyboard/rating JSX sta
   const newLogic = logic(parse(compatibleSource));
   for (const oldStatement of logic(oldFile)) assert.ok(newLogic.includes(oldStatement), `existing logic changed: ${oldStatement.slice(0, 120)}`);
   const modals = (source: string) => source.slice(source.indexOf('      {/* Destination Modal */}'), source.indexOf('const styles = StyleSheet.create('));
-  assert.equal(modals(current), modals(baseline), 'trailing modal JSX changed');
+  const approvedVerifyLabel = "{Platform.OS === 'ios' ? 'Verify & Start' : 'Verify & start trip'}";
+  assert.equal(modals(current).split(approvedVerifyLabel).length - 1, 1, 'only the reviewed iPhone verify label is shortened');
+  assert.equal(modals(current).replace(approvedVerifyLabel, 'Verify & start trip'), modals(baseline), 'modal surfaces, inputs and handlers remain source-identical');
+});
+
+
+test('actual iOS action row uses colour-only alpha fills with fully visible foregrounds and the same measured touch geometry', () => {
+  for (const isDark of [false, true]) for (const reduceTransparencyEnabled of [false, true]) for (const status of ['driver_arriving', 'driver_arrived', 'in_progress']) {
+    const palette = createTranslucentPalette(isDark ? 'dark' : 'light', reduceTransparencyEnabled);
+    const { nodes } = render(current, 'ios', { isDark, reduceTransparencyEnabled, activeTrip: { ...trip, status } });
+    const row = findStyled(nodes, style => style.flexDirection === 'row' && style.width === '100%' && style.gap === 4);
+    const buttons = row.props.children.filter((node: any) => node.type === 'TouchableOpacity');
+    const finalTone = status === 'in_progress' ? 'danger' : status === 'driver_arrived' ? 'success' : 'gold';
+    const expected = [palette.button.blue, palette.button.blue, palette.button.slate, palette.button.danger, palette.button[finalTone]];
+    assert.equal(buttons.length, expected.length);
+    for (let index = 0; index < buttons.length; index++) {
+      const button = buttons[index];
+      const style = flattenStyle(button.props.style);
+      assert.equal(style.backgroundColor, expected[index].backgroundColor);
+      assert.equal(style.opacity, undefined, 'background alpha must not fade the whole control');
+      assert.equal(button.props.activeOpacity, 1, 'pressing does not fade text/icons either');
+      assert.ok(style.minHeight >= 44);
+      assert.equal(style.height, undefined);
+      assert.equal(style.maxHeight, undefined);
+    }
+    const finalText = buttons[4].props.children.find((node: any) => node.type === 'Text');
+    assert.equal(flattenStyle(finalText.props.style).color, status === 'driver_arriving' ? palette.button.gold.color : '#FFF');
+    assert.equal(flattenStyle(finalText.props.style).opacity, undefined);
+    assert.equal(buttons[4].props.onPress.contractName, status === 'in_progress' ? 'handleEndTrip' : status === 'driver_arrived' ? 'handleStartTrip' : 'handleArrivedAtPickup');
+    const availability = nodes.find(node => node.props.onPress?.contractName === 'handleToggleOnline');
+    assert.equal(flattenStyle(availability.props.style).backgroundColor, palette.button.danger.backgroundColor);
+    assert.equal(availability.props.activeOpacity, 1);
+  }
+});
+
+test('iOS overlays use the actual theme/accessibility palette, keep the offer readable, and hide only its redundant destination filter', () => {
+  for (const isDark of [false, true]) for (const reduceTransparencyEnabled of [false, true]) {
+    const palette = createTranslucentPalette(isDark ? 'dark' : 'light', reduceTransparencyEnabled);
+    const idle = render(current, 'ios', { isDark, reduceTransparencyEnabled });
+    const badge = findStyled(idle.nodes, style => style.borderRadius === 30 && style.paddingHorizontal === 16);
+    assert.equal(flattenStyle(badge.props.style).backgroundColor, palette.panel);
+    const offer = render(current, 'ios', { isDark, reduceTransparencyEnabled, incomingRide: trip });
+    const card = offer.nodes.find(node => node.type === 'Animated.View');
+    assert.equal(flattenStyle(card.props.style).backgroundColor, palette.panel);
+    assert.equal(flattenStyle(card.props.style).opacity, undefined);
+    const title = offer.nodes.find(node => node.type === 'Text' && text(node) === 'New Ride Request');
+    assert.equal(flattenStyle(title.props.style).opacity, 1);
+    assert.equal(flattenStyle(title.props.style).color, palette.foreground);
+    assert.ok(!offer.nodes.some(node => node.type === 'Text' && text(node) === 'Set destination filter'));
+    assert.ok(idle.nodes.some(node => node.type === 'Text' && text(node) === 'Set destination filter'));
+    for (const platform of ['android', 'web']) {
+      const other = render(current, platform, { incomingRide: trip });
+      assert.ok(other.nodes.some(node => node.type === 'Text' && text(node) === 'Set destination filter'), 'other platforms preserve their existing render');
+    }
+  }
+});
+
+test('reviewed iPhone labels remain attached to their existing server/verification handlers while protected modal surfaces stay solid', () => {
+  const route = render(current, 'ios', { activeTrip: { ...trip, status: 'in_progress', route_change_request: { status: 'pending', kind: 'add_stop', location: { name: 'Approved proposal' } } } });
+  const accept = route.nodes.find(node => node.props.onPress && text(node) === 'Accept' && node.props.onPress.toString().includes('handleRouteChangeDecision'));
+  assert.ok(accept);
+  assert.equal(accept.props.disabled, false);
+  const stop = render(current, 'ios', { activeTrip: { ...trip, status: 'in_progress', route_target: { kind: 'stop', location: { name: 'Approved stop' } } } });
+  const arrived = stop.nodes.find(node => node.props.onPress?.contractName === 'handleCompleteRouteStop');
+  assert.equal(text(arrived), 'Arrived');
+  assert.equal(arrived.props.accessibilityLabel, 'Arrived at approved stop');
+  const verify = stop.nodes.find(node => node.props.onPress?.contractName === 'handleVerifyPickupCode');
+  assert.equal(text(verify), 'Verify & Start');
+  const sheets = stop.nodes.filter(node => node.type === 'View' && flattenStyle(node.props.style).borderTopLeftRadius === 24);
+  assert.ok(sheets.length > 0);
+  for (const sheet of sheets) assert.ok(!String(flattenStyle(sheet.props.style).backgroundColor).startsWith('rgba('), 'verification/fare/cancellation sheets remain solid');
 });

@@ -29,6 +29,7 @@ import NativeDriverGoogleMap from '@/components/NativeDriverGoogleMap';
 import { Colors } from '@/constants/theme';
 import { buildVehicleFields } from '@/lib/vehicle';
 import { useThemeContext } from '@/lib/theme-provider';
+import { useDriverIosOverlayPalette } from '@/hooks/use-driver-ios-overlay-palette';
 import { startDriverBackgroundLocationUpdates, stopDriverBackgroundLocationUpdates } from '@/lib/driver-background-location';
 import {
   driverForegroundLocationPolicy,
@@ -125,6 +126,19 @@ export default function DriverHomeScreen() {
   const { colorScheme } = useThemeContext();
   const isDark = colorScheme === 'dark';
   const themeColors = Colors[isDark ? 'dark' : 'light'];
+  const iosOverlayPalette = useDriverIosOverlayPalette(isDark);
+  const iosOverlayStyles = useMemo(() => ({
+    card: { backgroundColor: iosOverlayPalette.panel, borderColor: iosOverlayPalette.border },
+    text: { color: iosOverlayPalette.foreground },
+    muted: { color: iosOverlayPalette.secondary },
+    blue: { backgroundColor: iosOverlayPalette.button.blue.backgroundColor },
+    slate: { backgroundColor: iosOverlayPalette.button.slate.backgroundColor },
+    danger: { backgroundColor: iosOverlayPalette.button.danger.backgroundColor },
+    success: { backgroundColor: iosOverlayPalette.button.success.backgroundColor },
+    gold: { backgroundColor: iosOverlayPalette.button.gold.backgroundColor },
+    whiteText: { color: '#FFFFFF', opacity: 1 },
+    opaqueText: { opacity: 1 },
+  }), [iosOverlayPalette]);
 
   const { user, driverProfile } = useDriverAuth();
   const { prefs, toggle: togglePref, setPrefs } = useDriverPreferences();
@@ -1486,27 +1500,27 @@ export default function DriverHomeScreen() {
       {/* Floating Controls */}
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}
         onLayout={(event) => setMapTopInset(event.nativeEvent.layout.height + 12)}>
-        <View style={[styles.statusBadge, dynamicStyles.badge]}>
+        <View style={[styles.statusBadge, dynamicStyles.badge, Platform.OS === 'ios' && iosOverlayStyles.card]}>
           <View style={[styles.statusDot, { backgroundColor: isOnline ? GREEN : themeColors.muted }]} />
-          <Text style={[styles.statusText, dynamicStyles.text]}>{driverStatusLabel}</Text>
+          <Text style={[styles.statusText, dynamicStyles.text, Platform.OS === 'ios' && iosOverlayStyles.text]}>{driverStatusLabel}</Text>
         </View>
 
         <View style={{ flexDirection: 'row', gap: 10 }}>
           {false && isOnline && (
-            <TouchableOpacity
+            <TouchableOpacity {...(Platform.OS === 'ios' ? { activeOpacity: 1 } : {})}
               style={[styles.notifCircle, dynamicStyles.badge, { borderColor: showHeatmap ? GOLD : themeColors.border }]}
               onPress={() => setShowHeatmap(!showHeatmap)}
             >
               <MaterialIcons name="local-fire-department" size={24} color={showHeatmap ? GOLD : themeColors.text} />
             </TouchableOpacity>
           )}
-          <TouchableOpacity
-            style={[styles.notifCircle, dynamicStyles.badge]}
+          <TouchableOpacity {...(Platform.OS === 'ios' ? { activeOpacity: 1 } : {})}
+            style={[styles.notifCircle, dynamicStyles.badge, Platform.OS === 'ios' && iosOverlayStyles.card]}
             onPress={triggerSOS}
           >
             <MaterialIcons name="emergency" size={26} color={RED} />
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.notifCircle, dynamicStyles.badge]} onPress={() => setNotifOpen(true)}>
+          <TouchableOpacity {...(Platform.OS === 'ios' ? { activeOpacity: 1 } : {})} style={[styles.notifCircle, dynamicStyles.badge, Platform.OS === 'ios' && iosOverlayStyles.card]} onPress={() => setNotifOpen(true)}>
             <MaterialIcons name="notifications-none" size={26} color={themeColors.text} />
             {notifications.filter((item) => !item.read_at).length > 0 && <View style={styles.headerBadge}><Text style={styles.headerBadgeText}>{Math.min(9, notifications.filter((item) => !item.read_at).length)}</Text></View>}
           </TouchableOpacity>
@@ -1519,15 +1533,15 @@ export default function DriverHomeScreen() {
         <DriverHomeLayoutRegion maxHeight={Platform.OS === 'ios' ? iosHomeLayout.auxiliaryMaxHeight : androidHomeLayout.auxiliaryMaxHeight} scrollOnIos={Platform.OS === 'ios'}>
         {/* Incoming Ride Request */}
         {incomingRide && !activeTrip && (
-          <Animated.View {...offerPanResponder.panHandlers} style={[styles.rideRequestCard, dynamicStyles.card, { transform: [{ translateX: offerSwipeX }] }]}>
+          <Animated.View {...offerPanResponder.panHandlers} style={[styles.rideRequestCard, dynamicStyles.card, Platform.OS === 'ios' && iosOverlayStyles.card, { transform: [{ translateX: offerSwipeX }] }]}>
             <View style={{ flex: 1 }}>
-              <View style={styles.offerHeader}><Text style={[styles.rideTitle, dynamicStyles.text]}>New Ride Request</Text><Text style={[styles.offerTimer, { color: rideOfferSeconds <= 5 ? RED : GOLD }]}>{rideOfferSeconds > 0 ? `${rideOfferSeconds}s` : 'Review'}</Text></View>
-              <Text style={[styles.rideName, dynamicStyles.text]}>{incomingRide.rider_name}</Text>
+              <View style={styles.offerHeader}><Text style={[styles.rideTitle, dynamicStyles.text, Platform.OS === 'ios' && iosOverlayStyles.text, Platform.OS === 'ios' && iosOverlayStyles.opaqueText]}>New Ride Request</Text><Text style={[styles.offerTimer, { color: rideOfferSeconds <= 5 ? RED : GOLD }]}>{rideOfferSeconds > 0 ? `${rideOfferSeconds}s` : 'Review'}</Text></View>
+              <Text style={[styles.rideName, dynamicStyles.text, Platform.OS === 'ios' && iosOverlayStyles.text]}>{incomingRide.rider_name}</Text>
               <View style={styles.metaRow}>
-                {incomingRide.rider_rating && <Text style={[styles.metaText, dynamicStyles.muted]}>★ {Number(incomingRide.rider_rating).toFixed(1)}</Text>}
-                {Number(incomingRide.rider_rating_count) > 0 && <Text style={[styles.metaText, dynamicStyles.muted]}>· {Math.floor(Number(incomingRide.rider_rating_count))} ratings</Text>}
+                {incomingRide.rider_rating && <Text style={[styles.metaText, dynamicStyles.muted, Platform.OS === 'ios' && iosOverlayStyles.muted]}>★ {Number(incomingRide.rider_rating).toFixed(1)}</Text>}
+                {Number(incomingRide.rider_rating_count) > 0 && <Text style={[styles.metaText, dynamicStyles.muted, Platform.OS === 'ios' && iosOverlayStyles.muted]}>· {Math.floor(Number(incomingRide.rider_rating_count))} ratings</Text>}
                 <Text style={[styles.categoryBadge, { color: GOLD }]}>{rideCategoryName(incomingRide.category)}</Text>
-                {!!(incomingRide.distance_km || incomingRide.estimated_distance_km) && <Text style={[styles.metaText, dynamicStyles.muted]}>{Number(incomingRide.distance_km || incomingRide.estimated_distance_km).toFixed(1)} km</Text>}
+                {!!(incomingRide.distance_km || incomingRide.estimated_distance_km) && <Text style={[styles.metaText, dynamicStyles.muted, Platform.OS === 'ios' && iosOverlayStyles.muted]}>{Number(incomingRide.distance_km || incomingRide.estimated_distance_km).toFixed(1)} km</Text>}
               </View>
               {activeTripDetails(incomingRide).bookedFare !== null && (
                 <View style={[styles.offerFareChip, { backgroundColor: isDark ? '#2C260E' : '#FFF8DD', borderColor: `${GOLD}55` }]} accessibilityLabel={`Booked fare ${formatPassengerFare(activeTripDetails(incomingRide).bookedFare)}`}>
@@ -1544,22 +1558,22 @@ export default function DriverHomeScreen() {
                   </View>
                 </View>
               )}
-              <Text style={[styles.rideDetails, dynamicStyles.muted]} numberOfLines={2}>
+              <Text style={[styles.rideDetails, dynamicStyles.muted, Platform.OS === 'ios' && iosOverlayStyles.muted]} numberOfLines={2}>
                 From: {incomingRide.pickup_address || 'Pickup'}
               </Text>
               {isHighRiskArea(incomingRide.pickup_address) && <View style={styles.riskBanner}><MaterialIcons name="warning-amber" size={14} color="#7C2D12" /><Text style={styles.riskText}>Use extra caution in this pickup area</Text></View>}
-              <Text style={[styles.rideDetails, dynamicStyles.muted]} numberOfLines={2}>
+              <Text style={[styles.rideDetails, dynamicStyles.muted, Platform.OS === 'ios' && iosOverlayStyles.muted]} numberOfLines={2}>
                 To: {incomingRide.destination_address || 'Destination'}
               </Text>
               {isDeliveryRide(incomingRide) && (
-                <Text style={[styles.deliveryOfferText, dynamicStyles.muted]}>Sender and recipient details appear after you accept.</Text>
+                <Text style={[styles.deliveryOfferText, dynamicStyles.muted, Platform.OS === 'ios' && iosOverlayStyles.muted]}>Sender and recipient details appear after you accept.</Text>
               )}
               {/* Payment Method */}
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 6 }}>
                 {incomingRide.payment_method === 'mobile_money' && <MaterialIcons name="smartphone" size={14} color={GOLD} />}
                 {incomingRide.payment_method === 'cash' && <MaterialIcons name="attach-money" size={14} color={GREEN} />}
                 {incomingRide.payment_method === 'card' && <MaterialIcons name="credit-card" size={14} color={BLUE} />}
-                <Text style={[styles.paymentText, dynamicStyles.muted]} numberOfLines={1}>
+                <Text style={[styles.paymentText, dynamicStyles.muted, Platform.OS === 'ios' && iosOverlayStyles.muted]} numberOfLines={1}>
                   {incomingRide.payment_method === 'mobile_money'
                     ? 'MoMo'
                     : incomingRide.payment_method === 'cash'
@@ -1571,14 +1585,14 @@ export default function DriverHomeScreen() {
               </View>
             </View>
             <View style={styles.rideActions}>
-              <TouchableOpacity
-                style={[styles.rideBtn, { backgroundColor: RED }]}
+              <TouchableOpacity {...(Platform.OS === 'ios' ? { activeOpacity: 1 } : {})}
+                style={[styles.rideBtn, { backgroundColor: RED }, Platform.OS === 'ios' && iosOverlayStyles.danger]}
                 onPress={handleDeclineRide}
               >
                 <MaterialIcons name="close" size={20} color="#FFF" />
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.rideBtn, { backgroundColor: GREEN }]}
+              <TouchableOpacity {...(Platform.OS === 'ios' ? { activeOpacity: 1 } : {})}
+                style={[styles.rideBtn, { backgroundColor: GREEN }, Platform.OS === 'ios' && iosOverlayStyles.success]}
                 onPress={handleAcceptRide}
                 disabled={tripActionPending}
               >
@@ -1592,77 +1606,77 @@ export default function DriverHomeScreen() {
             accepts it, the Navigation SDK owns the screen and activates the next
             pickup immediately after this trip is completed. */}
         {activeTrip && nextRide && nextRide.status !== 'driver_queued' && (
-          <View style={[styles.queueCard, dynamicStyles.card]}>
+          <View style={[styles.queueCard, dynamicStyles.card, Platform.OS === 'ios' && iosOverlayStyles.card]}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.queueTitle, dynamicStyles.text]}>New ride available</Text>
-              <Text style={[styles.queueText, dynamicStyles.muted]} numberOfLines={1}>{nextRide.rider_name || 'Rider'} · {nextRide.pickup_address || 'Pickup'} → {nextRide.destination_address || 'Destination'}</Text>
+              <Text style={[styles.queueTitle, dynamicStyles.text, Platform.OS === 'ios' && iosOverlayStyles.text]}>New ride available</Text>
+              <Text style={[styles.queueText, dynamicStyles.muted, Platform.OS === 'ios' && iosOverlayStyles.muted]} numberOfLines={1}>{nextRide.rider_name || 'Rider'} · {nextRide.pickup_address || 'Pickup'} → {nextRide.destination_address || 'Destination'}</Text>
             </View>
-            <TouchableOpacity style={styles.queueButton} onPress={handleAcceptQueuedRide} accessibilityLabel="Accept next ride">
+            <TouchableOpacity {...(Platform.OS === 'ios' ? { activeOpacity: 1 } : {})} style={[styles.queueButton, Platform.OS === 'ios' && iosOverlayStyles.gold]} onPress={handleAcceptQueuedRide} accessibilityLabel="Accept next ride">
               <Text style={styles.queueButtonText}>Accept</Text>
             </TouchableOpacity>
           </View>
         )}
 
         {activeTrip?.status === 'in_progress' && activeTrip?.route_change_request?.status === 'pending' && (
-          <View style={[styles.routeChangeCard, dynamicStyles.card]}>
+          <View style={[styles.routeChangeCard, dynamicStyles.card, Platform.OS === 'ios' && iosOverlayStyles.card]}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
               <View style={styles.routeChangeIcon}>
                 <MaterialIcons name={activeTrip.route_change_request.kind === 'add_stop' ? 'add-location-alt' : 'edit-location-alt'} size={21} color={GOLD} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.routeChangeTitle, dynamicStyles.text]}>Rider route update</Text>
-                <Text style={[styles.routeChangeText, dynamicStyles.muted]}>
+                <Text style={[styles.routeChangeTitle, dynamicStyles.text, Platform.OS === 'ios' && iosOverlayStyles.text]}>Rider route update</Text>
+                <Text style={[styles.routeChangeText, dynamicStyles.muted, Platform.OS === 'ios' && iosOverlayStyles.muted]}>
                   {activeTrip.route_change_request.kind === 'add_stop' ? 'Add stop' : 'Change destination'}: {activeTrip.route_change_request.location?.name || activeTrip.route_change_request.location?.address || 'New location'}
                 </Text>
-                <Text style={[styles.routeChangeHint, dynamicStyles.muted]}>Confirm before HY3N changes the route on either map.</Text>
+                <Text style={[styles.routeChangeHint, dynamicStyles.muted, Platform.OS === 'ios' && iosOverlayStyles.muted]}>Confirm before HY3N changes the route on either map.</Text>
               </View>
             </View>
             <View style={styles.routeChangeActions}>
-              <TouchableOpacity
-                style={[styles.routeChangeButton, { backgroundColor: '#3F1D24' }]}
+              <TouchableOpacity {...(Platform.OS === 'ios' ? { activeOpacity: 1 } : {})}
+                style={[styles.routeChangeButton, { backgroundColor: '#3F1D24' }, Platform.OS === 'ios' && iosOverlayStyles.slate]}
                 onPress={() => handleRouteChangeDecision('decline')}
                 disabled={tripActionPending}
               >
-                <Text style={styles.routeChangeDeclineText}>Decline</Text>
+                <Text style={[styles.routeChangeDeclineText, Platform.OS === 'ios' && iosOverlayStyles.whiteText]}>Decline</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.routeChangeButton, { backgroundColor: GREEN }]}
+              <TouchableOpacity {...(Platform.OS === 'ios' ? { activeOpacity: 1 } : {})}
+                style={[styles.routeChangeButton, { backgroundColor: GREEN }, Platform.OS === 'ios' && iosOverlayStyles.success]}
                 onPress={() => handleRouteChangeDecision('accept')}
                 disabled={tripActionPending}
               >
-                {tripActionPending ? <ActivityIndicator size="small" color="#FFF" /> : <><MaterialIcons name="check" size={17} color="#FFF" /><Text style={styles.routeChangeAcceptText}>Accept route</Text></>}
+                {tripActionPending ? <ActivityIndicator size="small" color="#FFF" /> : <><MaterialIcons name="check" size={17} color="#FFF" /><Text style={styles.routeChangeAcceptText}>{Platform.OS === 'ios' ? 'Accept' : 'Accept route'}</Text></>}
               </TouchableOpacity>
             </View>
           </View>
         )}
 
         {activeTrip?.status === 'in_progress' && activeTrip?.route_target?.kind === 'stop' && activeTrip?.route_change_request?.status !== 'pending' && (
-          <View style={[styles.routeChangeCard, dynamicStyles.card]}>
+          <View style={[styles.routeChangeCard, dynamicStyles.card, Platform.OS === 'ios' && iosOverlayStyles.card]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View style={styles.routeChangeIcon}><MaterialIcons name="location-on" size={21} color={GOLD} /></View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.routeChangeTitle, dynamicStyles.text]}>Next stop</Text>
-                <Text style={[styles.routeChangeText, dynamicStyles.muted]} numberOfLines={1}>{activeTrip.route_target.location?.name || activeTrip.route_target.location?.address || 'Approved stop'}</Text>
+                <Text style={[styles.routeChangeTitle, dynamicStyles.text, Platform.OS === 'ios' && iosOverlayStyles.text]}>Next stop</Text>
+                <Text style={[styles.routeChangeText, dynamicStyles.muted, Platform.OS === 'ios' && iosOverlayStyles.muted]} numberOfLines={1}>{activeTrip.route_target.location?.name || activeTrip.route_target.location?.address || 'Approved stop'}</Text>
               </View>
-              <TouchableOpacity style={[styles.stopCompleteButton, { backgroundColor: GREEN }]} onPress={handleCompleteRouteStop} disabled={tripActionPending}>
-                {tripActionPending ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={styles.stopCompleteText}>Reached stop</Text>}
+              <TouchableOpacity {...(Platform.OS === 'ios' ? { activeOpacity: 1, accessibilityLabel: 'Arrived at approved stop', accessibilityRole: 'button' as const } : {})} style={[styles.stopCompleteButton, { backgroundColor: GREEN }, Platform.OS === 'ios' && iosOverlayStyles.success]} onPress={handleCompleteRouteStop} disabled={tripActionPending}>
+                {tripActionPending ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={styles.stopCompleteText}>{Platform.OS === 'ios' ? 'Arrived' : 'Reached stop'}</Text>}
               </TouchableOpacity>
             </View>
           </View>
         )}
 
         {/* Quick Destination Filter */}
-        {isOnline && !activeTrip && (
-          <TouchableOpacity
-            style={[styles.destFilterBar, dynamicStyles.card]}
+        {isOnline && !activeTrip && (Platform.OS !== 'ios' || !incomingRide) && (
+          <TouchableOpacity {...(Platform.OS === 'ios' ? { activeOpacity: 1 } : {})}
+            style={[styles.destFilterBar, dynamicStyles.card, Platform.OS === 'ios' && iosOverlayStyles.card]}
             onPress={() => setDestModalVisible(true)}
           >
             <MaterialIcons name="home" size={20} color={prefs.destinationFilter ? GOLD : themeColors.muted} />
-            <Text style={[styles.destText, prefs.destinationFilter ? dynamicStyles.text : dynamicStyles.muted]}>
+            <Text style={[styles.destText, prefs.destinationFilter ? dynamicStyles.text : dynamicStyles.muted, Platform.OS === 'ios' && iosOverlayStyles.muted]}>
               {prefs.destinationFilter ? `Heading to ${prefs.destinationFilter}` : "Set destination filter"}
             </Text>
             {prefs.destinationFilter && (
-              <TouchableOpacity onPress={() => setPrefs({ ...prefs, destinationFilter: null })}>
+              <TouchableOpacity {...(Platform.OS === 'ios' ? { activeOpacity: 1 } : {})} onPress={() => setPrefs({ ...prefs, destinationFilter: null })}>
                 <MaterialIcons name="cancel" size={20} color={RED} />
               </TouchableOpacity>
             )}
@@ -1677,8 +1691,8 @@ export default function DriverHomeScreen() {
           {activeTrip && (
             <>
               <View style={[styles.secondaryTripActions, Platform.OS === 'ios' && iosLayoutStyles.tripActionRow]}>
-                <TouchableOpacity
-                  style={[styles.navigateTripIconBtn, { backgroundColor: '#075985' }, Platform.OS === 'ios' && iosLayoutStyles.navigateButton]}
+                <TouchableOpacity {...(Platform.OS === 'ios' ? { activeOpacity: 1 } : {})}
+                  style={[styles.navigateTripIconBtn, { backgroundColor: '#075985' }, Platform.OS === 'ios' && iosLayoutStyles.navigateButton, Platform.OS === 'ios' && iosOverlayStyles.blue]}
                   onPress={openTripNavigation}
                   accessibilityRole="button"
                   accessibilityLabel="Choose navigation app"
@@ -1686,31 +1700,31 @@ export default function DriverHomeScreen() {
                 >
                   <MaterialIcons name="navigation" size={22} color="#FFF" />
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionBtn, styles.secondaryActionBtn, { backgroundColor: BLUE }, Platform.OS === 'ios' && iosLayoutStyles.compactAction]} onPress={openChat}>
+                <TouchableOpacity {...(Platform.OS === 'ios' ? { activeOpacity: 1 } : {})} style={[styles.actionBtn, styles.secondaryActionBtn, { backgroundColor: BLUE }, Platform.OS === 'ios' && iosLayoutStyles.compactAction, Platform.OS === 'ios' && iosOverlayStyles.blue]} onPress={openChat}>
                   {Platform.OS !== 'ios' && <MaterialIcons name="chat" size={18} color="#FFF" />}
                   <Text style={styles.actionBtnText}>Chat</Text>
                   {unreadCount > 0 && <View style={[styles.unreadBadge, Platform.OS === 'ios' && iosLayoutStyles.unreadBadge]}><Text style={styles.unreadText}>{unreadCount}</Text></View>}
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionBtn, styles.secondaryActionBtn, { backgroundColor: '#475569' }, Platform.OS === 'ios' && iosLayoutStyles.compactAction]} onPress={startMobileNetworkCall}>
+                <TouchableOpacity {...(Platform.OS === 'ios' ? { activeOpacity: 1 } : {})} style={[styles.actionBtn, styles.secondaryActionBtn, { backgroundColor: '#475569' }, Platform.OS === 'ios' && iosLayoutStyles.compactAction, Platform.OS === 'ios' && iosOverlayStyles.slate]} onPress={startMobileNetworkCall}>
                   {Platform.OS !== 'ios' && <MaterialIcons name="phone" size={18} color="#FFF" />}
                   <Text style={styles.actionBtnText}>Call</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionBtn, styles.cancelActionBtn, { backgroundColor: RED }, Platform.OS === 'ios' && iosLayoutStyles.compactAction]}
+                <TouchableOpacity {...(Platform.OS === 'ios' ? { activeOpacity: 1 } : {})}
+                  style={[styles.actionBtn, styles.cancelActionBtn, { backgroundColor: RED }, Platform.OS === 'ios' && iosLayoutStyles.compactAction, Platform.OS === 'ios' && iosOverlayStyles.danger]}
                   onPress={() => setShowCancel(true)}
                   accessibilityLabel="Cancel ride"
                 >
                   <Text style={[styles.actionBtnText, { textAlign: 'center' }]}>{Platform.OS === 'ios' ? 'Cancel' : 'Cancel ride'}</Text>
                 </TouchableOpacity>
                 {Platform.OS === 'ios' && (
-                  <TouchableOpacity
-                    style={[styles.actionBtn, iosLayoutStyles.compactAction, { backgroundColor: activeTrip.status === 'in_progress' ? RED : activeTrip.status === 'driver_arrived' ? GREEN : '#F59E0B' }]}
+                  <TouchableOpacity {...(Platform.OS === 'ios' ? { activeOpacity: 1 } : {})}
+                    style={[styles.actionBtn, iosLayoutStyles.compactAction, { backgroundColor: activeTrip.status === 'in_progress' ? RED : activeTrip.status === 'driver_arrived' ? GREEN : '#F59E0B' }, activeTrip.status === 'in_progress' ? iosOverlayStyles.danger : activeTrip.status === 'driver_arrived' ? iosOverlayStyles.success : iosOverlayStyles.gold]}
                     onPress={activeTrip.status === 'in_progress' ? handleEndTrip : activeTrip.status === 'driver_arrived' ? handleStartTrip : handleArrivedAtPickup}
                     accessibilityRole="button"
                     accessibilityLabel={activeTrip.status === 'in_progress' ? 'End trip' : activeTrip.status === 'driver_arrived' ? 'Start trip' : 'Arrived at pickup'}
                     disabled={tripActionPending}
                   >
-                    {tripActionPending ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={styles.actionBtnText}>{activeTrip.status === 'in_progress' ? 'End' : activeTrip.status === 'driver_arrived' ? 'Start' : 'Arrived'}</Text>}
+                    {tripActionPending ? <ActivityIndicator size="small" color={activeTrip.status === 'driver_arriving' ? iosOverlayPalette.button.gold.color : '#FFF'} /> : <Text style={[styles.actionBtnText, { color: activeTrip.status === 'driver_arriving' ? iosOverlayPalette.button.gold.color : '#FFF' }]}>{activeTrip.status === 'in_progress' ? 'End' : activeTrip.status === 'driver_arrived' ? 'Start' : 'Arrived'}</Text>}
                   </TouchableOpacity>
                 )}
               </View>
@@ -1750,13 +1764,13 @@ export default function DriverHomeScreen() {
         {/* Keep the Driver's existing availability control visible while an
             assigned ride is being navigated. It is hidden only by the full
             incoming-offer card, never removed by the navigation experience. */}
-        {!incomingRide && <View style={[styles.onlineCard, dynamicStyles.card, Platform.OS === 'android' && androidLayoutStyles.onlineCard, Platform.OS === 'ios' && iosLayoutStyles.onlineCard]}>
+        {!incomingRide && <View style={[styles.onlineCard, dynamicStyles.card, Platform.OS === 'ios' && iosOverlayStyles.card, Platform.OS === 'android' && androidLayoutStyles.onlineCard, Platform.OS === 'ios' && iosLayoutStyles.onlineCard]}>
           <View style={[styles.onlineLeft, Platform.OS === 'android' && androidLayoutStyles.onlineLeft, Platform.OS === 'ios' && iosLayoutStyles.onlineLeft]}>
             <Animated.View style={[styles.onlineDot, { backgroundColor: isOnline ? GREEN : themeColors.muted, transform: [{ scale: isOnline ? pulseAnim : 1 }] }]} />
             <Text style={[styles.onlineStatus, dynamicStyles.text, Platform.OS === 'android' && androidLayoutStyles.onlineStatus, Platform.OS === 'ios' && iosLayoutStyles.onlineStatus]}>{isOnline ? (hasCurrentLocation ? 'You are Online' : 'Getting your location…') : 'You are Offline'}</Text>
           </View>
-          <TouchableOpacity
-            style={[styles.toggleBtn, { backgroundColor: isOnline ? RED : GREEN }, Platform.OS === 'android' && androidLayoutStyles.toggleBtn, Platform.OS === 'ios' && iosLayoutStyles.toggleBtn]}
+          <TouchableOpacity {...(Platform.OS === 'ios' ? { activeOpacity: 1 } : {})}
+            style={[styles.toggleBtn, { backgroundColor: isOnline ? RED : GREEN }, Platform.OS === 'android' && androidLayoutStyles.toggleBtn, Platform.OS === 'ios' && iosLayoutStyles.toggleBtn, Platform.OS === 'ios' && (isOnline ? iosOverlayStyles.danger : iosOverlayStyles.success)]}
             onPress={handleToggleOnline}
             disabled={togglingOnline}
           >
@@ -1801,7 +1815,7 @@ export default function DriverHomeScreen() {
             <Text style={[styles.sheetTitle, dynamicStyles.text]}>Verify pickup code</Text>
             <Text style={[styles.sheetText, dynamicStyles.muted]}>Ask the rider for the code in their HY3N app before starting this trip.</Text>
             <TextInput style={[styles.codeInput, { color: themeColors.text, borderColor: themeColors.border }]} value={pickupCode} onChangeText={setPickupCode} keyboardType="number-pad" maxLength={6} placeholder="Enter code" placeholderTextColor="#999" />
-            <TouchableOpacity style={[styles.sheetPrimary, { backgroundColor: GOLD }]} onPress={handleVerifyPickupCode}><Text style={styles.sheetPrimaryText}>Verify & start trip</Text></TouchableOpacity>
+            <TouchableOpacity style={[styles.sheetPrimary, { backgroundColor: GOLD }]} onPress={handleVerifyPickupCode}><Text style={styles.sheetPrimaryText}>{Platform.OS === 'ios' ? 'Verify & Start' : 'Verify & start trip'}</Text></TouchableOpacity>
             <TouchableOpacity style={styles.sheetSecondary} onPress={() => setShowOtp(false)}><Text style={[styles.sheetSecondaryText, dynamicStyles.text]}>Cancel</Text></TouchableOpacity>
           </View>
         </KeyboardAvoidingView>

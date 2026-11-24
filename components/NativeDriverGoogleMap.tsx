@@ -45,6 +45,7 @@ import { driverNavigationFeedMatchesTarget, driverNavigationRemainingMetrics } f
 import { normalizeDriverRouteTraffic } from '@/lib/driver-route-traffic';
 import { driverAndroidRouteMatchesTarget } from '@/lib/driver-android-route-target';
 import { driverIosRouteMatchesTarget } from '@/lib/driver-ios-route-target';
+import { useDriverIosOverlayPalette } from '@/hooks/use-driver-ios-overlay-palette';
 
 type MapTarget = { latitude: number; longitude: number; label: string; kind?: 'pickup' | 'destination' | 'stop' };
 type Props = {
@@ -212,6 +213,7 @@ function DriverNavigationSurface({
   isDark = false,
   navigationPaused = false,
 }: Props) {
+  const iosOverlayPalette = useDriverIosOverlayPalette(isDark);
   const {
     navigationController,
     removeAllListeners,
@@ -1414,11 +1416,13 @@ function DriverNavigationSurface({
             targetLabel={targetLabel}
             targetKind={target?.kind ?? (tripStatus === 'dropoff' ? 'destination' : 'pickup')}
             isDark={isDark}
+            {...(Platform.OS === 'ios' ? { reduceTransparencyEnabled: iosOverlayPalette.reduceTransparency } : {})}
           />
-          <TouchableOpacity style={[styles.followControl, { backgroundColor: isDark ? '#17212C' : '#FFFFFF' }]}
+          <TouchableOpacity style={[styles.followControl, { backgroundColor: isDark ? '#17212C' : '#FFFFFF' }, Platform.OS === 'ios' && { backgroundColor: iosOverlayPalette.panel }]}
+            {...(Platform.OS === 'ios' ? { activeOpacity: 1 } : {})}
             onPress={isFollowing ? pauseFollowing : recenter} accessibilityRole="button"
             accessibilityLabel={isFollowing ? 'Explore map' : 'Recenter navigation'}>
-            <Text style={[styles.followControlText, { color: isDark ? '#FFFFFF' : '#17212C' }]}>{isFollowing ? 'Explore map' : 'Recenter'}</Text>
+            <Text style={[styles.followControlText, { color: isDark ? '#FFFFFF' : '#17212C' }, Platform.OS === 'ios' && { color: iosOverlayPalette.foreground }]}>{isFollowing ? (Platform.OS === 'ios' ? 'Explore' : 'Explore map') : 'Recenter'}</Text>
           </TouchableOpacity>
         </View>
       )}

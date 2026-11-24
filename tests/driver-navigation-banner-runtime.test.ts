@@ -169,9 +169,9 @@ test('iOS compact hierarchy keeps full guidance beside a 32dp icon and reduces p
   assert.equal(root.props.testID, 'driver-navigation-banner');
   assert.equal(root.props.pointerEvents, 'none');
   assert.equal(root.props.onLayout, onLayout);
-  assert.deepEqual(flattenStyle(root.props.style), { borderRadius: 14, overflow: 'hidden', width: '100%' });
+  assert.deepEqual(flattenStyle(root.props.style), { borderRadius: 14, overflow: 'hidden', width: '100%', backgroundColor: 'rgba(6, 23, 42, 0.9)' });
   assert.deepEqual(flattenStyle(panel.props.style), {
-    backgroundColor: '#096B47', flexDirection: 'row', alignItems: 'center', minHeight: 64, padding: 10, gap: 8,
+    backgroundColor: 'transparent', flexDirection: 'row', alignItems: 'center', minHeight: 64, padding: 10, gap: 8,
   });
   assert.equal(panel.props.accessibilityLabel, 'Turn left onto Independence Avenue. in 85 m');
   assert.equal(flattenStyle(iconColumn.props.style).width, 40);
@@ -188,15 +188,90 @@ test('iOS compact hierarchy keeps full guidance beside a 32dp icon and reduces p
   assert.ok(columnTexts.every(node => node.props.numberOfLines === undefined), 'distance and full instruction wrap');
   const [, , , , summary, summaryMetrics] = hostNodes(renderer, 'view');
   assert.deepEqual(flattenStyle(summary.props.style), {
-    paddingHorizontal: 12, paddingVertical: 7, gap: 2, borderWidth: 1, borderTopWidth: 0,
-    backgroundColor: '#FFFFFF', borderColor: '#DBE2E8',
+    paddingHorizontal: 12, paddingVertical: 7, gap: 2, borderWidth: 0, borderTopWidth: 0,
+    backgroundColor: 'transparent', borderColor: 'transparent',
   });
   assert.deepEqual(flattenStyle(summaryMetrics.props.style), { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 10, rowGap: 2 });
   const summaryTexts = summary.findAllByType('text' as any);
   assert.deepEqual(summaryTexts.map(node => node.children.join('')), ['4 min', '1.4 km', '11:54 PM arrival', 'Drop-off · Independence Avenue']);
   assert.deepEqual(summaryTexts.map(node => flattenStyle(node.props.style).fontSize), [16, 12, 12, 11]);
-  assert.deepEqual(flattenStyle(summaryTexts[3].props.style), { fontSize: 11, lineHeight: 15, fontWeight: '600', includeFontPadding: false, color: '#526273' });
+  assert.deepEqual(flattenStyle(summaryTexts[3].props.style), { fontSize: 11, lineHeight: 15, fontWeight: '600', includeFontPadding: false, color: '#E2E8F0' });
   await unmount(renderer);
+});
+
+test('iOS uses one blue-black RGBA parent across themes and Reduce Transparency without fading content or changing layout/gestures', async () => {
+  let referenceTree: any;
+  for (const isDark of [false, true]) for (const reduceTransparencyEnabled of [undefined, false, true]) {
+    let observed: any;
+    const onLayout = (event: any) => { observed = event; };
+    const guidance = {
+      ...baseGuidance, maneuver: 'unknown', nativeManeuverName: 'DEPART',
+      instruction: 'Head toward Nmai Dzorn Papafio Hills Rd', roadName: 'Airport approach road',
+    };
+    const { renderer } = await renderBanner({ guidance, isDark, reduceTransparencyEnabled, targetLabel: longRoad, onLayout });
+    const views = hostNodes(renderer, 'view');
+    const [root, panel, , instructionColumn, summary] = views;
+    const alpha = reduceTransparencyEnabled ? 1 : isDark ? 0.7 : 0.9;
+    assert.equal(views.length, 6, 'retain the existing host view hierarchy');
+    assert.equal(root.children.length, 2, 'instruction and summary share the same existing parent');
+    assert.deepEqual(flattenStyle(root.props.style), {
+      borderRadius: 14, overflow: 'hidden', width: '100%', backgroundColor: `rgba(6, 23, 42, ${alpha})`,
+    });
+    assert.equal(flattenStyle(panel.props.style).backgroundColor, 'transparent', 'last override removes light/dark instruction tint');
+    assert.equal(flattenStyle(summary.props.style).backgroundColor, 'transparent', 'no separate summary tint');
+    assert.equal(flattenStyle(summary.props.style).borderWidth, 0, 'no doubled seam');
+    assert.equal(flattenStyle(summary.props.style).borderColor, 'transparent');
+    assert.deepEqual(views.filter(node => {
+      const background = flattenStyle(node.props.style).backgroundColor;
+      return background && background !== 'transparent';
+    }), [root], 'only the parent paints a background');
+    for (const node of views) {
+      const style = flattenStyle(node.props.style);
+      assert.equal(style.opacity, undefined, 'transparency belongs to background alpha, never the view/content');
+      assert.equal(style.height, undefined);
+      assert.equal(style.maxHeight, undefined);
+      assert.equal(node.props.pointerEvents, node === root ? 'none' : undefined);
+      assert.ok(!Object.keys(node.props).some(key => /^(on(?:Touch|Pointer|Responder|Gesture)|on(?:Start|Move)ShouldSetResponder)/.test(key)), 'banner does not claim gestures');
+    }
+    assert.equal(root.props.onLayout, onLayout);
+    const event = { nativeEvent: { layout: { x: 0, y: 0, width: 320, height: 192 } } };
+    root.props.onLayout(event);
+    assert.equal(observed, event, 'native measured layout is forwarded unchanged in every transparency mode');
+    const icon = renderer.root.findByType('icon' as any);
+    assert.equal(icon.props.name, 'navigation');
+    assert.equal(icon.props.size, 32);
+    assert.equal(icon.props.color, '#FFFFFF', 'the arrow stays solid white');
+    const instructionTexts = instructionColumn.findAllByType('text' as any);
+    assert.deepEqual(instructionTexts.map(node => node.children.join('')), ['85 m', guidance.instruction, guidance.roadName]);
+    assert.ok(instructionTexts.every(node => flattenStyle(node.props.style).color === '#FFFFFF'), 'heading, turn distance, and road remain solid white');
+    const summaryTexts = summary.findAllByType('text' as any);
+    assert.deepEqual(summaryTexts.map(node => flattenStyle(node.props.style).color), ['#88F2C3', '#FFFFFF', '#FFFFFF', '#E2E8F0']);
+    assert.equal(panel.props.accessibilityLabel, `${guidance.instruction}. in 85 m. ${guidance.roadName}`);
+    for (const node of hostNodes(renderer, 'text')) {
+      assert.equal(flattenStyle(node.props.style).opacity, undefined);
+      assert.equal(node.props.numberOfLines, undefined);
+      assert.equal(node.props.ellipsizeMode, undefined);
+      assert.equal(node.props.adjustsFontSizeToFit, undefined);
+      assert.notEqual(node.props.allowFontScaling, false);
+      assert.equal(node.props.maxFontSizeMultiplier, undefined);
+    }
+    const normalizedTree = treeWithoutFunctions(renderer.toJSON());
+    normalizedTree.props.style.backgroundColor = 'same parent background';
+    if (!referenceTree) referenceTree = normalizedTree;
+    else assert.deepEqual(normalizedTree, referenceTree, 'only parent RGBA alpha changes across themes and transparency modes');
+    await unmount(renderer);
+  }
+});
+
+test('Reduce Transparency prop leaves Android and web host trees identical to the baseline in both themes', async () => {
+  for (const platform of ['android', 'web'] as const) for (const isDark of [false, true]) for (const reduceTransparencyEnabled of [false, true]) {
+    const props = { isDark, reduceTransparencyEnabled, guidance: { ...baseGuidance, roadName: longRoad } };
+    const actual = await renderBanner(props, platform);
+    const original = await renderBanner(props, platform, true);
+    assert.deepEqual(treeWithoutFunctions(actual.renderer.toJSON()), treeWithoutFunctions(original.renderer.toJSON()), `${platform} dark=${isDark} reduceTransparency=${reduceTransparencyEnabled}`);
+    assert.equal(hostNodes(actual.renderer, 'view')[0].props.onLayout, actual.onLayout);
+    await unmount(actual.renderer, original.renderer);
+  }
 });
 
 test('iOS long provider text and distance have no clipping limit or fixed height and layout events pass through untouched', async () => {
@@ -220,7 +295,7 @@ test('iOS long provider text and distance have no clipping limit or fixed height
   assert.match(texts[0].children.join(''), /km$/);
   assert.equal(texts[1].children.join(''), longInstruction);
   assert.equal(texts[2].children.join(''), longRoad);
-  assert.deepEqual(flattenStyle(texts[2].props.style), { color: '#E6F5ED', fontSize: 13, lineHeight: 18, fontWeight: '600', includeFontPadding: false });
+  assert.deepEqual(flattenStyle(texts[2].props.style), { color: '#FFFFFF', fontSize: 13, lineHeight: 18, fontWeight: '600', includeFontPadding: false });
   for (const node of hostNodes(renderer, 'view')) {
     assert.equal(flattenStyle(node.props.style).height, undefined);
     assert.equal(flattenStyle(node.props.style).maxHeight, undefined);
@@ -259,7 +334,7 @@ test('iOS states and light/dark targets retain provider gating and real summary 
     const instruction = !state.message && state.guidance?.navState === 'enroute' ? state.guidance.instruction : null;
     const stateMessage = state.message || (state.guidance?.navState === 'rerouting' ? 'Recalculating your route…' : 'Waiting for live turn instructions…');
     const [, panel, iconColumn, instructionColumn, summary] = hostNodes(actual.renderer, 'view');
-    assert.equal(flattenStyle(panel.props.style).backgroundColor, isDark ? '#064D36' : '#096B47');
+    assert.equal(flattenStyle(panel.props.style).backgroundColor, 'transparent');
     assert.equal(flattenStyle(panel.props.style).minHeight, 64);
     assert.equal(flattenStyle(panel.props.style).padding, 10);
     assert.equal(flattenStyle(iconColumn.props.style).width, 40);
@@ -282,13 +357,13 @@ test('iOS states and light/dark targets retain provider gating and real summary 
     assert.equal(panel.props.accessibilityLabel, [instruction || stateMessage, hasDistance && `in ${turnDistance}`, expectedRoad && state.guidance?.roadName].filter(Boolean).join('. '), 'full instruction stays accessible without a duplicate/stale road');
     const originalSummary = hostNodes(original.renderer, 'view')[4];
     assert.deepEqual(summary.findAllByType('text' as any).map(node => node.children.join('')), originalSummary.findAllByType('text' as any).map(node => node.children.join('')), 'summary values and target text remain identical, not their superseded styles');
-    assert.equal(flattenStyle(summary.props.style).backgroundColor, isDark ? '#17212C' : '#FFFFFF');
-    assert.equal(flattenStyle(summary.props.style).borderColor, isDark ? '#304151' : '#DBE2E8');
+    assert.equal(flattenStyle(summary.props.style).backgroundColor, 'transparent');
+    assert.equal(flattenStyle(summary.props.style).borderColor, 'transparent');
     assert.equal(flattenStyle(summary.props.style).paddingVertical, 7);
     const summaryTexts = summary.findAllByType('text' as any);
-    assert.equal(flattenStyle(summaryTexts[0].props.style).color, isDark ? '#65DBAB' : '#087B4C');
-    for (const node of summaryTexts.slice(1, -1)) assert.equal(flattenStyle(node.props.style).color, isDark ? '#ECF1F5' : '#23313F');
-    assert.equal(flattenStyle(summaryTexts[summaryTexts.length - 1].props.style).color, isDark ? '#B9C7D4' : '#526273');
+    assert.equal(flattenStyle(summaryTexts[0].props.style).color, '#88F2C3');
+    for (const node of summaryTexts.slice(1, -1)) assert.equal(flattenStyle(node.props.style).color, '#FFFFFF');
+    assert.equal(flattenStyle(summaryTexts[summaryTexts.length - 1].props.style).color, '#E2E8F0');
     assert.equal(summaryTexts[summaryTexts.length - 1].children.join(''), `${targetType} · ${longRoad}`);
     assert.ok(summaryTexts.every(node => node.props.numberOfLines === undefined), 'compact metrics and target can wrap at large text sizes');
     await unmount(actual.renderer, original.renderer);
@@ -507,7 +582,7 @@ test('iOS and Android retain shared provider/summary text while web keeps its or
     const instructionTexts = hostNodes(renderer, 'view')[3].findAllByType('text' as any);
     assert.ok(instructionTexts.every(node => node.props.numberOfLines === undefined));
     assert.equal(hostNodes(renderer, 'view')[0].props.pointerEvents, 'none');
-    assert.equal(flattenStyle(hostNodes(renderer, 'view')[1].props.style).backgroundColor, '#064D36');
+    assert.equal(flattenStyle(hostNodes(renderer, 'view')[1].props.style).backgroundColor, renderer === ios.renderer ? 'transparent' : '#064D36');
   }
   const webViews = hostNodes(web.renderer, 'view');
   assert.equal(flattenStyle(webViews[2].props.style).width, 78);

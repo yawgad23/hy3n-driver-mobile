@@ -7,6 +7,7 @@ import {
   formatNavigationArrivalTime,
   type DriverGuidance,
 } from '@/lib/driver-navigation-guidance';
+import { createTranslucentPalette } from '@/lib/driver-ios-overlay-theme';
 
 type Props = {
   guidance: DriverGuidance | null;
@@ -16,6 +17,7 @@ type Props = {
   targetLabel: string;
   targetKind: 'pickup' | 'destination' | 'stop';
   isDark: boolean;
+  reduceTransparencyEnabled?: boolean;
   onLayout?: (event: any) => void;
 };
 
@@ -138,11 +140,12 @@ function AndroidDriverNavigationBanner({
 /** Render only provider guidance. A preparation/error message is not a turn. */
 function OriginalDriverNavigationBanner({
   guidance, message, remainingDistanceMeters, remainingTimeSeconds,
-  targetLabel, targetKind, isDark, onLayout,
+  targetLabel, targetKind, isDark, onLayout, reduceTransparencyEnabled = false,
 }: Props) {
   const instruction = !message && guidance?.navState === 'enroute' ? guidance.instruction : null;
   const distance = instruction ? formatNavigationDistance(guidance?.distanceToManeuverMeters ?? null) : null;
   const isIos = Platform.OS === 'ios';
+  const iosPalette = isIos ? createTranslucentPalette(isDark ? 'dark' : 'light', reduceTransparencyEnabled) : undefined;
   const icon = isIos ? iosManeuverIcon(guidance, instruction) : instruction ? maneuverIcon(guidance) : 'navigation';
   const roadName = isIos ? iosRoadName(instruction, guidance?.roadName) : guidance?.roadName;
   const duration = formatNavigationDuration(remainingTimeSeconds);
@@ -152,27 +155,27 @@ function OriginalDriverNavigationBanner({
   const targetType = targetKind === 'pickup' ? 'Pickup' : targetKind === 'stop' ? 'Next stop' : 'Drop-off';
 
   return (
-    <View testID="driver-navigation-banner" onLayout={onLayout} style={isIos ? [styles.container, iosStyles.container] : styles.container} pointerEvents="none">
-      <View style={[styles.instructionPanel, isIos && iosStyles.instructionPanel, isDark && styles.darkInstructionPanel]} accessibilityLabel={[instruction || stateMessage, distance && `in ${distance}`, roadName].filter(Boolean).join('. ')}>
+    <View testID="driver-navigation-banner" onLayout={onLayout} style={isIos ? [styles.container, iosStyles.container, { backgroundColor: iosPalette?.banner }] : styles.container} pointerEvents="none">
+      <View style={[styles.instructionPanel, isIos && iosStyles.instructionPanel, isDark && styles.darkInstructionPanel, ...(iosPalette ? [{ backgroundColor: 'transparent' }] : [])]} accessibilityLabel={[instruction || stateMessage, distance && `in ${distance}`, roadName].filter(Boolean).join('. ')}>
         <View style={isIos ? [styles.iconColumn, iosStyles.iconColumn] : styles.iconColumn}>
-          <MaterialIcons name={icon} size={isIos ? 32 : 48} color="#FFFFFF" />
+          <MaterialIcons name={icon} size={isIos ? 32 : 48} color={iosPalette?.bannerForeground ?? '#FFFFFF'} />
           {!isIos && distance ? <Text style={styles.turnDistance} numberOfLines={1}>{distance}</Text> : null}
         </View>
         <View style={isIos ? [styles.instructionColumn, iosStyles.instructionColumn] : styles.instructionColumn}>
-          {isIos && distance ? <Text style={[styles.turnDistance, iosStyles.turnDistance]}>{distance}</Text> : null}
-          <Text style={isIos ? [styles.instruction, iosStyles.instruction] : styles.instruction} numberOfLines={isIos ? undefined : 2}>{instruction || stateMessage}</Text>
+          {isIos && distance ? <Text style={[styles.turnDistance, iosStyles.turnDistance, { color: iosPalette?.bannerForeground }]}>{distance}</Text> : null}
+          <Text style={isIos ? [styles.instruction, iosStyles.instruction, { color: iosPalette?.bannerForeground }] : styles.instruction} numberOfLines={isIos ? undefined : 2}>{instruction || stateMessage}</Text>
           {instruction && roadName && roadName !== instruction ? (
-            <Text style={isIos ? [styles.roadName, iosStyles.roadName] : styles.roadName} numberOfLines={isIos ? undefined : 1}>{roadName}</Text>
+            <Text style={isIos ? [styles.roadName, iosStyles.roadName, { color: iosPalette?.bannerForeground }] : styles.roadName} numberOfLines={isIos ? undefined : 1}>{roadName}</Text>
           ) : null}
         </View>
       </View>
-      <View style={[styles.summary, isIos && iosStyles.summary, { backgroundColor: isDark ? '#17212C' : '#FFFFFF', borderColor: isDark ? '#304151' : '#DBE2E8' }]}>
+      <View style={[styles.summary, isIos && iosStyles.summary, { backgroundColor: isDark ? '#17212C' : '#FFFFFF', borderColor: isDark ? '#304151' : '#DBE2E8' }, ...(iosPalette ? [{ backgroundColor: 'transparent', borderWidth: 0, borderColor: 'transparent' }] : [])]}>
         <View style={isIos ? [styles.summaryMetrics, iosStyles.summaryMetrics] : styles.summaryMetrics}>
-          <Text style={[styles.summaryPrimary, isIos && iosStyles.summaryPrimary, { color: isDark ? '#65DBAB' : '#087B4C' }]}>{duration || 'ETA updating'}</Text>
-          {remaining ? <Text style={[styles.summarySecondary, isIos && iosStyles.summarySecondary, { color: isDark ? '#ECF1F5' : '#23313F' }]}>{remaining}</Text> : null}
-          {arrival ? <Text style={[styles.summarySecondary, isIos && iosStyles.summarySecondary, { color: isDark ? '#ECF1F5' : '#23313F' }]}>{arrival} arrival</Text> : null}
+          <Text style={[styles.summaryPrimary, isIos && iosStyles.summaryPrimary, { color: iosPalette?.metric ?? (isDark ? '#65DBAB' : '#087B4C') }]}>{duration || 'ETA updating'}</Text>
+          {remaining ? <Text style={[styles.summarySecondary, isIos && iosStyles.summarySecondary, { color: iosPalette?.bannerForeground ?? (isDark ? '#ECF1F5' : '#23313F') }]}>{remaining}</Text> : null}
+          {arrival ? <Text style={[styles.summarySecondary, isIos && iosStyles.summarySecondary, { color: iosPalette?.bannerForeground ?? (isDark ? '#ECF1F5' : '#23313F') }]}>{arrival} arrival</Text> : null}
         </View>
-        <Text style={[styles.target, isIos && iosStyles.target, { color: isDark ? '#B9C7D4' : '#526273' }]} numberOfLines={isIos ? undefined : 1}>{targetType} · {targetLabel}</Text>
+        <Text style={[styles.target, isIos && iosStyles.target, { color: iosPalette?.bannerSecondary ?? (isDark ? '#B9C7D4' : '#526273') }]} numberOfLines={isIos ? undefined : 1}>{targetType} · {targetLabel}</Text>
       </View>
     </View>
   );
