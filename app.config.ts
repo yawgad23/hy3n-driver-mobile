@@ -61,9 +61,9 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // 125 ports eligible-offer audio recovery, verified snapped-road routes and
-    // clearer turn guidance, retaining the working iPhone map and lower controls.
-    buildNumber: buildPlatform === "ios" ? "125" : "124",
+    // 126 adds compact controls, closer active-trip framing and system-following
+    // translucent overlays with solid Reduce Transparency fallbacks.
+    buildNumber: buildPlatform === "ios" ? "126" : "124",
     jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     infoPlist: {

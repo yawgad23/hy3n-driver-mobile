@@ -28,10 +28,10 @@ function config(source: string, platform?: string, keys: Record<string, string> 
 
 const ios = config(current('app.config.ts'), 'ios');
 
-test('Driver iOS release is explicitly 1.0.3 (125) for the correct app', () => {
+test('Driver iOS release is explicitly 1.0.3 (126) for the correct app', () => {
   assert.equal(ios.name, 'HY3N Driver');
   assert.equal(ios.version, '1.0.3');
-  assert.equal(ios.ios.buildNumber, '125');
+  assert.equal(ios.ios.buildNumber, '126');
   assert.equal(ios.ios.bundleIdentifier, 'com.hy3n.driver');
   assert.equal(ios.extra.eas.projectId, 'd19afe45-8e3d-42f9-ad5e-70b12b2c2ce9');
   assert.equal(ios.owner, 'yawgad');
@@ -50,7 +50,7 @@ test('unspecified and web config remain identical to the preserved source', () =
 test('the only iOS configuration changes are marketing version and build number', () => {
   const expected = config(previous('app.config.ts'), 'ios');
   expected.version = '1.0.3';
-  expected.ios.buildNumber = '125';
+  expected.ios.buildNumber = '126';
   assert.deepEqual(ios, expected);
 });
 
