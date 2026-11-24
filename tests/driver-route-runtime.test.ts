@@ -15,7 +15,7 @@ const corner = { lat: 5.704, lng: -0.1 };
 const destination = { lat: 5.704, lng: -0.096 };
 const road = [origin, corner, destination];
 
-async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng }, platform: 'ios' | 'android' = 'ios', options: { manualMapReady?: boolean; manualController?: boolean } = {}) {
+async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng }, platform: 'ios' | 'android' = 'ios', options: { manualMapReady?: boolean; manualController?: boolean; initialProps?: Record<string, unknown> } = {}) {
   let segments = road;
   let currentSegments: typeof road | null = null;
   let currentTraffic: any = undefined;
@@ -133,7 +133,7 @@ async function mountMap(initial = { latitude: origin.lat, longitude: origin.lng 
   );
   const Component = module.exports.default;
   let props: any = { ...initial, locationTimestamp: Date.now(), locationAccuracy: 5, heading: 0,
-    target: { latitude: destination.lat, longitude: destination.lng, label: 'Drop-off' }, tripStatus: 'dropoff' };
+    target: { latitude: destination.lat, longitude: destination.lng, label: 'Drop-off' }, tripStatus: 'dropoff', ...options.initialProps };
   let tree: ReactTestRenderer;
   const flush = async () => { for (let i = 0; i < 15; i++) await Promise.resolve(); };
   await act(async () => { tree = create(React.createElement(Component, props)); await flush(); });
@@ -289,7 +289,7 @@ for (const platform of ['ios', 'android'] as const) {
     try {
       assert.ok(map.cameraCalls.length > 0, 'active navigation starts in following mode');
       assert.equal(map.cameraCalls.at(-1).tilt, 45);
-      assert.equal(map.cameraCalls.at(-1).zoom, 17.2);
+      assert.equal(map.cameraCalls.at(-1).zoom, platform === 'ios' ? 18 : 17.2);
       const followingCalls = map.cameraCalls.length;
       await act(async () => { await clock.tickAsync(150); });
       await map.update({ latitude: 5.701, locationTimestamp: 2 });
@@ -313,6 +313,83 @@ for (const platform of ['ios', 'android'] as const) {
     } finally { await map.dispose(); clock.uninstall(); }
   });
 }
+
+test('iOS Start switches from an explored pickup view to close car-following even when pickup/drop-off coordinates match', async () => {
+  const map = await mountMap(undefined, 'ios', { initialProps: { tripStatus: 'pickup', navigationId: 'same-server-ride' } });
+  try {
+    assert.equal(map.cameraCalls.at(-1).zoom, 17.2, 'pickup camera is unchanged');
+    assert.equal(map.mapProps().initialCameraPosition.zoom, 17);
+    await map.press('Explore map');
+    const beforeStart = map.cameraCalls.length;
+    await map.update({ navigationPaused: true });
+    await map.update({ tripStatus: 'dropoff', navigationPaused: false });
+    assert.ok(map.cameraCalls.length > beforeStart, 'confirmed Start transition restores following without another GPS sample');
+    assert.equal(map.cameraCalls.at(-1).zoom, 18);
+    assert.equal(map.cameraCalls.at(-1).tilt, 45);
+    assert.ok(map.cameraCalls.at(-1).target.lat > origin.lat, 'car sits behind the forward route target');
+    assert.match(map.rendered(), /Explore map/);
+    assert.equal(map.destinationCalls.length, 2, 'one original pickup destination and one Start destination');
+    assert.deepEqual(map.destinationCalls.at(-1).position, destination, 'server destination remains authoritative');
+    assert.equal(map.mapProps().myLocationEnabled, false, 'preserve the realistic HY3N vehicle rather than a Google blue dot');
+  } finally { await map.dispose(); }
+});
+
+test('iOS camera adapts to the real overlay-free map while layout changes do not cancel in-flight navigation', async () => {
+  const map = await mountMap();
+  let finishDestination!: (value: number) => void;
+  try {
+    map.setDestinationHandler(() => new Promise(resolve => { finishDestination = resolve; }));
+    await map.update({ navigationId: 'pending-server-trip' });
+    const routeRequests = map.destinationCalls.length;
+    assert.equal(typeof finishDestination, 'function');
+    const oldTarget = map.cameraCalls.at(-1).target.lat;
+    await map.update({ navigationTopInset: 300, navigationBottomInset: 200 });
+    await act(async () => {
+      const surface = map.surfaceProps();
+      assert.ok(surface);
+      surface.onLayout({ nativeEvent: { layout: { height: 620, width: 390 } } });
+    });
+    assert.equal(map.destinationCalls.length, routeRequests, 'padding/viewport changes never requeue setDestination');
+    assert.equal(map.cameraCalls.at(-1).zoom, 18);
+    assert.ok(map.cameraCalls.at(-1).target.lat < oldTarget, 'shorter free viewport reduces forward offset instead of losing the car below controls');
+    finishDestination(0);
+    await map.flush();
+    assert.equal(map.destinationCalls.length, routeRequests);
+    assert.ok(map.polylines.has('hy3n-driver-route'), 'the original pending destination setup still completes');
+    await map.press('Explore map');
+    const pausedWrites = map.cameraCalls.length;
+    await map.update({ navigationTopInset: 100, navigationBottomInset: 60 });
+    await act(async () => {
+      const surface = map.surfaceProps();
+      assert.ok(surface);
+      surface.onLayout({ nativeEvent: { layout: { height: 844, width: 390 } } });
+    });
+    assert.equal(map.cameraCalls.length, pausedWrites, 'layout changes cannot override deliberate exploration');
+    await map.press('Recenter navigation');
+    assert.ok(map.cameraCalls.length > pausedWrites);
+    assert.equal(map.cameraCalls.at(-1).zoom, 18, 'Recenter uses the close driving view');
+  } finally { await map.dispose(); }
+});
+
+test('Android camera stays at its released zoom across Start and layout changes', async () => {
+  const map = await mountMap(undefined, 'android', { initialProps: { tripStatus: 'pickup', navigationId: 'android-ride' } });
+  try {
+    assert.equal(map.cameraCalls.at(-1).zoom, 17.2);
+    await map.update({ tripStatus: 'dropoff' });
+    assert.equal(map.cameraCalls.at(-1).zoom, 17.2);
+    const writes = map.cameraCalls.length;
+    const destinations = map.destinationCalls.length;
+    await map.update({ navigationTopInset: 300, navigationBottomInset: 200 });
+    await act(async () => {
+      const surface = map.surfaceProps();
+      assert.ok(surface);
+      surface.onLayout({ nativeEvent: { layout: { height: 620, width: 390 } } });
+    });
+    assert.equal(map.cameraCalls.length, writes, 'iOS camera refresh effect must not write Android cameras');
+    assert.equal(map.destinationCalls.length, destinations);
+    assert.equal(map.mapProps().initialCameraPosition.zoom, 17);
+  } finally { await map.dispose(); }
+});
 
 test('real Driver component erases the passed road after a new GPS sample', async () => {
   const map = await mountMap();

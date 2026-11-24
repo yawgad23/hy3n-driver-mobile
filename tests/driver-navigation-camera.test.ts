@@ -22,6 +22,57 @@ test('following camera looks ahead along the road at a stable navigation zoom', 
   assert.equal(east.camera.zoom, north.camera.zoom, 'heading may not pump the zoom');
 });
 
+test('opt-in driving camera zooms closer while keeping the car behind its forward road target', () => {
+  const options = { closeDrivingView: true, usableViewportHeight: 400 };
+  for (const heading of [0, 90, 180, 270, 359]) {
+    const point = { ...position, heading };
+    const sample = driverNavigationCamera(point, null, 1_000, false, options)!;
+    assert.equal(sample.camera.zoom, 18);
+    assert.equal(sample.camera.tilt, 45);
+    assert.equal(sample.camera.bearing, heading);
+    const ahead = distanceBetweenPositionsMetres(point, { latitude: sample.camera.target.lat, longitude: sample.camera.target.lng, heading });
+    assert.ok(ahead > 0 && ahead <= 36, 'nearby road detail, not a whole-trip bounding box');
+    const repeat = driverNavigationCamera({ ...point, latitude: point.latitude + 0.001 }, sample, 2_000, false, options)!;
+    assert.equal(repeat.camera.zoom, 18, 'movement/heading never pump the close driving zoom');
+  }
+  const original = driverNavigationCamera(position, null, 1_000)!;
+  assert.equal(original.camera.zoom, 17.2, 'default/Android and pickup policy is preserved');
+  assert.deepEqual(driverNavigationCamera(position, null, 1_000, false, { closeDrivingView: false, usableViewportHeight: 50 }), original);
+});
+
+test('close camera bounds look-ahead by the actual usable map height and remains finite worldwide', () => {
+  for (const latitude of [0, 5.7, 50, 80, 85, 90, -90]) for (const usableViewportHeight of [0, 40, 100, 160, 400]) {
+    const point = { latitude, longitude: 179.99999, heading: 90 };
+    const sample = driverNavigationCamera(point, null, 1_000, false, { closeDrivingView: true, usableViewportHeight })!;
+    assert.ok(Number.isFinite(sample.camera.target.lat) && Number.isFinite(sample.camera.target.lng));
+    assert.ok(Math.abs(sample.camera.target.lat) <= 90);
+    assert.ok(sample.camera.target.lng >= -180 && sample.camera.target.lng < 180);
+    assert.equal(sample.camera.zoom, 18);
+    const ahead = distanceBetweenPositionsMetres(point, { latitude: sample.camera.target.lat, longitude: sample.camera.target.lng, heading: 90 });
+    const mercatorLatitude = Math.max(-85.05112878, Math.min(85.05112878, latitude));
+    const metersPerPoint = 156543.03392 * Math.cos(mercatorLatitude * Math.PI / 180) / 2 ** 18;
+    assert.ok(ahead <= Math.min(35, usableViewportHeight * 0.18 * metersPerPoint) + 0.2, 'car offset fits inside the overlay-free viewport budget');
+  }
+  for (const height of [undefined, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    const sample = driverNavigationCamera(position, null, 1_000, false, { closeDrivingView: true, usableViewportHeight: height })!;
+    assert.ok(Number.isFinite(sample.camera.target.lat) && Number.isFinite(sample.camera.target.lng));
+    assert.equal(sample.camera.zoom, 18);
+  }
+});
+
+test('close camera retains parked-bearing stabilization and jitter throttling; explicit recenter can apply new framing', () => {
+  const options = { closeDrivingView: true, usableViewportHeight: 400 };
+  const point = { ...position, heading: 90 };
+  const first = driverNavigationCamera(point, null, 1_000, false, options)!;
+  assert.equal(driverNavigationCamera({ ...point, heading: 270 }, first, 2_000, false, options), null);
+  assert.equal(driverNavigationCamera({ ...point, latitude: point.latitude + 0.001 }, first, 1_099, false, options), null);
+  const resized = driverNavigationCamera({ ...point, heading: 270 }, first, 2_000, true, { ...options, usableViewportHeight: 160 })!;
+  assert.equal(resized.camera.bearing, 90, 'layout changes must not rotate a parked car');
+  assert.equal(resized.camera.zoom, 18);
+  const distance = (sample: typeof first) => distanceBetweenPositionsMetres(point, { latitude: sample.camera.target.lat, longitude: sample.camera.target.lng, heading: 90 });
+  assert.ok(distance(resized) < distance(first), 'shorter visible map uses a shorter forward offset');
+});
+
 test('following camera suppresses GPS jitter and throttles rapid updates', () => {
   const first = driverNavigationCamera(position, null, 1_000)!;
   assert.equal(driverNavigationCamera({ ...position, latitude: position.latitude + 0.000001 }, first, 2_000), null);

@@ -40,7 +40,7 @@ import { validateDriverNavigationArrival } from '@/lib/driver-navigation-arrival
 
 import { DriverNavigationBanner } from './DriverNavigationBanner';
 import { normalizeDriverGuidanceEvents, type DriverGuidance } from '@/lib/driver-navigation-guidance';
-import { driverNavigationCamera, driverNavigationMapPadding, type DriverFollowCameraSample } from '@/lib/driver-navigation-camera';
+import { driverNavigationCamera, driverNavigationMapPadding, type DriverFollowCameraSample, type DriverNavigationCameraOptions } from '@/lib/driver-navigation-camera';
 import { driverNavigationFeedMatchesTarget, driverNavigationRemainingMetrics } from '@/lib/driver-navigation-feed';
 import { normalizeDriverRouteTraffic } from '@/lib/driver-route-traffic';
 import { driverAndroidRouteMatchesTarget } from '@/lib/driver-android-route-target';
@@ -242,6 +242,7 @@ function DriverNavigationSurface({
   const [isFollowing, setIsFollowing] = useState(true);
   const followingRef = useRef(true);
   const cameraSampleRef = useRef<DriverFollowCameraSample | null>(null);
+  const cameraOptionsRef = useRef<DriverNavigationCameraOptions>({});
   const cameraControllerRef = useRef<MapViewController | null>(null);
   cameraControllerRef.current = mapViewController;
   const pendingCameraRef = useRef<{ sample: DriverFollowCameraSample; controller: MapViewController; targetKey: string; request: number } | null>(null);
@@ -290,6 +291,7 @@ function DriverNavigationSurface({
   const targetLongitude = Number(target?.longitude);
   const targetLabel = target?.label?.trim() || (tripStatus === 'dropoff' ? 'Drop-off' : 'Pickup');
   const hasTarget = hasPoint(targetLatitude, targetLongitude);
+  const closeDrivingView = Platform.OS === 'ios' && hasTarget && tripStatus === 'dropoff' && !navigationPaused;
   const targetKey = hasTarget
     ? `${navigationId || 'trip'}:${tripStatus || 'target'}:${target?.kind || 'target'}:${targetLatitude.toFixed(6)}:${targetLongitude.toFixed(6)}:${targetLabel}`
     : null;
@@ -340,7 +342,7 @@ function DriverNavigationSurface({
 
   const updateFollowingCamera = useCallback((position: DriverMapPosition, force = false) => {
     if (!mapViewController || !activeTargetRef.current || !followingRef.current) return;
-    const next = driverNavigationCamera(position, cameraSampleRef.current, Date.now(), force);
+    const next = driverNavigationCamera(position, cameraSampleRef.current, Date.now(), force, cameraOptionsRef.current);
     if (!next) return;
     cameraSampleRef.current = next;
     pendingCameraRef.current = { sample: next, controller: mapViewController, targetKey: activeTargetRef.current.key, request: navigationRequestRef.current };
@@ -378,6 +380,12 @@ function DriverNavigationSurface({
     hasTarget ? navigationTopInset + bannerHeight + 12 : navigationTopInset,
     navigationBottomInset, viewportHeight, Platform.OS === 'android' ? (PixelRatio?.get?.() ?? 1) : 1,
   ), [bannerHeight, hasTarget, navigationBottomInset, navigationTopInset, viewportHeight]);
+  // Read the latest framing through a ref: layout/GPS renders must not change
+  // the camera callback's identity and cancel an in-flight destination setup.
+  cameraOptionsRef.current = {
+    closeDrivingView,
+    usableViewportHeight: Math.max(0, viewportHeight - mapPadding.top - mapPadding.bottom),
+  };
 
   const runNavigationWork = useCallback((operation: () => Promise<void>) => {
     const work = navigationWorkRef.current.then(operation);
@@ -1328,6 +1336,15 @@ function DriverNavigationSurface({
     return () => { cancelled = true; };
   }, [androidMapReady, clearGuidance, clearRoute, clearRouteRefresh, diagnostics, drawNavigationRoute, hasDeviceLocation, hasTarget, mapViewController, navigationController, navigationPaused, refreshRemainingMetrics, runNavigationWork, targetKey, targetLabel, targetLatitude, targetLongitude, updateFollowingCamera]);
 
+  // Start/resume already restores following in the target lifecycle above.
+  // This camera-only refresh also adapts stationary framing after a banner or
+  // dock resize; it never resets destinations or overrides Explore map.
+  useEffect(() => {
+    if (!closeDrivingView || !followingRef.current || !vehiclePositionRef.current) return;
+    pendingCameraRef.current = null;
+    updateFollowingCamera(vehiclePositionRef.current, true);
+  }, [closeDrivingView, mapPadding.top, mapPadding.bottom, updateFollowingCamera, viewportHeight]);
+
   const visibleGuidance = !navigationPaused && guidance?.targetKey === targetKey ? guidance.data : null;
   const visibleMetrics = !navigationPaused && nativeMetrics?.targetKey === targetKey ? nativeMetrics : null;
   const visibleDistance = visibleMetrics?.meters ?? (lastTargetKeyRef.current === targetKey && !navigationPaused ? remainingDistanceMeters : null);
@@ -1352,7 +1369,7 @@ function DriverNavigationSurface({
           style={StyleSheet.absoluteFill}
           initialCameraPosition={{
             target: { lat: Number(latitude), lng: Number(longitude) },
-            zoom: hasTarget ? 17 : 16,
+            zoom: closeDrivingView ? 18 : hasTarget ? 17 : 16,
             bearing: Number(heading) || 0,
             tilt: hasTarget ? 45 : 0,
           }}
