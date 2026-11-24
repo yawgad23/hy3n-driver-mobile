@@ -24,6 +24,7 @@ import {
 } from 'firebase/auth';
 import { Platform } from 'react-native';
 import { getApiBaseUrl } from '@/constants/oauth';
+import { parseDriverDocumentManifest, type DriverDocumentManifest } from './driver-document-manifest';
 // getReactNativePersistence is only available on native — import conditionally
 let AsyncStorage: any = null;
 let getReactNativePersistence: any = null;
@@ -285,6 +286,26 @@ export const firebaseAuth = {
       throw new Error(payload?.message || 'Your Driver profile could not be loaded right now. Please try again.');
     }
     return payload.profile;
+  },
+
+  async getDriverDocumentManifest(signal?: AbortSignal): Promise<DriverDocumentManifest> {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('Sign in again to verify your saved documents.');
+    const uid = currentUser.uid;
+    const apiBaseUrl = getApiBaseUrl();
+    if (!apiBaseUrl) throw new Error('Document verification is temporarily unavailable. Please retry.');
+    const token = await currentUser.getIdToken(true);
+    if (auth.currentUser?.uid !== uid) throw new Error('The Driver account changed.');
+    const response = await fetch(`${apiBaseUrl}/api/account/profile/driver/documents`, {
+      method: 'GET', signal,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const payload = await response.json().catch(() => null);
+    if (auth.currentUser?.uid !== uid) throw new Error('The Driver account changed.');
+    if (!response.ok || payload?.success !== true) {
+      throw new Error(payload?.message || 'Your saved documents could not be verified. Please retry.');
+    }
+    return parseDriverDocumentManifest(payload.manifest, uid);
   },
 
   async logout() {

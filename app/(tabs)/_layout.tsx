@@ -12,6 +12,7 @@ import { DRIVER_FEE_STATUS_REFRESH_MS } from '@/lib/driver-fee-polling';
 import { startAuthenticatedDriverFee } from '@/lib/driver-fee-payment-api';
 import { openDriverSupportWhatsApp } from '@/lib/support-whatsapp';
 import { getApiBaseUrl } from '@/constants/oauth';
+import { useDriverDocumentManifest } from '@/hooks/use-driver-document-manifest';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -786,12 +787,18 @@ function ApprovalGate({ driver }: { driver: any }) {
   const isRejected = [driver.approval_status, driver.application_status, driver.status]
     .some((value) => String(value ?? '').trim().toLowerCase() === 'rejected');
   const rejectionReason = driver.rejection_reason || driver.rejection_note || driver.admin_note || '';
+  const { user, refreshProfile, signingOut } = useDriverAuth();
+  const verification = useDriverDocumentManifest(user?.uid || null, driver, !isRejected && !signingOut);
+  const documentsComplete = verification.status === 'ready' && verification.manifest?.documentsComplete === true;
+  const awaitingReview = documentsComplete && verification.manifest?.approvalStatus === 'pending';
+  const documentsMissing = verification.status === 'ready' && !documentsComplete;
+  const checkingDocuments = verification.status === 'checking' || verification.status === 'idle';
 
-  // Timeline steps for pending state
+  // Upload completion is read-only server evidence, not a pending-status inference.
   const steps = [
     { icon: 'check-circle', label: 'Account Created', done: true },
-    { icon: 'upload-file', label: 'Documents Uploaded', done: true },
-    { icon: 'access-time', label: 'Under Review', done: false, active: true },
+    { icon: 'upload-file', label: documentsComplete ? 'Documents Uploaded' : documentsMissing ? 'Documents Missing' : checkingDocuments ? 'Checking Documents' : 'Documents Not Verified', done: documentsComplete, active: !documentsComplete },
+    { icon: 'access-time', label: 'Under Review', done: false, active: awaitingReview },
     { icon: 'verified', label: 'Approved & Ready', done: false },
   ];
 
@@ -871,9 +878,15 @@ function ApprovalGate({ driver }: { driver: any }) {
       <View style={[styles.gateIconBox, { backgroundColor: '#F59E0B20' }]}>
         <MaterialIcons name="access-time" size={40} color="#F59E0B" />
       </View>
-      <Text style={[styles.gateTitle, { color: colors.foreground }]}>Application Under Review</Text>
+      <Text style={[styles.gateTitle, { color: colors.foreground }]}>{awaitingReview ? 'Application Under Review' : documentsMissing ? 'Complete Your Documents' : checkingDocuments ? 'Checking Your Application' : 'Verification Needs Attention'}</Text>
       <Text style={[styles.gateSubtitle, { color: colors.muted }]}>
-        Welcome, {driver.full_name?.split(' ')[0]}! Our team is reviewing your application. This usually takes 24–48 hours.
+        {awaitingReview
+          ? `Welcome, ${driver.full_name?.split(' ')[0] || 'Driver'}! Your documents are saved and awaiting administrator review. Approval is not automatic.`
+          : documentsMissing
+            ? 'Your saved application does not contain all required verification documents. Complete them below before waiting for review.'
+            : checkingDocuments
+              ? 'Confirming your saved documents. Please wait before treating the application as submitted.'
+              : verification.error || 'Your application status needs to be refreshed. No verification decision has been changed.'}
       </Text>
 
       {/* Timeline */}
@@ -903,13 +916,30 @@ function ApprovalGate({ driver }: { driver: any }) {
                 {step.label}
               </Text>
               {step.active && (
-                <Text style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>Estimated: 24–48 hours</Text>
+                <Text style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>{step.label === 'Under Review' ? 'Estimated: 24–48 hours' : checkingDocuments ? 'Verifying saved files' : documentsMissing ? 'Action required' : 'Please retry verification'}</Text>
               )}
             </View>
           </View>
         ))}
       </View>
 
+      {checkingDocuments && <ActivityIndicator color={GOLD} accessibilityLabel="Checking saved documents" />}
+      {documentsMissing && (
+        <View style={[styles.rejectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={{ color: colors.foreground, fontWeight: '700', marginBottom: 8 }}>Missing or invalid documents</Text>
+          {verification.manifest?.missingDocuments.map(label => <Text key={label} style={{ color: colors.muted, marginBottom: 5 }}>{label}</Text>)}
+          <TouchableOpacity style={[styles.submitBtn, { backgroundColor: GOLD, marginTop: 12 }]} onPress={() => router.push('/register' as any)}>
+            <MaterialIcons name="upload" size={18} color="#000" style={{ marginRight: 6 }} />
+            <Text style={styles.submitBtnText}>Complete & Resubmit Documents</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      {!checkingDocuments && (
+        <TouchableOpacity style={[styles.submitBtn, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}
+          onPress={() => { void refreshProfile().then(() => verification.recheck()).catch(() => Alert.alert('Verification unavailable', 'Please retry. Your application has not been changed.')); }}>
+          <Text style={[styles.submitBtnText, { color: colors.foreground }]}>Retry / Refresh Verification</Text>
+        </TouchableOpacity>
+      )}
       <TouchableOpacity
         style={[styles.submitBtn, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}
         onPress={() => openSupportWhatsApp('Hi HY3N Support, I need help with my driver application.')}
