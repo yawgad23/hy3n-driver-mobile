@@ -54,17 +54,13 @@ const config: ExpoConfig = {
   icon: "./assets/images/icon.png",
   scheme: env.scheme,
   userInterfaceStyle: "automatic",
-  // Reanimated 4 in Expo SDK 54 requires the New Architecture. Build 43 used
-  // Firebase 26 in this runtime and crashed on iOS 27, so the native Firebase
-  // modules are pinned to Firebase 25 while this required architecture remains on.
-  newArchEnabled: true,
+  // SDK 57 requires the New Architecture. Keep the reviewed Firebase 25 pin.
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
     // 126 adds compact controls, closer active-trip framing and system-following
     // translucent overlays with solid Reduce Transparency fallbacks.
     buildNumber: buildPlatform === "ios" ? "126" : "124",
-    jsEngine: "jsc",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
@@ -80,7 +76,6 @@ const config: ExpoConfig = {
       backgroundColor: "#000000",
       foregroundImage: "./assets/images/android-icon-foreground.png",
     },
-    edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
     // 57023 retains prior fixes and adds Android routes, alerts, dock and turn guidance.
@@ -127,6 +122,8 @@ const config: ExpoConfig = {
     lang: "en",
   },
   plugins: [
+    // Register first so its AppDelegate action runs after the official scene conversion.
+    "./plugins/with-driver-ios-sdk27",
     "expo-router",
     "expo-apple-authentication",
     "expo-asset",
@@ -181,10 +178,15 @@ const config: ExpoConfig = {
           minSdkVersion: 24,
         },
         ios: {
-          // Google Navigation SDK 10.13 requires iOS 16 or later.
-          deploymentTarget: "16.0",
+          // SDK 27 requires scenes; Expo 57.0.23+ provides the supported opt-in.
+          enableSceneSupport: true,
+          // Expo 57 / React Native 0.86 require iOS 16.4 or later.
+          deploymentTarget: "16.4",
+          useHermesV1: true,
+          // Apply the reviewed scene-aware Apple sign-in source patch, not a prebuilt module.
+          usePrecompiledModules: false,
           // With CocoaPods static frameworks, every used React Native Firebase
-          // module must be forced to static linking on Expo SDK 54.
+          // module must remain forced to static linking on the SDK 27 preparation branch.
           useFrameworks: "static",
           forceStaticLinking: ["RNFBApp", "RNFBAuth"],
         },

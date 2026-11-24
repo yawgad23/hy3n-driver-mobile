@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import ts from 'typescript';
 
 const root = path.join(__dirname, '..');
-const baseline = '3aed02cdf4dfe02da445e2592112ed894226c59a';
+const baseline = '674e81c0e15353c4e813d5e688fb3d1240ed5d81';
 const previous = (file: string) => execFileSync('git', ['show', `${baseline}:${file}`], { cwd: root, encoding: 'utf8' });
 const current = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
 const clientKeys = { GOOGLE_MAPS_IOS_API_KEY: 'ios-client-test-key', GOOGLE_MAPS_ANDROID_API_KEY: 'android-client-test-key' };
@@ -28,7 +28,7 @@ function config(source: string, platform?: string, keys: Record<string, string> 
 
 const ios = config(current('app.config.ts'), 'ios');
 
-test('Driver iOS release is explicitly 1.0.3 (126) for the correct app', () => {
+test('SDK 27 preparation retains Driver identity and build 126 until a new build is approved', () => {
   assert.equal(ios.name, 'HY3N Driver');
   assert.equal(ios.version, '1.0.3');
   assert.equal(ios.ios.buildNumber, '126');
@@ -37,24 +37,33 @@ test('Driver iOS release is explicitly 1.0.3 (126) for the correct app', () => {
   assert.equal(ios.owner, 'yawgad');
 });
 
-test('every Android config field remains identical to the released 57023 source', () => {
-  assert.deepEqual(config(current('app.config.ts'), 'android'), config(previous('app.config.ts'), 'android'));
-});
-
-test('unspecified and web config remain identical to the preserved source', () => {
-  for (const platform of [undefined, 'web']) {
-    assert.deepEqual(config(current('app.config.ts'), platform), config(previous('app.config.ts'), platform));
+test('only the enumerated SDK 27 native compatibility configuration differs from build 126', () => {
+  for (const platform of ['ios', 'android', undefined, 'web']) {
+    const expected = config(previous('app.config.ts'), platform);
+    delete expected.newArchEnabled; // SDK 57 makes the New Architecture mandatory.
+    delete expected.ios.jsEngine; // SDK 57 no longer exposes this JSC switch.
+    delete expected.android.edgeToEdgeEnabled; // SDK 57 makes edge-to-edge mandatory.
+    expected.plugins.unshift('./plugins/with-driver-ios-sdk27');
+    const properties = expected.plugins.find((p: any) => Array.isArray(p) && p[0] === 'expo-build-properties')[1];
+    Object.assign(properties.ios, {
+      enableSceneSupport: true,
+      deploymentTarget: '16.4',
+      useHermesV1: true,
+      usePrecompiledModules: false,
+    });
+    assert.deepEqual(config(current('app.config.ts'), platform), expected);
   }
 });
 
-test('the only iOS configuration changes are marketing version and build number', () => {
-  const expected = config(previous('app.config.ts'), 'ios');
-  expected.version = '1.0.3';
-  expected.ios.buildNumber = '126';
-  assert.deepEqual(ios, expected);
+test('Android identity, version code, permissions and non-obsolete platform fields remain preserved', () => {
+  const expected = config(previous('app.config.ts'), 'android').android;
+  delete expected.edgeToEdgeEnabled;
+  assert.deepEqual(config(current('app.config.ts'), 'android').android, expected);
+  assert.equal(expected.versionCode, 57023);
+  assert.equal(expected.package, 'com.hy3n.driver');
 });
 
-test('iOS keeps native Maps injection and restricted-key alias precedence', () => {
+test('native Maps injection retains production key alias precedence without hardcoded keys', () => {
   const plugin = ios.plugins.find((p: any) => Array.isArray(p) && p[0] === './plugins/with-google-navigation');
   assert.deepEqual(plugin, ['./plugins/with-google-navigation', { iosApiKey: clientKeys.GOOGLE_MAPS_IOS_API_KEY, androidApiKey: clientKeys.GOOGLE_MAPS_ANDROID_API_KEY }]);
   const fallback = config(current('app.config.ts'), 'ios', {
@@ -62,44 +71,81 @@ test('iOS keeps native Maps injection and restricted-key alias precedence', () =
     EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID: 'android-fallback-client-key',
   });
   assert.deepEqual(fallback.plugins.find((p: any) => Array.isArray(p) && p[0] === './plugins/with-google-navigation'), ['./plugins/with-google-navigation', { iosApiKey: 'ios-fallback-client-key', androidApiKey: 'android-fallback-client-key' }]);
+  assert.equal(current('plugins/with-google-navigation.js'), previous('plugins/with-google-navigation.js'));
 });
 
-test('production EAS profile and existing Driver Apple submission destination are unchanged', () => {
-  assert.equal(current('eas.json'), previous('eas.json'));
+test('the exact stable Xcode 27 image is the only EAS configuration change', () => {
+  const expected = JSON.parse(previous('eas.json'));
+  expected.build.production.ios.image = 'macos-tahoe-26.6-xcode-27.0';
   const eas = JSON.parse(current('eas.json'));
-  assert.equal(eas.cli.appVersionSource, 'local');
+  assert.deepEqual(eas, expected);
   assert.equal(eas.build.production.environment, 'production');
-  assert.equal(eas.build.production.ios.buildConfiguration, 'Release');
-  assert.equal(eas.build.production.env.EXPO_PUBLIC_API_BASE_URL, 'https://api-yvurtipaxq-ew.a.run.app');
-  assert.equal(eas.build.production.env.EXPO_PUBLIC_DRIVER_NAV_DIAGNOSTICS, undefined);
   assert.equal(eas.submit.production.ios.ascAppId, '6798016192');
   assert.equal(eas.submit.production.ios.appleTeamId, '49Q5ZSPMZ9');
 });
 
-test('the approved Apple sign-in pin is the only dependency manifest change', () => {
+test('dependency changes are limited to the SDK catalogue, required Router cleanup and explicit released backend pin', () => {
   const expected = JSON.parse(previous('package.json'));
-  expected.dependencies['expo-apple-authentication'] = '8.0.8';
+  const catalogue = JSON.parse(current('node_modules/expo/bundledNativeModules.json'));
+  for (const group of ['dependencies', 'devDependencies']) {
+    for (const name of Object.keys(expected[group])) {
+      if (catalogue[name]) expected[group][name] = catalogue[name];
+    }
+  }
+  expected.dependencies.expo = '~57.0.34';
+  expected.dependencies['@expo/metro-runtime'] = '~57.0.19';
+  expected.dependencies['hy3n-backend'] = 'github:yawgad23/backend#0a07115e4afcc28c2dcbabca17280d64230d64f7';
+  for (const name of ['@react-navigation/native', '@react-navigation/bottom-tabs', '@react-navigation/elements']) delete expected.dependencies[name];
+  expected.devDependencies['@types/react'] = '~19.2.18';
+  expected.devDependencies['react-test-renderer'] = catalogue.react;
+  expected.devDependencies.typescript = '~6.0.3';
   assert.deepEqual(JSON.parse(current('package.json')), expected);
-  assert.equal(current('plugins/with-google-navigation.js'), previous('plugins/with-google-navigation.js'));
+  assert.equal(JSON.parse(current('node_modules/expo/package.json')).version, '57.0.34');
+  assert.equal(JSON.parse(current('node_modules/react-native/package.json')).version, '0.86.3');
 });
 
-test('every other lock resolution, including the backend Git pin, remains unchanged', () => {
-  const withoutApple = (source: string) => source
-    .replace(/^      expo-apple-authentication:\n.*?(?=^      \S|^    \S|^\S|$(?![\s\S]))/gms, '')
-    .replace(/^  expo-apple-authentication@[^\n]*:\n.*?(?=^  \S|^\S|$(?![\s\S]))/gms, '');
-  assert.equal(withoutApple(current('pnpm-lock.yaml')), withoutApple(previous('pnpm-lock.yaml')));
-  assert.match(current('pnpm-lock.yaml'), /expo-apple-authentication:\n        specifier: 8\.0\.8\n        version: 8\.0\.8\(/);
-  assert.doesNotMatch(current('pnpm-lock.yaml'), /expo-apple-authentication@58\./);
+test('the backend source revision and pinned Google Navigation/Firebase modules stay fixed', () => {
+  const lock = current('pnpm-lock.yaml');
+  assert.match(lock, /hy3n-backend:\n\s+specifier: github:yawgad23\/backend#0a07115e4afcc28c2dcbabca17280d64230d64f7\n\s+version: https:\/\/codeload\.github\.com\/yawgad23\/backend\/tar\.gz\/0a07115e4afcc28c2dcbabca17280d64230d64f7/);
+  const pkg = JSON.parse(current('package.json'));
+  for (const name of ['@googlemaps/react-native-navigation-sdk', '@react-native-firebase/app', '@react-native-firebase/auth', '@trpc/client', '@trpc/react-query']) {
+    assert.equal(pkg.dependencies[name], JSON.parse(previous('package.json')).dependencies[name]);
+  }
+  assert.doesNotMatch(lock, /expo-apple-authentication@58\./);
 });
 
-test('installed Apple sign-in source passes the iOS 16 target and avoids the missing Core API', () => {
+test('scene-aware Apple sign-in uses the reviewed SDK 57 package and source compilation', () => {
   const moduleRoot = path.dirname(require.resolve('expo-apple-authentication/package.json'));
-  assert.equal(JSON.parse(fs.readFileSync(path.join(moduleRoot, 'package.json'), 'utf8')).version, '8.0.8');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(moduleRoot, 'package.json'), 'utf8')).version, '57.0.2');
   const podspec = fs.readFileSync(path.join(moduleRoot, 'ios/ExpoAppleAuthentication.podspec'), 'utf8');
-  assert.match(podspec, /:ios\s*=>\s*'15\.1'/);
-  const request = fs.readFileSync(path.join(moduleRoot, 'ios/AppleAuthenticationRequest.swift'), 'utf8');
-  assert.doesNotMatch(request, /Utilities\.keyWindow\(/);
-  const modules = JSON.parse(fs.readFileSync(path.join(moduleRoot, 'expo-module.config.json'), 'utf8'));
-  assert.ok(modules.platforms.includes('apple'));
-  assert.ok(modules.apple.modules.includes('AppleAuthenticationModule'));
+  assert.match(podspec, /:ios\s*=>\s*'16\.4'/);
+  const properties = ios.plugins.find((p: any) => Array.isArray(p) && p[0] === 'expo-build-properties')[1].ios;
+  assert.equal(properties.enableSceneSupport, true);
+  assert.equal(properties.usePrecompiledModules, false);
+  assert.equal(properties.useHermesV1, true);
+  const plugin = current('plugins/with-driver-ios-sdk27.js');
+  assert.match(plugin, /runOnQueue\(\.main\)/);
+  assert.match(plugin, /foregroundActive/);
+  assert.match(plugin, /RequestNotInteractiveException/);
+});
+
+test('all applied iPhone UI, camera, trip and authenticated GPS source logic remains preserved', () => {
+  for (const file of [
+    'app/(tabs)/home.tsx',
+    'app/(tabs)/_layout.tsx',
+    'components/DriverNavigationBanner.tsx',
+    'lib/driver-ios-overlay-theme.ts',
+    'hooks/use-driver-ios-overlay-palette.ts',
+    'lib/driver-navigation-camera.ts',
+    'lib/native-map-camera.ts',
+    'lib/driver-map-motion.ts',
+    'lib/driver-navigation-guidance.ts',
+    'lib/driver-android-home-layout.tsx',
+    'lib/driver-location-publisher.ts',
+    'lib/driver-turn-navigation.ts',
+    'lib/driver-request-audio.ts',
+  ]) {
+    assert.equal(current(file), previous(file), file);
+  }
+  assert.equal(current('components/NativeDriverGoogleMap.tsx'), previous('components/NativeDriverGoogleMap.tsx').replaceAll('StyleSheet.absoluteFillObject', 'StyleSheet.absoluteFill'));
 });

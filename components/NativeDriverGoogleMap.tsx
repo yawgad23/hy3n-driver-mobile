@@ -1448,9 +1448,9 @@ function NativeDriverGoogleMap(props: Props) {
 export default React.memo(NativeDriverGoogleMap);
 
 const styles = StyleSheet.create({
-  container: { ...StyleSheet.absoluteFillObject },
+  container: { ...StyleSheet.absoluteFill },
   locationGate: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     backgroundColor: '#F8FAFC',
     justifyContent: 'center',

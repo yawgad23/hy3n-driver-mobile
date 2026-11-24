@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Text, TouchableOpacity, View, type LayoutChangeEvent } from 'react-native';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused } from 'expo-router/react-navigation';
 import { WebView } from 'react-native-webview';
 import { MAP_MARKER_ASSETS } from '@/components/map-marker-assets';
 import { buildDriverMapHtml } from '@/lib/driver-map-html';

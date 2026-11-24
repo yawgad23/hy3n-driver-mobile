@@ -4,17 +4,17 @@ import path from 'node:path';
 import test from 'node:test';
 import { createDriverRequestAudio, type DriverRequestAudioPlayer } from '../lib/driver-request-audio';
 
-// Executable model of expo-audio 1.1.1 Android, NOT an iOS/old-controller mock.
-// AudioModule.kt: pause 401-405 does NOT clear isPaused; background 217-246
-// and focus loss/gain 72-108 use that separate resume flag. remove 461-463
-// unregisters the player; SharedObject.release disposes its ExoPlayer.
-// AudioPlayer.kt: setVolume 84-95 honors isMuted even after focus restoration.
+// Executable behavior model checked against SDK 57's expo-audio 57.0.5 Android.
+// AudioModule pause still does not clear isPaused; allPlayables focus/lifecycle
+// handlers resume with playable.play(). remove unregisters the player.
+// SDK 57 moved mute-aware setVolume into Playable.kt and disposal into BaseAudioPlayer.
+// These source assertions keep the existing interruption/acceptance tests honest.
 const moduleSource = fs.readFileSync(path.join(__dirname, '../node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt'), 'utf8');
-const playerSource = fs.readFileSync(path.join(__dirname, '../node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioPlayer.kt'), 'utf8');
-assert.equal(JSON.parse(fs.readFileSync(path.join(__dirname, '../node_modules/expo-audio/package.json'), 'utf8')).version, '1.1.1');
+const playerSource = fs.readFileSync(path.join(__dirname, '../node_modules/expo-audio/android/src/main/java/expo/modules/audio/Playable.kt'), 'utf8');
+assert.equal(JSON.parse(fs.readFileSync(path.join(__dirname, '../node_modules/expo-audio/package.json'), 'utf8')).version, '57.0.5');
 assert.match(moduleSource, /Function\("pause"\)[\s\S]*?player\.ref\.pause\(\)[\s\S]*?Function\("replace"\)/);
-assert.match(moduleSource, /if \(player\.isPaused\) \{\s*player\.isPaused = false\s*player\.ref\.play\(\)/);
-assert.match(playerSource, /if \(isMuted\) \{[\s\S]*?ref\.volume = 0f/);
+assert.match(moduleSource, /if \(playable\.isPaused\) \{\s*playable\.isPaused = false\s*playable\.play\(\)/);
+assert.match(playerSource, /if \(isMuted\) \{[\s\S]*?player\.volume = 0f/);
 
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 function deferred() { let resolve!: () => void; const promise = new Promise<void>(r => { resolve = r; }); return { promise, resolve }; }
