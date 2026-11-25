@@ -28,18 +28,22 @@ function config(source: string, platform?: string, keys: Record<string, string> 
 
 const ios = config(current('app.config.ts'), 'ios');
 
-test('SDK 27 preparation retains Driver identity and build 126 until a new build is approved', () => {
+test('SDK 27 document recovery candidate uses verified fresh iOS metadata and retains Driver identity', () => {
   assert.equal(ios.name, 'HY3N Driver');
-  assert.equal(ios.version, '1.0.3');
-  assert.equal(ios.ios.buildNumber, '126');
+  assert.equal(ios.version, '1.0.4');
+  assert.equal(ios.ios.buildNumber, '127');
   assert.equal(ios.ios.bundleIdentifier, 'com.hy3n.driver');
   assert.equal(ios.extra.eas.projectId, 'd19afe45-8e3d-42f9-ad5e-70b12b2c2ce9');
   assert.equal(ios.owner, 'yawgad');
 });
 
-test('only the enumerated SDK 27 native compatibility configuration differs from build 126', () => {
+test('only the enumerated SDK 27 compatibility and iPhone release metadata differ from build 126', () => {
   for (const platform of ['ios', 'android', undefined, 'web']) {
     const expected = config(previous('app.config.ts'), platform);
+    if (platform === 'ios') {
+      expected.version = '1.0.4';
+      expected.ios.buildNumber = '127';
+    }
     delete expected.newArchEnabled; // SDK 57 makes the New Architecture mandatory.
     delete expected.ios.jsEngine; // SDK 57 no longer exposes this JSC switch.
     delete expected.android.edgeToEdgeEnabled; // SDK 57 makes edge-to-edge mandatory.
@@ -132,7 +136,6 @@ test('scene-aware Apple sign-in uses the reviewed SDK 57 package and source comp
 test('all applied iPhone UI, camera, trip and authenticated GPS source logic remains preserved', () => {
   for (const file of [
     'app/(tabs)/home.tsx',
-    'app/(tabs)/_layout.tsx',
     'components/DriverNavigationBanner.tsx',
     'lib/driver-ios-overlay-theme.ts',
     'hooks/use-driver-ios-overlay-palette.ts',
@@ -148,4 +151,9 @@ test('all applied iPhone UI, camera, trip and authenticated GPS source logic rem
     assert.equal(current(file), previous(file), file);
   }
   assert.equal(current('components/NativeDriverGoogleMap.tsx'), previous('components/NativeDriverGoogleMap.tsx').replaceAll('StyleSheet.absoluteFillObject', 'StyleSheet.absoluteFill'));
+});
+
+test('the tab layout contains only the intended document-recovery correction', () => {
+  const recovery = execFileSync('git', ['show', '85ac0e57b19289b655eb58979dcc387b7fc6fe70:app/(tabs)/_layout.tsx'], { cwd: root, encoding: 'utf8' });
+  assert.equal(current('app/(tabs)/_layout.tsx'), recovery);
 });

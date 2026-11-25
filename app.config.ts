@@ -44,7 +44,7 @@ const env = {
 // either native release command too, so CLI metadata and the binary agree.
 // Preserve unspecified/web and the released Android configuration unchanged.
 const buildPlatform = process.env.EAS_BUILD_PLATFORM;
-const appVersion = buildPlatform === "android" || buildPlatform === "ios" ? "1.0.3" : "1.0.2";
+const appVersion = buildPlatform === "ios" ? "1.0.4" : buildPlatform === "android" ? "1.0.3" : "1.0.2";
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
@@ -58,9 +58,9 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // 126 adds compact controls, closer active-trip framing and system-following
-    // translucent overlays with solid Reduce Transparency fallbacks.
-    buildNumber: buildPlatform === "ios" ? "126" : "124",
+    // 127 retains build 126's UI and adds verified document recovery plus SDK 27.
+    // Source preparation only: no native build has been started or reserved.
+    buildNumber: buildPlatform === "ios" ? "127" : "124",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
