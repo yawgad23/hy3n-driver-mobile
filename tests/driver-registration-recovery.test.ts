@@ -20,6 +20,9 @@ import {
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 const requireHere = createRequire(__filename);
+const FakeTimers = requireHere('@sinonjs/fake-timers') as {
+  install(options: { toFake: string[] }): { tick(ms: number): void; countTimers(): number; uninstall(): void };
+};
 const remote = (uid: string, key: string) => `https://firebasestorage.googleapis.com/v0/b/hy3n26.firebasestorage.app/o/drivers%2F${uid}%2F${key}.jpg?alt=media`;
 const labels = ['Ghana Card (Front)', 'Ghana Card (Back)', "Driver's License (Front)", "Driver's License (Back)", 'Your Photo (Selfie)', 'Vehicle Photo', 'Insurance Certificate', 'Roadworthy Certificate'];
 function fixture(uid = 'driver-a', count = 0): DriverDocumentManifest {
@@ -205,15 +208,16 @@ test('late checks, submits, auth reloads and unmount completion cannot mutate an
 // Bundle only the assigned screen and its real pure helpers. Native, auth,
 // storage, and server manifest are controlled fixtures, never production calls.
 async function mountRegistration(options: { count?: number; savedDraft?: DriverRegistrationDraft; authLoading?: boolean;
-  anonymous?: boolean; emailVerified?: boolean; approvalStatus?: 'pending' | 'approved' | 'rejected'; storageRead?: Promise<string | null> } = {}) {
+  anonymous?: boolean; emailVerified?: boolean; approvalStatus?: 'pending' | 'approved' | 'rejected'; storageRead?: Promise<string | null>;
+  reload?: () => Promise<void>; refresh?: () => Promise<void> } = {}) {
   const storage = memoryStorage(options.savedDraft ? { [driverRegistrationDraftKey(options.savedDraft.uid)]: JSON.stringify(options.savedDraft) } : {});
-  const user = { uid: 'driver-a', email: 'driver-a@example.test', displayName: 'Driver A', emailVerified: options.emailVerified !== false, reload: async () => {} };
+  const user = { uid: 'driver-a', email: 'driver-a@example.test', displayName: 'Driver A', emailVerified: options.emailVerified !== false, reload: options.reload ?? (async () => {}) };
   const env: any = {
     auth: { user: options.anonymous ? null : user, driverProfile: options.anonymous ? null : { id: user.uid, user_id: user.uid,
       approval_status: options.approvalStatus ?? 'pending', rejection_reason: 'Replace blurry front image' }, loading: !!options.authLoading },
     snapshot: { manifest: fixture(user.uid, options.count ?? 0), status: 'ready', error: '' },
     currentUser: options.anonymous ? null : user, routes: [] as string[], submits: [] as unknown[], clears: storage.calls,
-    submit: async () => {}, refresh: async () => {}, check: async () => env.snapshot.manifest,
+    submit: async () => {}, refresh: options.refresh ?? (async () => {}), check: async () => env.snapshot.manifest,
     upload: async (_blob: unknown, key: string) => remote(env.currentUser.uid, key.split('/').at(-1)!.replace('.jpg', '')),
     signup: async () => {}, google: async () => {},
   };
@@ -471,4 +475,179 @@ test('source boundary preserves camera/front-back/manual approval and narrowly s
   assert.match(source, /clearTimeout\(pollRef\.current\)/);
   assert.match(source, /Our admin team will review/);
   assert.doesNotMatch(source, /approval_status:\s*['"]approved/);
+});
+
+const localDocumentFields = ['ghanaCardFront', 'ghanaCardBack', 'licenseFront', 'licenseBack', 'driverPhoto', 'vehiclePhoto'] as const;
+function localUploadForm() {
+  const form = restoreDriverRegistrationForm(emptyDriverRegistrationForm(), null, fixture('driver-a', 6), false);
+  for (const field of localDocumentFields) form[field] = `file:///camera-${field}.jpg`;
+  return form;
+}
+
+test('POST success with a complete old manifest cannot confirm or erase the edited form and local selection', async () => {
+  const form = restoreDriverRegistrationForm(emptyDriverRegistrationForm(), null, fixture('driver-a', 6), false);
+  form.ghanaCardFront = 'file:///new-front.jpg';
+  const app = await mountRegistration({ count: 6, savedDraft: draftFor('driver-a', { pendingEdits: true, form }) });
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = (async () => ({ blob: async () => ({ fixture: true }) })) as unknown as typeof fetch;
+    await app.input(0, 'Edited make');
+    await app.press('Submit Application');
+    assert.equal(app.env.submits.length, 1);
+    assert.doesNotMatch(app.rendered(), /Application Submitted!/);
+    assert.match(app.rendered(), /Vehicle & Documents/);
+    assert.match(app.rendered(), /saved.*not.*reflected|not.*match|could not be confirmed/i);
+    assert.equal(app.tree.root.findAllByType('input')[0].props.value, 'Edited make');
+    assert.ok(app.tree.root.findAllByType('image').some(node => node.props.source.uri === form.ghanaCardFront));
+    const raw = app.storage.values.get(driverRegistrationDraftKey('driver-a'));
+    assert.ok(raw);
+    assert.equal(JSON.parse(raw).pendingEdits, true);
+    assert.equal(JSON.parse(raw).form.vehicleMake, 'Edited make');
+    assert.equal(JSON.parse(raw).form.ghanaCardFront, form.ghanaCardFront);
+    assert.equal(app.storage.calls.filter(v => v.startsWith('clear')).length, 0);
+  } finally { globalThis.fetch = originalFetch; await app.dispose(); }
+});
+
+test('six local uploads confirm only their saved remote references with normalized details and category order', async () => {
+  const form = localUploadForm();
+  form.selectedCategories = ['standard', 'comfort'];
+  const app = await mountRegistration({ count: 0, savedDraft: draftFor('driver-a', { pendingEdits: true, form }) });
+  const originalFetch = globalThis.fetch;
+  const uploads: string[] = [];
+  try {
+    globalThis.fetch = (async () => ({ blob: async () => ({ fixture: true }) })) as unknown as typeof fetch;
+    app.env.upload = async (_blob: unknown, key: string) => { uploads.push(key); return remote('driver-a', key.split('/').at(-1)!.replace('.jpg', '')); };
+    await app.input(0, ' Toyota ');
+    app.env.submit = async () => {
+      const payload = app.env.submits.at(-1);
+      const checked = fixture('driver-a', 6);
+      checked.documentRevision = 'six-upload-save';
+      checked.details.vehicleMake = payload.vehicleMake.trim();
+      checked.details.acceptedCategories = [...payload.rideCategories].reverse();
+      for (const key of REQUIRED_DRIVER_DOCUMENT_KEYS) checked.documents[key].reference = payload.documents[key];
+      app.env.snapshot = { manifest: checked, status: 'ready', error: '' };
+    };
+    await app.press('Submit Application');
+    assert.equal(uploads.length, 6);
+    assert.equal(new Set(uploads).size, 6);
+    assert.ok(uploads.every(key => key.startsWith('drivers/driver-a/')));
+    assert.equal(app.env.submits.length, 1);
+    for (const key of REQUIRED_DRIVER_DOCUMENT_KEYS) assert.equal(app.env.submits[0].documents[key], app.env.snapshot.manifest.documents[key].reference);
+    assert.match(app.rendered(), /Application Submitted!/);
+    assert.equal(app.storage.values.has(driverRegistrationDraftKey('driver-a')), false);
+    assert.equal(app.storage.calls.filter(v => v.startsWith('clear')).length, 1);
+  } finally { globalThis.fetch = originalFetch; await app.dispose(); }
+});
+
+test('partial concurrent upload failure retains all six local picks, never posts or clears, and ignores late upload completion', async () => {
+  const form = localUploadForm();
+  const app = await mountRegistration({ count: 0, savedDraft: draftFor('driver-a', { pendingEdits: true, form }) });
+  const originalFetch = globalThis.fetch;
+  const late = deferred<string>();
+  let completed = 0;
+  const uploads: string[] = [];
+  try {
+    globalThis.fetch = (async () => ({ blob: async () => ({ fixture: true }) })) as unknown as typeof fetch;
+    app.env.upload = async (_blob: unknown, key: string) => {
+      uploads.push(key);
+      if (key.endsWith('vehicle-photo.jpg')) return late.promise;
+      if (key.endsWith('drivers-license-back.jpg')) throw new Error('partial upload failed');
+      completed++;
+      return remote('driver-a', key.split('/').at(-1)!.replace('.jpg', ''));
+    };
+    await app.press('Submit Application');
+    assert.equal(uploads.length, 6);
+    assert.equal(completed, 4);
+    assert.equal(app.env.submits.length, 0);
+    assert.match(app.rendered(), /partial upload failed/);
+    late.resolve(remote('driver-a', 'vehicle-photo'));
+    await app.flush();
+    assert.doesNotMatch(app.rendered(), /Application Submitted!/);
+    assert.equal(app.env.submits.length, 0);
+    const saved = JSON.parse(app.storage.values.get(driverRegistrationDraftKey('driver-a'))!);
+    for (const field of localDocumentFields) assert.equal(saved.form[field], form[field]);
+    assert.equal(saved.pendingEdits, true);
+    assert.equal(app.storage.calls.filter(v => v.startsWith('clear')).length, 0);
+  } finally { late.resolve(remote('driver-a', 'vehicle-photo')); globalThis.fetch = originalFetch; await app.dispose(); }
+});
+
+for (const stage of ['reload', 'refresh'] as const) {
+  test(`initial ${stage} stall is bounded, retry does not overlap, late result cannot clear, then retry recovers`, async () => {
+    const clock = FakeTimers.install({ toFake: ['setTimeout', 'clearTimeout'] });
+    const pending = deferred<void>();
+    let calls = 0;
+    const form = localUploadForm();
+    const app = await mountRegistration({ count: 6, savedDraft: draftFor('driver-a', { pendingEdits: true, form }),
+      [stage]: () => { calls++; return pending.promise; } });
+    try {
+      assert.match(app.rendered(), /Checking your account/);
+      await act(async () => { clock.tick(19_999); });
+      assert.match(app.rendered(), /Checking your account/);
+      await act(async () => { clock.tick(1); });
+      await app.flush();
+      assert.match(app.rendered(), /Verification unavailable/);
+      assert.doesNotMatch(app.rendered(), /Checking your account/);
+      assert.ok(app.storage.values.has(driverRegistrationDraftKey('driver-a')));
+      await app.press('Retry verification');
+      assert.match(app.rendered(), /Checking your account/);
+      assert.equal(calls, 1);
+      await act(async () => { clock.tick(20_000); });
+      await app.flush();
+      assert.match(app.rendered(), /Verification unavailable/);
+      pending.resolve();
+      await app.flush();
+      assert.match(app.rendered(), /Verification unavailable/);
+      assert.doesNotMatch(app.rendered(), /Application Submitted!/);
+      assert.equal(app.storage.calls.filter(v => v.startsWith('clear')).length, 0);
+      await app.press('Retry verification');
+      assert.match(app.rendered(), /Vehicle & Documents/);
+      assert.equal(calls, 2);
+      assert.ok(app.storage.values.has(driverRegistrationDraftKey('driver-a')));
+    } finally { pending.resolve(); await app.dispose(); assert.equal(clock.countTimers(), 0); clock.uninstall(); }
+  });
+}
+
+test('initial recovery account change and unmount cancel deadlines and reject late old email results', async () => {
+  const clock = FakeTimers.install({ toFake: ['setTimeout', 'clearTimeout'] });
+  const pending = deferred<void>();
+  let oldRefreshes = 0;
+  const app = await mountRegistration({ reload: () => pending.promise, refresh: async () => { oldRefreshes++; } });
+  try {
+    const next = { uid: 'driver-b', email: 'driver-b@example.test', displayName: 'Driver B', emailVerified: false, reload: async () => {} };
+    app.env.currentUser = next;
+    app.env.auth = { user: next, driverProfile: null, loading: false };
+    app.env.snapshot = { status: 'ready', manifest: fixture('driver-b', 0), error: '' };
+    await app.update();
+    assert.match(app.rendered(), /Verify Your Email/);
+    pending.resolve();
+    await app.flush();
+    assert.equal(oldRefreshes, 0);
+    assert.match(app.rendered(), /Verify Your Email/);
+    assert.equal(app.storage.calls.filter(v => v.startsWith('clear')).length, 0);
+  } finally { pending.resolve(); await app.dispose(); assert.equal(clock.countTimers(), 0); clock.uninstall(); }
+});
+
+test('initial email recovery has one whole-chain twenty-second deadline across reload then profile refresh', async () => {
+  const clock = FakeTimers.install({ toFake: ['setTimeout', 'clearTimeout'] });
+  const reload = deferred<void>();
+  const refresh = deferred<void>();
+  let refreshes = 0;
+  const app = await mountRegistration({ reload: () => reload.promise, refresh: () => { refreshes++; return refresh.promise; } });
+  try {
+    await act(async () => { clock.tick(15_000); reload.resolve(); });
+    await app.flush();
+    assert.equal(refreshes, 1);
+    assert.match(app.rendered(), /Checking your account/);
+    await act(async () => { clock.tick(4_999); });
+    assert.match(app.rendered(), /Checking your account/);
+    await act(async () => { clock.tick(1); });
+    await app.flush();
+    assert.match(app.rendered(), /Verification unavailable/);
+    refresh.resolve();
+    await app.flush();
+    assert.match(app.rendered(), /Verification unavailable/);
+    assert.doesNotMatch(app.rendered(), /Application Submitted!/);
+    assert.equal(app.storage.calls.filter(v => v.startsWith('clear')).length, 0);
+    assert.equal(clock.countTimers(), 0);
+  } finally { reload.resolve(); refresh.resolve(); await app.dispose(); clock.uninstall(); }
 });

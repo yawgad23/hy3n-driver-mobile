@@ -13,6 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { openDriverSupportWhatsApp } from '@/lib/support-whatsapp';
 import { useDriverDocumentManifest } from '@/hooks/use-driver-document-manifest';
 import { canConfirmDriverSubmission, isOwnedDriverStorageReference } from '@/lib/driver-document-manifest';
+import { awaitDriverVerification } from '@/lib/driver-document-verification';
 import {
   clampDriverDraftStep, createDriverRegistrationDraftSession, driverRegistrationDetailsMissing,
   driverRegistrationMissingLabels, driverRegistrationRecoveryStep, driverRegistrationRejectionReason,
@@ -150,6 +151,9 @@ export default function DriverRegisterScreen() {
   const savedSubmissionRef = useRef<{
     ticket: { uid: string | null; generation: number }; editRevision: number; form: DriverRegistrationForm;
   } | null>(null);
+  const emailRecoveryRef = useRef<{
+    ticket: { uid: string | null; generation: number }; promise: Promise<boolean>;
+  } | null>(null);
   const draftSessionRef = useRef<ReturnType<typeof createDriverRegistrationDraftSession> | null>(null);
   const freshSignUpRef = useRef<{ email: string; form: DriverRegistrationForm; targetUID: string | null } | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -243,6 +247,7 @@ export default function DriverRegisterScreen() {
     setLoading(false);
     submissionRef.current = false;
     savedSubmissionRef.current = null;
+    emailRecoveryRef.current = null;
     setError('');
     setRecoveryError('');
     setHydrationError('');
@@ -297,16 +302,32 @@ export default function DriverRegisterScreen() {
     const captured = { ...identityRef.current };
     let active = true;
     let busy = false;
+    const abort = new AbortController();
     const checkEmail = async () => {
       if (busy || !active || !isCurrent(captured)) return;
       busy = true;
       try {
-        await user.reload();
-        if (!active || !isCurrent(captured)) return;
+        // Firebase reads cannot be forcibly cancelled. Share any still-pending
+        // same-account read chain across retries instead of starting duplicates.
+        const emailVerified = await awaitDriverVerification(() => {
+          const existing = emailRecoveryRef.current;
+          if (existing && existing.ticket.uid === captured.uid && existing.ticket.generation === captured.generation) return existing.promise;
+          const operation = { ticket: captured, promise: (async () => {
+            await user.reload();
+            if (!isCurrent(captured)) throw new Error('The Driver account changed.');
+            const verified = user.emailVerified;
+            if (verified) await refreshProfile();
+            if (!isCurrent(captured)) throw new Error('The Driver account changed.');
+            return verified;
+          })() };
+          emailRecoveryRef.current = operation;
+          const clear = () => { if (emailRecoveryRef.current === operation) emailRecoveryRef.current = null; };
+          void operation.promise.then(clear, clear);
+          return operation.promise;
+        }, abort.signal);
+        if (!active || abort.signal.aborted || !isCurrent(captured)) return;
         setRecoveryError('');
-        if (user.emailVerified) {
-          await refreshProfile();
-          if (!active || !isCurrent(captured)) return;
+        if (emailVerified) {
           setVerifiedUID(user.uid);
           setEmailCheckedUID(user.uid);
         } else {
@@ -325,6 +346,7 @@ export default function DriverRegisterScreen() {
     void checkEmail();
     return () => {
       active = false;
+      abort.abort();
       if (pollRef.current) clearTimeout(pollRef.current);
       pollRef.current = null;
     };
@@ -541,12 +563,16 @@ export default function DriverRegisterScreen() {
       const checked = await recheck();
       assertCurrent();
       if (!checked) throw new Error('Your application was saved, but documents could not be verified. Retry verification; your selections are retained.');
-      const restored = restoreDriverRegistrationForm(submittedForm, null, checked, false);
       if (!canConfirmDriverSubmission(checked, submitUser.uid)) {
-        setStep(driverRegistrationDetailsMissing(restored) ? 3 : 4);
         const labels = driverRegistrationMissingLabels(checked);
         throw new Error(labels.length ? `Documents still need attention: ${labels.join(', ')}.` : 'Submission could not be confirmed. Retry verification.');
       }
+      const saved = savedSubmissionRef.current;
+      if (!saved || !isCurrent(saved.ticket) || saved.editRevision !== editRevisionRef.current
+        || !driverRegistrationMatchesSavedSubmission(saved.form, checked)) {
+        throw new Error('Your application was saved, but the saved changes are not yet reflected in verification. Retry verification; your draft and selections are retained.');
+      }
+      const restored = restoreDriverRegistrationForm(saved.form, null, checked, false);
       // Clear the edit barrier only after this exact save, refresh and new check.
       editsRef.current = false;
       setPendingEdits(false);
