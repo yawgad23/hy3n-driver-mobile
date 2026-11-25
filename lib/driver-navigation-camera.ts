@@ -11,6 +11,8 @@ export type DriverFollowCameraSample = { position: DriverMapPosition; atMs: numb
 export type DriverNavigationCameraOptions = {
   closeDrivingView?: boolean;
   usableViewportHeight?: number;
+  /** iOS opt-in: accepted GPS interval distance, not a tiny animated frame step. */
+  acceptedMovementMeters?: number;
 };
 
 /** Keep the car below center, with useful road detail and no speed-based zoom pumping. */
@@ -20,8 +22,11 @@ export function driverNavigationCamera(position: DriverMapPosition, previous: Dr
   const heading = Number.isFinite(position.heading) && position.heading >= 0
     ? normalisedHeading(position.heading) : previous?.camera.bearing ?? 0;
   const movement = previous ? distanceBetweenPositionsMetres(previous.position, position) : Infinity;
+  const acceptedMovement = options.acceptedMovementMeters;
+  const bearingMovement = typeof acceptedMovement === 'number' && Number.isFinite(acceptedMovement) && acceptedMovement >= 0
+    ? acceptedMovement : movement;
   // Compass drift while parked must not make the map rotate under the Driver.
-  const bearing = previous && movement < 1.5 ? previous.camera.bearing : heading;
+  const bearing = previous && bearingMovement < 1.5 ? previous.camera.bearing : heading;
   const turn = previous ? Math.abs(((bearing - previous.camera.bearing + 540) % 360) - 180) : 180;
   if (!force && previous && (nowMs - previous.atMs < 100 || (movement < 0.6 && turn < 2))) return null;
   const radians = bearing * Math.PI / 180;

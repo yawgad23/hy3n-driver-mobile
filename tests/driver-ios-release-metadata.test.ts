@@ -133,15 +133,13 @@ test('scene-aware Apple sign-in uses the reviewed SDK 57 package and source comp
   assert.match(plugin, /RequestNotInteractiveException/);
 });
 
-test('all applied iPhone UI, camera, trip and authenticated GPS source logic remains preserved', () => {
+test('all unrelated iPhone UI, trip and authenticated GPS publisher source remains preserved', () => {
   for (const file of [
     'app/(tabs)/home.tsx',
     'components/DriverNavigationBanner.tsx',
     'lib/driver-ios-overlay-theme.ts',
     'hooks/use-driver-ios-overlay-palette.ts',
-    'lib/driver-navigation-camera.ts',
     'lib/native-map-camera.ts',
-    'lib/driver-map-motion.ts',
     'lib/driver-navigation-guidance.ts',
     'lib/driver-android-home-layout.tsx',
     'lib/driver-location-publisher.ts',
@@ -150,7 +148,24 @@ test('all applied iPhone UI, camera, trip and authenticated GPS source logic rem
   ]) {
     assert.equal(current(file), previous(file), file);
   }
-  assert.equal(current('components/NativeDriverGoogleMap.tsx'), previous('components/NativeDriverGoogleMap.tsx').replaceAll('StyleSheet.absoluteFillObject', 'StyleSheet.absoluteFill'));
+  // Navigation behavior is intentionally fixed after the SDK checkpoint.
+  // Preserve the actual map/banner/provider UI byte-for-byte while its motion
+  // and reroute implementation is covered by the actual-component regressions.
+  const uiTail = (source: string) => source.slice(source.indexOf('  const visibleGuidance ='));
+  assert.equal(uiTail(current('components/NativeDriverGoogleMap.tsx')),
+    uiTail(previous('components/NativeDriverGoogleMap.tsx').replaceAll('StyleSheet.absoluteFillObject', 'StyleSheet.absoluteFill')));
+});
+
+test('navigation fixes preserve the released default motion branch and opt in only on iPhone', () => {
+  const legacyMotion = (source: string) => source.slice(source.lastIndexOf('  const next = {'));
+  assert.equal(legacyMotion(current('lib/driver-map-motion.ts')), legacyMotion(previous('lib/driver-map-motion.ts')));
+  const map = current('components/NativeDriverGoogleMap.tsx');
+  assert.match(map, /if \(Platform\.OS === 'ios'\) \{\s+animateVehicleObservation\(currentNavigationLocation\(\)\);\s+return;/);
+  assert.match(map, /alignHeadingToMovement: true/);
+  assert.match(map, /acceptedMovementMeters: now <= cameraMovementRef\.current\.untilMs/);
+  const camera = current('lib/driver-navigation-camera.ts');
+  assert.match(camera, /\? acceptedMovement : movement/);
+  assert.match(camera, /const zoom = closeDrivingView \? 18 : 17\.2/);
 });
 
 test('the tab layout contains only the intended document-recovery correction', () => {

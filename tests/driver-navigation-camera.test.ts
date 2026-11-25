@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { driverNavigationCamera, driverNavigationMapPadding } from '../lib/driver-navigation-camera';
-import { distanceBetweenPositionsMetres } from '../lib/driver-map-motion';
+import { distanceBetweenPositionsMetres, driverMapMotionFrames } from '../lib/driver-map-motion';
 
 const position = { latitude: 5.7, longitude: -0.1, heading: 0 };
 
@@ -145,4 +145,70 @@ test('padding sanitizes unavailable layout values and invalid density', () => {
     assert.deepEqual(driverNavigationMapPadding(20, 30, 0, scale), driverNavigationMapPadding(20, 30, 800));
   }
   assert.deepEqual(driverNavigationMapPadding(Number.POSITIVE_INFINITY, 30, -1), { top: 0, bottom: 30, left: 12, right: 12 });
+});
+
+test('accepted ten-meter low-speed interval advances camera heading despite tiny animation steps', () => {
+  const incoming = { ...position, longitude: position.longitude + 0.00009, heading: 0 };
+  const acceptedMovementMeters = distanceBetweenPositionsMetres(position, incoming);
+  assert.ok(acceptedMovementMeters > 9 && acceptedMovementMeters < 11);
+  const frames = driverMapMotionFrames(position, incoming, 1_940, { alignHeadingToMovement: true });
+  let aligned = driverNavigationCamera(position, null, 1_000)!;
+  let legacy = aligned;
+  let acceptedCount = 0;
+  frames.forEach((frame, index) => {
+    assert.ok(distanceBetweenPositionsMetres(index === 0 ? position : frames[index - 1], frame) < 0.6);
+    const nowMs = 1_000 + (index + 1) * 50;
+    const next = driverNavigationCamera(frame, aligned, nowMs, false, { acceptedMovementMeters });
+    if (next) {
+      aligned = next;
+      acceptedCount += 1;
+      assert.ok(Math.abs(aligned.camera.bearing - 90) < 0.01);
+    }
+    legacy = driverNavigationCamera(frame, legacy, nowMs) ?? legacy;
+  });
+  assert.ok(acceptedCount > 0);
+  assert.ok(Math.abs(aligned.camera.bearing - 90) < 0.01);
+  assert.equal(legacy.camera.bearing, 0, 'omitted interval retains default/Android parked classification');
+});
+
+test('accepted GPS interval changes only bearing classification, not frame-position jitter or rate throttle', () => {
+  const first = driverNavigationCamera(position, null, 1_000)!;
+  const tinyEastStep = { ...position, longitude: position.longitude + 0.000001, heading: 90 };
+  const options = { acceptedMovementMeters: 10 };
+  assert.equal(driverNavigationCamera(tinyEastStep, first, 1_099, false, options), null, '100 ms throttle is unchanged');
+  const turned = driverNavigationCamera(tinyEastStep, first, 1_100, false, options)!;
+  assert.equal(turned.camera.bearing, 90, 'meaningful accepted movement allows a turn despite a tiny frame');
+  assert.equal(driverNavigationCamera({ ...tinyEastStep, longitude: tinyEastStep.longitude + 0.000001 }, turned, 2_000, false, options), null,
+    'same-bearing sub-0.6 m frame jitter is still suppressed');
+});
+
+test('accepted zero movement and forced recenter retain parked heading with the prior camera sample', () => {
+  const first = driverNavigationCamera({ ...position, heading: 90 }, null, 1_000)!;
+  const stationary = { ...position, heading: 0 };
+  assert.equal(driverNavigationCamera(stationary, first, 2_000, false, { acceptedMovementMeters: 0 }), null);
+  const recentered = driverNavigationCamera(stationary, first, 1_001, true, {
+    acceptedMovementMeters: 0, closeDrivingView: true, usableViewportHeight: 160,
+  })!;
+  assert.equal(recentered.camera.bearing, 90);
+  assert.equal(recentered.position.heading, 90);
+  assert.equal(recentered.camera.zoom, 18, 'forced recenter still applies the requested framing');
+  const changedPosition = driverNavigationCamera({ ...stationary, latitude: position.latitude + 0.00003 }, first, 2_000, false, { acceptedMovementMeters: 0 })!;
+  assert.equal(changedPosition.camera.bearing, 90, 'zero accepted movement controls parked bearing even if the rendered camera target is over 1.5 m away');
+});
+
+test('accepted sub-1.5 m interval stabilizes bearing while real movement updates heading', () => {
+  const first = driverNavigationCamera({ ...position, heading: 90 }, null, 1_000)!;
+  const point = { ...position, latitude: position.latitude + 0.001, heading: 270 };
+  assert.equal(driverNavigationCamera(point, first, 2_000, false, { acceptedMovementMeters: 1 })!.camera.bearing, 90);
+  assert.equal(driverNavigationCamera(point, first, 2_000, false, { acceptedMovementMeters: 1.5 })!.camera.bearing, 270);
+});
+
+test('omitted or malformed accepted movement retains legacy camera behavior', () => {
+  const first = driverNavigationCamera({ ...position, heading: 90 }, null, 1_000)!;
+  const moving = { ...position, latitude: position.latitude + 0.001, heading: 270 };
+  const jitter = { ...position, latitude: position.latitude + 0.000009, heading: 270 };
+  for (const acceptedMovementMeters of [undefined, -1, Number.NaN, Infinity]) {
+    assert.deepEqual(driverNavigationCamera(moving, first, 2_000, false, { acceptedMovementMeters }), driverNavigationCamera(moving, first, 2_000));
+    assert.deepEqual(driverNavigationCamera(jitter, first, 2_000, false, { acceptedMovementMeters }), driverNavigationCamera(jitter, first, 2_000));
+  }
 });

@@ -42,11 +42,15 @@ async function mountIos(options: { initialNetworkFailure?: boolean; partialCurre
   const listeners: Record<string, ((value?: any) => void) | null> = {};
   let currentLegReads = 0;
   let shouldFail = Boolean(options.initialNetworkFailure);
+  let failureStatus = 'NETWORK_ERROR';
   let geometryFails = false;
   let overlayFails = false;
   let newRoadOnRequest: typeof initialRoad | null = null;
+  let destinationHandler: (() => Promise<void>) | null = null;
+  const markerWrites: any[] = [];
+  let locationStarts = 0;
   const mapController = {
-    addMarker: async (marker: any) => { markers.set(marker.id, marker); return marker; },
+    addMarker: async (marker: any) => { markerWrites.push(marker); markers.set(marker.id, marker); return marker; },
     removeMarker: async (id: string) => { markers.delete(id); }, moveCamera: async (camera: any) => { cameraCalls.push(camera); },
     addPolyline: async (line: any) => { if (overlayFails) throw { code: 'NO_VIEW_CONTROLLER' }; polylineWrites.push(line); lines.set(line.id, line); return line; },
     removePolyline: async (id: string) => { lines.delete(id); },
@@ -54,7 +58,7 @@ async function mountIos(options: { initialNetworkFailure?: boolean; partialCurre
   };
   const navigationController = {
     showTermsAndConditionsDialog: async () => true, init: async () => 'ok',
-    setAudioGuidanceType: () => {}, startUpdatingLocation: () => {}, stopUpdatingLocation: () => {},
+    setAudioGuidanceType: () => {}, startUpdatingLocation: () => { locationStarts++; }, stopUpdatingLocation: () => {},
     setBackgroundLocationUpdatesEnabled: () => {}, startGuidance: async () => {}, stopGuidance: async () => {},
     setTurnByTurnLoggingEnabled: (enabled: boolean) => { loggingCalls.push(enabled); },
     getCurrentTimeAndDistance: async () => {
@@ -69,7 +73,8 @@ async function mountIos(options: { initialNetworkFailure?: boolean; partialCurre
       nativeGeneration++;
       nativeTarget = { ...point.position };
       calls.push({ point, observedLocation: { latitude: props.latitude, longitude: props.longitude } });
-      if (shouldFail) return 'NETWORK_ERROR';
+      if (destinationHandler) await destinationHandler();
+      if (shouldFail) return failureStatus;
       if (newRoadOnRequest) { route = newRoadOnRequest; currentLeg = newRoadOnRequest; }
       return 'OK';
     },
@@ -118,15 +123,20 @@ async function mountIos(options: { initialNetworkFailure?: boolean; partialCurre
   await act(async () => { tree = create(React.createElement(Component, props)); await flush(); });
   await act(async () => { await flush(); });
   return { lines, markers, calls, logs, listeners, currentLegReads: () => currentLegReads,
-    loggingCalls, cameraCalls, nativeStamp, polylineWrites, metricsReads: () => metricsReads,
+    loggingCalls, cameraCalls, nativeStamp, polylineWrites, markerWrites, locationStarts: () => locationStarts,
+    metricsReads: () => metricsReads,
+    setDestinationHandler: (value: (() => Promise<void>) | null) => { destinationHandler = value; },
     setMetricsHandler: (handler: (() => Promise<any>) | null) => { metricsHandler = handler; },
     emit: async (name: string, value?: any) => { await act(async () => { listeners[name]?.(value); await flush(); }); },
     rendered: () => JSON.stringify(tree.toJSON()),
+    press: async (label: string) => { await act(async () => {
+      tree.root.findByProps({ accessibilityLabel: label }).props.onPress(); await flush();
+    }); },
     arrival: async (event: any) => { await act(async () => { listeners.arrival?.(event); await flush(); }); },
     routeChanged: async () => { await act(async () => { listeners.changed?.(); await flush(); }); },
     nativeLocation: async (location: any) => { await act(async () => { listeners.location?.(location); await flush(); }); },
     providerRecovers: () => { shouldFail = false; },
-    providerFails: () => { shouldFail = true; },
+    providerFails: (status = 'NETWORK_ERROR') => { shouldFail = true; failureStatus = status; },
     geometryFails: (value: boolean) => { geometryFails = value; },
     overlayFails: (value: boolean) => { overlayFails = value; },
     currentLeg: (points: typeof initialRoad) => { currentLeg = points; },
@@ -770,3 +780,268 @@ for (const transition of ['replacement', 'removal'] as const) {
     } finally { await map.dispose(); }
   });
 }
+
+// Regressions for the 25 November missed-turn and sideways/gliding audit.
+// These require the FIXED behavior, not merely reproduction of the old defect.
+test('iOS raw off-route evidence survives newer on-road native snaps and switches display to the real road', async () => {
+  const clock = requireHere('@sinonjs/fake-timers').install({ now: 100_000, toFake: ['Date','setTimeout','clearTimeout','setInterval','clearInterval'] });
+  const map = await mountIos();
+  try {
+    const base = Date.now();
+    const actual = { lat: 5.70204, lng: -0.102 };
+    map.nextRoute([actual, { lat: corner.lat, lng: actual.lng }, corner, target]);
+    for (let index = 1; index <= 3; index++) {
+      await map.nativeLocation({ lat: 5.703 + index * 0.00001, lng: origin.lng,
+        time: base + index * 100 + 50, accuracy: 5, bearing: 0 });
+      await map.update({ latitude: 5.702 + index * 0.00002, longitude: actual.lng,
+        locationTimestamp: base + index * 100, locationAccuracy: 5 });
+    }
+    assert.equal(map.calls.length, 2, 'confirmed raw deviation causes exactly one replacement despite intervening on-road snaps');
+    assert.deepEqual(map.calls.at(-1).point.position, target);
+    assert.equal(map.lines.get('hy3n-driver-route')?.points[0].lng, actual.lng);
+    await act(async () => { await clock.tickAsync(2_000); });
+    assert.equal(map.markers.get('hy3n-driver-vehicle')?.position.lng, actual.lng, 'old snapped road cannot pin the car after confirmed deviation');
+  } finally { await map.dispose(); clock.uninstall(); }
+});
+
+test('iOS delayed successful same-road reroute accepts the latest moving origin instead of the frozen request origin', async () => {
+  const map = await mountIos();
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  try {
+    const base = Date.now();
+    map.setDestinationHandler(() => pending);
+    await map.update({ latitude: 5.7028, locationTimestamp: base + 1 });
+    await map.update({ latitude: 5.7024, locationTimestamp: base + 2 });
+    await map.update({ latitude: 5.7020, locationTimestamp: base + 3 });
+    assert.equal(map.calls.length, 2);
+    const latest = { lat: 5.7014, lng: origin.lng };
+    map.nextRoute([latest, corner, target]);
+    await map.update({ latitude: latest.lat, locationTimestamp: base + 1_000 });
+    release();
+    await map.flush();
+    await map.flush();
+    assert.deepEqual(map.lines.get('hy3n-driver-route')?.points[0], latest);
+    assert.deepEqual(map.lines.get('hy3n-driver-route')?.points.at(-1), target);
+    assert.equal(map.logs.some(row => row[1] === 'geometry.rejected' && row[2].reason === 'unconfirmed_shared_road'), false);
+    assert.equal(map.calls.length, 2, 'movement during a request does not create a competing mutation');
+  } finally { release(); await map.dispose(); }
+});
+
+test('iOS rejects a target-matching replacement disconnected from fresh GPS and recovers when connected geometry arrives', async () => {
+  const map = await mountIos();
+  try {
+    const base = Date.now();
+    const disconnected = [{ lat: 5.700, lng: -0.105 }, { lat: corner.lat, lng: -0.105 }, target];
+    map.nextRoute(disconnected);
+    await map.update({ latitude: 5.7021, longitude: -0.102, locationTimestamp: base + 1 });
+    await map.update({ latitude: 5.7020, longitude: -0.102, locationTimestamp: base + 2 });
+    assert.equal(map.calls.length, 2);
+    assert.equal(map.lines.has('hy3n-driver-route'), false, 'a correct endpoint does not make a disconnected origin safe');
+    assert.ok(map.logs.some(row => row[1] === 'geometry.rejected' && row[2].reason === 'not_on_current_road'));
+    const actual = { lat: 5.7020, lng: -0.102 };
+    const connected = [actual, { lat: corner.lat, lng: actual.lng }, corner, target];
+    map.setGeometryHandlers(async () => ({ segmentLatLngList: connected, ...map.nativeStamp() }),
+      async () => [{ segmentLatLngList: connected }]);
+    await map.routeChanged();
+    await map.flush();
+    assert.deepEqual(map.lines.get('hy3n-driver-route')?.points[0], actual);
+    assert.equal(map.calls.length, 2, 'geometry recovery cannot consume another destination request');
+  } finally { await map.dispose(); }
+});
+
+test('iOS retains native display through millisecond timestamp jitter only while both providers agree', async () => {
+  const clock = requireHere('@sinonjs/fake-timers').install({ now: 100_000, toFake: ['Date','setTimeout','clearTimeout','setInterval','clearInterval'] });
+  const map = await mountIos();
+  try {
+    const snapped = { lat: 5.7031, lng: origin.lng };
+    await map.nativeLocation({ ...snapped, time: 101_000, accuracy: 5, bearing: 0 });
+    await act(async () => { await clock.tickAsync(1_000); });
+    await map.update({ latitude: snapped.lat, longitude: origin.lng + 0.0001, locationTimestamp: 101_001 });
+    await act(async () => { await clock.tickAsync(2_000); });
+    assert.deepEqual(map.markers.get('hy3n-driver-vehicle')?.position, snapped, 'a one millisecond newer raw sample cannot oscillate an agreeing snapped display');
+    await map.update({ latitude: snapped.lat, longitude: origin.lng + 0.0001, locationTimestamp: Date.now() });
+    await act(async () => { await clock.tickAsync(2_000); });
+    assert.equal(map.markers.get('hy3n-driver-vehicle')?.position.lng, origin.lng + 0.0001, 'bounded preference cannot pin a sufficiently older native fix indefinitely');
+  } finally { await map.dispose(); clock.uninstall(); }
+});
+
+test('iOS steady native samples glide through intermediate frames and unavailable course follows actual movement', async () => {
+  const clock = requireHere('@sinonjs/fake-timers').install({ now: 100_000, toFake: ['Date','setTimeout','clearTimeout','setInterval','clearInterval'] });
+  const map = await mountIos();
+  try {
+    await act(async () => { await clock.tickAsync(1_000); });
+    const east = { lat: 5.703, lng: origin.lng + 0.0002 };
+    const before = map.markerWrites.length;
+    await map.nativeLocation({ ...east, time: Date.now(), accuracy: 5, bearing: 0 });
+    await act(async () => { await clock.tickAsync(500); });
+    const middle = map.markers.get('hy3n-driver-vehicle');
+    assert.ok(middle.position.lng > origin.lng && middle.position.lng < east.lng, 'native callback must not jump directly to the endpoint');
+    assert.ok(Math.abs(middle.rotation - 90) < 1, 'car faces eastward rendered travel even when finite course disagrees');
+    await act(async () => { await clock.tickAsync(500); });
+    assert.deepEqual(map.markers.get('hy3n-driver-vehicle')?.position, east);
+    assert.ok(map.markerWrites.length - before > 2);
+    const further = { lat: east.lat, lng: east.lng + 0.0002 };
+    await map.nativeLocation({ ...further, time: Date.now(), accuracy: 5 });
+    await act(async () => { await clock.tickAsync(500); });
+    assert.ok(map.markers.get('hy3n-driver-vehicle')?.position.lng < further.lng, 'the native cadence clock must advance for every accepted sample');
+    await act(async () => { await clock.tickAsync(500); });
+    assert.ok(Math.abs(map.markers.get('hy3n-driver-vehicle')?.rotation - 90) < 1, 'omitted native bearing cannot become north');
+    assert.deepEqual(map.markers.get('hy3n-driver-vehicle')?.position, further);
+  } finally { await map.dispose(); clock.uninstall(); }
+});
+
+test('iOS duplicate native samples and heading/accuracy-only renders do not restart a moving observation', async () => {
+  const clock = requireHere('@sinonjs/fake-timers').install({ now: 100_000, toFake: ['Date','setTimeout','clearTimeout','setInterval','clearInterval'] });
+  const map = await mountIos();
+  try {
+    await act(async () => { await clock.tickAsync(1_000); });
+    const sample = { lat: 5.703, lng: origin.lng + 0.0002, time: Date.now(), accuracy: 5, bearing: 90 };
+    await map.nativeLocation(sample);
+    await act(async () => { await clock.tickAsync(400); });
+    const count = map.markerWrites.length;
+    await map.nativeLocation({ ...sample, bearing: 0 });
+    await map.update({ heading: 0, locationAccuracy: 6 });
+    assert.equal(map.markerWrites.length, count, 'duplicates/metadata changes cannot cancel and repaint the movement');
+    await act(async () => { await clock.tickAsync(600); });
+    assert.deepEqual(map.markers.get('hy3n-driver-vehicle')?.position, { lat: sample.lat, lng: sample.lng }, 'original cadence completes on time');
+    assert.ok(Math.abs(map.markers.get('hy3n-driver-vehicle')?.rotation - 90) < 1);
+  } finally { await map.dispose(); clock.uninstall(); }
+});
+
+test('iOS low-speed native turn rotates the follow camera and parked recenter keeps its reliable bearing', async () => {
+  const clock = requireHere('@sinonjs/fake-timers').install({ now: 100_000, toFake: ['Date','setTimeout','clearTimeout','setInterval','clearInterval'] });
+  const map = await mountIos();
+  try {
+    await act(async () => { await clock.tickAsync(2_000); });
+    const sample = { lat: 5.703, lng: origin.lng + 0.00009, time: Date.now(), accuracy: 5, bearing: 90 };
+    await map.nativeLocation(sample);
+    await act(async () => { await clock.tickAsync(2_000); });
+    assert.ok(Math.abs(map.cameraCalls.at(-1).bearing - 90) < 1, 'real GPS interval movement must overcome tiny per-frame displacement');
+    await map.nativeLocation({ ...sample, time: Date.now(), bearing: 0 });
+    await map.press('Explore map');
+    await map.press('Recenter navigation');
+    assert.ok(Math.abs(map.markers.get('hy3n-driver-vehicle')?.rotation - 90) < 1, 'stationary contradictory course does not reset reliable car bearing');
+    assert.ok(Math.abs(map.cameraCalls.at(-1).bearing - 90) < 1, 'recenter cannot erase the parked reliable camera bearing');
+  } finally { await map.dispose(); clock.uninstall(); }
+});
+
+test('iOS unmount cancels outstanding native animation frames', async () => {
+  const clock = requireHere('@sinonjs/fake-timers').install({ now: 100_000, toFake: ['Date','setTimeout','clearTimeout','setInterval','clearInterval'] });
+  const map = await mountIos();
+  let disposed = false;
+  try {
+    await act(async () => { await clock.tickAsync(1_000); });
+    await map.nativeLocation({ lat: 5.703, lng: origin.lng + 0.0002, time: Date.now(), accuracy: 5, bearing: 90 });
+    await act(async () => { await clock.tickAsync(200); });
+    await map.dispose();
+    disposed = true;
+    const before = map.markerWrites.length;
+    await act(async () => { await clock.tickAsync(5_000); });
+    assert.equal(map.markerWrites.length, before, 'old animation must not write into a released native map');
+    assert.ok(Object.values(map.listeners).every(listener => listener === null));
+  } finally { if (!disposed) await map.dispose(); clock.uninstall(); }
+});
+
+test('iOS confirmed raw deviation takes over the marker even when its fresh timestamp trails native by over one second', async () => {
+  const clock = requireHere('@sinonjs/fake-timers').install({ now: 100_000, toFake: ['Date','setTimeout','clearTimeout','setInterval','clearInterval'] });
+  const map = await mountIos();
+  try {
+    await map.nativeLocation({ lat: 5.7031, lng: origin.lng, time: Date.now(), accuracy: 5, bearing: 0 });
+    const actual = { lat: 5.70204, lng: -0.102 };
+    map.nextRoute([actual, { lat: corner.lat, lng: actual.lng }, corner, target]);
+    await map.update({ latitude: 5.70202, longitude: actual.lng, locationTimestamp: 98_000 });
+    await map.update({ latitude: actual.lat, longitude: actual.lng, locationTimestamp: 98_100 });
+    assert.equal(map.calls.length, 2);
+    assert.deepEqual(map.lines.get('hy3n-driver-route')?.points[0], actual);
+    await act(async () => { await clock.tickAsync(2_000); });
+    assert.deepEqual(map.markers.get('hy3n-driver-vehicle')?.position, actual,
+      'confirmed fresh raw authority overrides provider timestamp skew for BOTH route and car');
+    const writes = map.markerWrites.length;
+    await map.update({ latitude: 5.702, locationTimestamp: 98_050 });
+    assert.equal(map.markerWrites.length, writes, 'same-provider out-of-order observations still cannot roll the car back');
+  } finally { await map.dispose(); clock.uninstall(); }
+});
+
+test('iOS selects connected complete geometry when a different-road current snapshot reaches the same target', async () => {
+  const map = await mountIos();
+  try {
+    const disconnected = [{ lat: 5.700, lng: -0.105 }, { lat: corner.lat, lng: -0.105 }, target];
+    map.setGeometryHandlers(async () => ({ segmentLatLngList: disconnected, ...map.nativeStamp() }),
+      async () => [{ segmentLatLngList: initialRoad }]);
+    await map.routeChanged();
+    assert.deepEqual(map.lines.get('hy3n-driver-route')?.points[0], { lat: 5.703, lng: origin.lng });
+    assert.equal(map.calls.length, 1, 'a coherent existing candidate does not require a new route mutation');
+    assert.equal(map.polylineWrites.some(line => line.points[0].lng === -0.105), false, 'disconnected candidate never reaches the native overlay');
+  } finally { await map.dispose(); }
+});
+
+test('iOS native movement follows a verified bend and keeps the car aligned with each actual rendered step', async () => {
+  const clock = requireHere('@sinonjs/fake-timers').install({ now: 100_000, toFake: ['Date','setTimeout','clearTimeout','setInterval','clearInterval'] });
+  const start = { lat: 5.703, lng: origin.lng };
+  const bend = { lat: start.lat + 0.0005, lng: origin.lng };
+  const end = { lat: bend.lat, lng: bend.lng + 0.0005 };
+  const map = await mountIos({ initialRoute: [start, bend, end, target] });
+  try {
+    await act(async () => { await clock.tickAsync(2_000); });
+    const before = map.markerWrites.length;
+    await map.nativeLocation({ ...end, time: Date.now(), accuracy: 5, bearing: 0 });
+    await act(async () => { await clock.tickAsync(2_000); });
+    const frames = map.markerWrites.slice(before).filter(marker => marker.id === 'hy3n-driver-vehicle');
+    assert.ok(frames.length > 3);
+    for (const frame of frames) {
+      const onNorth = Math.abs(frame.position.lng - start.lng) < 1e-9;
+      const onEast = Math.abs(frame.position.lat - bend.lat) < 1e-9;
+      assert.ok(onNorth || onEast, 'no chord through the inside of the bend');
+      if (!onNorth) assert.ok(Math.abs(frame.rotation - 90) < 1, 'east leg faces east instead of stale course north');
+      else assert.ok(frame.rotation < 1 || frame.rotation > 359, 'north leg faces north');
+    }
+    assert.ok(frames.some(frame => frame.position.lat === bend.lat && frame.position.lng === bend.lng), 'verified corner is explicitly retained');
+    assert.deepEqual(map.markers.get('hy3n-driver-vehicle')?.position, end);
+  } finally { await map.dispose(); clock.uninstall(); }
+});
+
+test('iOS an asset change during native gliding cannot let older frames restore the previous vehicle image', async () => {
+  const clock = requireHere('@sinonjs/fake-timers').install({ now: 100_000, toFake: ['Date','setTimeout','clearTimeout','setInterval','clearInterval'] });
+  const map = await mountIos();
+  try {
+    await act(async () => { await clock.tickAsync(1_000); });
+    await map.nativeLocation({ lat: 5.703, lng: origin.lng + 0.0002, time: Date.now(), accuracy: 5, bearing: 90 });
+    await act(async () => { await clock.tickAsync(300); });
+    await map.update({ serviceType: 'delivery' });
+    const before = map.markerWrites.length;
+    await act(async () => { await clock.tickAsync(700); });
+    const remaining = map.markerWrites.slice(before).filter(marker => marker.id === 'hy3n-driver-vehicle');
+    assert.ok(remaining.length > 0, 'asset change does not strand an in-progress observation');
+    assert.ok(remaining.every(marker => marker.imgPath === 'HY3NDriverDeliveryMarker'));
+    assert.equal(map.markers.get('hy3n-driver-vehicle')?.imgPath, 'HY3NDriverDeliveryMarker');
+    assert.equal(map.calls.length, 1, 'changing displayed service artwork cannot mutate the destination');
+  } finally { await map.dispose(); clock.uninstall(); }
+});
+
+test('iOS native LOCATION_UNKNOWN restarts its independent provider and recovers with fresh GPS after cooldown', async () => {
+  const clock = requireHere('@sinonjs/fake-timers').install({ now: 100_000, toFake: ['Date','setTimeout','clearTimeout','setInterval','clearInterval'] });
+  const map = await mountIos();
+  try {
+    const starts = map.locationStarts();
+    map.providerFails('LOCATION_UNKNOWN');
+    await map.update({ latitude: 5.7021, longitude: -0.102, locationTimestamp: Date.now() + 1 });
+    await map.update({ latitude: 5.7022, longitude: -0.102, locationTimestamp: Date.now() + 2 });
+    assert.equal(map.calls.length, 2);
+    assert.equal(map.locationStarts(), starts + 1, 'good Expo GPS cannot substitute for starting the native origin provider');
+    assert.match(map.rendered(), /Waiting for Google Navigation to acquire your current location/);
+    assert.doesNotMatch(map.rendered(), /Turn on precise location/);
+    await map.update({ latitude: 5.7023, locationTimestamp: Date.now() + 3 });
+    await map.update({ latitude: 5.7024, locationTimestamp: Date.now() + 4 });
+    assert.equal(map.calls.length, 2, 'origin failure does not cause immediate duplicate requests');
+    map.providerRecovers();
+    await act(async () => { await clock.tickAsync(12_001); });
+    const latest = { lat: 5.7025, lng: -0.102 };
+    map.nextRoute([latest, { lat: corner.lat, lng: latest.lng }, corner, target]);
+    await map.update({ latitude: latest.lat, locationTimestamp: Date.now() + 1 });
+    await map.update({ latitude: latest.lat + 0.00002, locationTimestamp: Date.now() + 2 });
+    assert.equal(map.calls.length, 3);
+    assert.deepEqual(map.calls.at(-1).point.position, target);
+    assert.deepEqual(map.lines.get('hy3n-driver-route')?.points.at(-1), target);
+  } finally { await map.dispose(); clock.uninstall(); }
+});

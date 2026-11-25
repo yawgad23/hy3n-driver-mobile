@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Linking, PixelRatio, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useKeepAwake } from 'expo-keep-awake';
 import {
@@ -19,6 +19,7 @@ import {
   driverMapMotionDurationMs,
   distanceBetweenPositionsMetres,
   routePointsForMap,
+  validatedDriverCourse,
   type DriverMapPosition,
 } from '@/lib/driver-map-motion';
 import {
@@ -146,13 +147,15 @@ type DriverNavigationLocation = {
 
 /**
  * On iPhone, Expo and Google Navigation run distinct location providers.
- * Prefer the most recent navigation-grade fix, but accept neither source once
- * it is stale or imprecise. Returning null clears the branded overlay rather
- * than leaving an old road visible as if it were current guidance.
+ * A confirmed raw-GPS deviation must not be hidden by a newer old-road snap.
+ * Otherwise retain a bounded native preference when the providers agree, so
+ * millisecond timestamp jitter does not move the marker between two feeds.
  */
 function freshestNavigationLocation(
   expo: DriverNavigationLocation | null,
   native: DriverNavigationLocation | null,
+  preferRawGps = false,
+  previousSource?: DriverNavigationLocation['source'],
 ) {
   const expoIsFresh = Boolean(expo && hasPoint(expo.latitude, expo.longitude)
     && hasFreshNavigationFix(expo.accuracyMeters, expo.time));
@@ -161,6 +164,11 @@ function freshestNavigationLocation(
   if (!expoIsFresh && !nativeIsFresh) return null;
   if (!expoIsFresh) return native;
   if (!nativeIsFresh) return expo;
+  const separation = distanceBetweenPositionsMetres({ ...expo!, heading: 0 }, { ...native!, heading: 0 });
+  const agreementMetres = Math.max(20, Math.min(35, Number(expo!.accuracyMeters) + Number(native!.accuracyMeters)));
+  if (preferRawGps && separation > agreementMetres) return expo;
+  if (previousSource === 'ios-navigation' && separation <= agreementMetres
+    && Number(expo!.time) - Number(native!.time) < 1_000) return native;
   return Number(native!.time) >= Number(expo!.time) ? native : expo;
 }
 
@@ -170,8 +178,9 @@ function readableNavigationFailure(status: NavigationSessionStatus | RouteStatus
       return 'Embedded navigation is not authorised for this app yet.';
     case NavigationSessionStatus.LOCATION_PERMISSION_MISSING:
     case RouteStatus.LOCATION_DISABLED:
-    case RouteStatus.LOCATION_UNKNOWN:
       return 'Turn on precise location to start in-app navigation.';
+    case RouteStatus.LOCATION_UNKNOWN:
+      return 'Waiting for Google Navigation to acquire your current location.';
     case NavigationSessionStatus.NETWORK_ERROR:
     case RouteStatus.NETWORK_ERROR:
       return 'Navigation needs an internet connection to load this route.';
@@ -255,6 +264,10 @@ function DriverNavigationSurface({
   const diagnostics = useRef(createDriverNavigationDiagnostics()).current;
   const nativeLocationRef = useRef<DriverNavigationLocation | null>(null);
   const expoLocationRef = useRef<DriverNavigationLocation | null>(null);
+  const rawDeviationConfirmedRef = useRef(false);
+  const nativeOffRouteMonitorRef = useRef(EMPTY_DRIVER_OFF_ROUTE_MONITOR);
+  const nativeWrongWayMonitorRef = useRef(EMPTY_DRIVER_WRONG_WAY_MONITOR);
+  const lastFallbackRerouteAtMsRef = useRef(0);
   const confirmedRerouteRef = useRef<{ request: number; origin: { latitude: number; longitude: number }; atMs: number } | null>(null);
   const initializedRef = useRef(false);
   const navigationRequestRef = useRef(0);
@@ -263,6 +276,10 @@ function DriverNavigationSurface({
   const vehiclePositionRef = useRef<DriverMapPosition | null>(null);
   const vehiclePositionTimestampRef = useRef<number | null>(null);
   const vehicleMotionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const vehicleObservationRef = useRef<{ key: string; source: DriverNavigationLocation['source']; time: number; position: DriverMapPosition } | null>(null);
+  const cameraMovementRef = useRef({ metres: 0, untilMs: 0 });
+  const animateObservationRef = useRef<(fix: DriverNavigationLocation | null) => void>(() => {});
+  const vehicleFrameWriterRef = useRef<(position: DriverMapPosition, followTrip: boolean) => void>(() => {});
   const vehicleMotionRunRef = useRef(0);
   const routeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const routeRefreshRunRef = useRef(0);
@@ -308,22 +325,23 @@ function DriverNavigationSurface({
   expoLocationRef.current = hasDeviceLocation
     ? {
       latitude: Number(latitude), longitude: Number(longitude), accuracyMeters: locationAccuracy,
-      time: locationTimestamp, source: 'expo',
+      heading, time: locationTimestamp, source: 'expo',
     }
     : null;
   // This correction is intentionally iOS-only. Android keeps its established
   // Expo path; no Android Navigation SDK behavior is inferred from the iPhone
   // bridge investigation.
-  liveLocationRef.current = Platform.OS === 'ios'
-    ? freshestNavigationLocation(expoLocationRef.current, nativeLocationRef.current)
-    : expoLocationRef.current;
   const currentNavigationLocation = useCallback(() => {
     const current = Platform.OS === 'ios'
-      ? freshestNavigationLocation(expoLocationRef.current, nativeLocationRef.current)
+      ? freshestNavigationLocation(expoLocationRef.current, nativeLocationRef.current, rawDeviationConfirmedRef.current, liveLocationRef.current?.source)
       : expoLocationRef.current;
     liveLocationRef.current = current;
     return current;
   }, []);
+
+  useEffect(() => {
+    currentNavigationLocation();
+  }, [currentNavigationLocation, latitude, locationAccuracy, locationTimestamp, longitude]);
 
   useEffect(() => {
     if (Platform.OS !== 'android' || hasDeviceLocation) return;
@@ -344,7 +362,11 @@ function DriverNavigationSurface({
 
   const updateFollowingCamera = useCallback((position: DriverMapPosition, force = false) => {
     if (!mapViewController || !activeTargetRef.current || !followingRef.current) return;
-    const next = driverNavigationCamera(position, cameraSampleRef.current, Date.now(), force, cameraOptionsRef.current);
+    const now = Date.now();
+    const options = Platform.OS === 'ios' ? { ...cameraOptionsRef.current,
+      acceptedMovementMeters: now <= cameraMovementRef.current.untilMs ? cameraMovementRef.current.metres : 0,
+    } : cameraOptionsRef.current;
+    const next = driverNavigationCamera(position, cameraSampleRef.current, now, force, options);
     if (!next) return;
     cameraSampleRef.current = next;
     pendingCameraRef.current = { sample: next, controller: mapViewController, targetKey: activeTargetRef.current.key, request: navigationRequestRef.current };
@@ -375,7 +397,7 @@ function DriverNavigationSurface({
   const recenter = useCallback(() => {
     followingRef.current = true;
     setIsFollowing(true);
-    cameraSampleRef.current = null;
+    if (Platform.OS !== 'ios') cameraSampleRef.current = null;
     if (vehiclePositionRef.current) updateFollowingCamera(vehiclePositionRef.current, true);
   }, [updateFollowingCamera]);
   const mapPadding = useMemo(() => driverNavigationMapPadding(
@@ -482,28 +504,93 @@ function DriverNavigationSurface({
     }
 
   }, [diagnostics, mapViewController, normalizedServiceType, updateFollowingCamera, vehicleMarkerAsset]);
+  useLayoutEffect(() => {
+    vehicleFrameWriterRef.current = applyVehiclePosition;
+  }, [applyVehiclePosition]);
+
+  // Both iPhone providers enter the same animator. Course/accuracy-only renders
+  // must not cancel an in-flight movement or restart its cadence clock.
+  const animateVehicleObservation = useCallback((fix: DriverNavigationLocation | null) => {
+    if (!mapViewController || !fix || !hasPoint(fix.latitude, fix.longitude)
+      || !hasFreshNavigationFix(fix.accuracyMeters, fix.time)) return;
+    const timestamp = Number(fix.time);
+    const key = `${fix.source}:${timestamp}:${fix.latitude}:${fix.longitude}`;
+    const previousObservation = vehicleObservationRef.current;
+    if (previousObservation?.key === key) return;
+    if (previousObservation && timestamp <= previousObservation.time && fix.source === previousObservation.source) return;
+    // Provider clocks do not establish spatial authority. The selected fresh
+    // raw fix must take over after confirmed deviation, even if its timestamp
+    // trails an obsolete snapped point. Reset cadence for a backward handoff;
+    // never replay an older sample within the SAME provider.
+    const backwardHandoff = previousObservation && fix.source !== previousObservation.source
+      && timestamp <= previousObservation.time;
+    const incoming = { latitude: fix.latitude, longitude: fix.longitude,
+      heading: validatedDriverCourse(fix.heading) ?? Number.NaN };
+    const durationMs = driverMapMotionDurationMs(backwardHandoff ? null : vehiclePositionTimestampRef.current, timestamp);
+    // Never animate a known deviation along the old route. The helper also
+    // validates endpoint proximity, direction and path length before bends.
+    const frames = driverMapMotionFrames(vehiclePositionRef.current, incoming, durationMs, {
+      alignHeadingToMovement: true,
+      routePoints: staleRoutePlanRef.current ? [] : routePointsRef.current,
+    });
+    if (!frames.length) return;
+    const movement = previousObservation
+      ? distanceBetweenPositionsMetres(previousObservation.position, incoming) : 0;
+    vehicleObservationRef.current = { key, source: fix.source, time: timestamp, position: incoming };
+    vehiclePositionTimestampRef.current = timestamp;
+    cameraMovementRef.current = { metres: movement, untilMs: Date.now() + durationMs + 100 };
+    clearVehicleMotion();
+    const run = vehicleMotionRunRef.current;
+    const controller = mapViewController;
+    let index = 0;
+    const frameIntervalMs = durationMs / frames.length;
+    const showFrame = () => {
+      if (vehicleMotionRunRef.current !== run || cameraControllerRef.current !== controller) return;
+      const frame = frames[index++];
+      if (!frame) return;
+      vehiclePositionRef.current = frame;
+      vehicleFrameWriterRef.current(frame, Boolean(activeTargetRef.current));
+      if (index < frames.length) vehicleMotionTimerRef.current = setTimeout(showFrame, frameIntervalMs);
+      else {
+        vehicleMotionTimerRef.current = null;
+        updateFollowingCamera(frame, true);
+        cameraMovementRef.current = { metres: 0, untilMs: 0 };
+      }
+    };
+    showFrame();
+  }, [clearVehicleMotion, mapViewController, updateFollowingCamera]);
+  useLayoutEffect(() => {
+    animateObservationRef.current = animateVehicleObservation;
+  }, [animateVehicleObservation]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    vehicleObservationRef.current = null;
+    vehiclePositionTimestampRef.current = null;
+    return clearVehicleMotion;
+  }, [clearVehicleMotion, mapViewController]);
+
+  useEffect(() => {
+    if (Platform.OS === 'ios' && vehiclePositionRef.current) {
+      applyVehiclePosition(vehiclePositionRef.current, Boolean(activeTargetRef.current));
+    }
+  }, [applyVehiclePosition, vehicleMarkerAsset]);
 
   // Interpolate each real GPS observation into small native-map updates. The
   // car uses the device heading where available and only follows positions the
   // Driver app has received; this display layer has no effect on fare or meter.
   useEffect(() => {
+    if (Platform.OS === 'ios') {
+      animateVehicleObservation(currentNavigationLocation());
+      return;
+    }
     if (!mapViewController || !hasDeviceLocation) return;
-    // On iOS, prefer Google's fresh road-snapped navigation fix for the
-    // displayed vehicle when available. Previously every Expo GPS render
-    // animated the marker back to raw GPS coordinates immediately after the
-    // native callback snapped it to the road, making the car appear off-road
-    // or in the wrong place. Expo remains the fallback and the only source for
-    // server presence, trip distance, and fare calculations.
-    const navigationFix = Platform.OS === 'ios' ? currentNavigationLocation() : null;
-    const reportedHeading = navigationFix?.source === 'ios-navigation' && Number.isFinite(Number(navigationFix.heading))
-      ? Number(navigationFix.heading)
-      : heading === null || heading === undefined ? Number.NaN : Number(heading);
+    // Preserve the released Android Expo interpolation and road projection.
+    const reportedHeading = heading === null || heading === undefined ? Number.NaN : Number(heading);
     const next = {
-      latitude: navigationFix?.latitude ?? Number(latitude),
-      longitude: navigationFix?.longitude ?? Number(longitude),
-      // Prefer the native road bearing when it is the selected position.
-      // Otherwise preserve an unavailable Expo compass heading as NaN so the
-      // motion helper derives direction from movement instead of north.
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+      // Preserve unavailable course as NaN for the legacy displacement fallback.
       // A negative heading means "no valid course" (for example when the car
       // is stopped); treating it as 359 degrees made the car and camera spin.
       heading: reportedHeading < 0 ? Number.NaN : reportedHeading,
@@ -513,7 +600,7 @@ function DriverNavigationSurface({
     // Driver is genuinely on the route (within 20 m), draw the car on the road
     // and face it along the road. Beyond that it shows the real GPS position,
     // so a missed turn is still visible and still triggers the reroute checks.
-    if (Platform.OS !== 'ios' && routePointsRef.current.length >= 2) {
+    if (routePointsRef.current.length >= 2) {
       const onRoad = projectDriverOnRoute(
         { latitude: next.latitude, longitude: next.longitude },
         routePointsRef.current,
@@ -524,7 +611,7 @@ function DriverNavigationSurface({
         if (!Number.isFinite(next.heading)) next.heading = onRoad.bearing;
       }
     }
-    const sampleTimestamp = navigationFix?.time ?? locationTimestamp ?? null;
+    const sampleTimestamp = locationTimestamp ?? null;
     const currentTimestamp = typeof sampleTimestamp === 'number' && Number.isFinite(sampleTimestamp)
       ? sampleTimestamp
       : null;
@@ -547,7 +634,7 @@ function DriverNavigationSurface({
     };
     showFrame();
     return clearVehicleMotion;
-  }, [applyVehiclePosition, clearVehicleMotion, currentNavigationLocation, hasDeviceLocation, hasTarget, heading, latitude, locationAccuracy, locationTimestamp, longitude, mapViewController]);
+  }, [animateVehicleObservation, applyVehiclePosition, clearVehicleMotion, currentNavigationLocation, hasDeviceLocation, hasTarget, heading, latitude, locationAccuracy, locationTimestamp, longitude, mapViewController]);
 
   const clearRouteLines = useCallback(async () => {
     if (!mapViewController || !routeMapReadyRef.current) return;
@@ -642,7 +729,7 @@ function DriverNavigationSurface({
     const request = navigationRequestRef.current;
     const key = activeTargetRef.current?.key;
     const requestIsCurrent = isCurrent;
-    isCurrent = () => requestIsCurrent() && (Platform.OS !== 'android'
+    isCurrent = () => requestIsCurrent() && (!['android', 'ios'].includes(Platform.OS)
       || (navigationRequestRef.current === request && activeTargetRef.current?.key === key
         && cameraControllerRef.current === mapViewController && routeMapReadyRef.current));
     const work = routeOverlayWorkRef.current.then(async () => {
@@ -676,7 +763,11 @@ function DriverNavigationSurface({
           : Platform.OS === 'ios'
             ? driverIosRouteMatchesTarget(candidate.segments, candidate.points, { lat: targetLatitude, lng: targetLongitude })
             : driverRouteReachesTarget(candidate.points, { lat: targetLatitude, lng: targetLongitude });
-        const selected = routeCandidates.find(candidateMatchesTarget)
+        const locationAtRead = iosCurrentLeg ? currentNavigationLocation() : null;
+        const connectedCandidate = iosCurrentLeg && locationAtRead
+          ? routeCandidates.find(candidate => candidateMatchesTarget(candidate)
+            && remainingDriverRoute(locationAtRead, candidate.points).length >= 2) : null;
+        const selected = connectedCandidate ?? routeCandidates.find(candidateMatchesTarget)
           ?? routeCandidates.sort((a, b) => b.points.length - a.points.length)[0];
         const points = selected?.points ?? [];
         const targetMatches = Boolean(selected && candidateMatchesTarget(selected));
@@ -686,18 +777,25 @@ function DriverNavigationSurface({
           return false;
         }
         stage = 'polyline';
-        routePointsRef.current = points;
         // Native path prefixes can change on progress/traffic reads without a
         // genuine new direction. Never erase distinct real-GPS evidence because
         // JSON geometry changed. The next GPS assessment recalculates against
         // this geometry; only a real target change resets the monitors.
-        const remaining = remainingDriverRoute(currentNavigationLocation(), points);
+        const currentLocation = currentNavigationLocation();
+        const remaining = remainingDriverRoute(currentLocation, points);
+        if (iosCurrentLeg && currentLocation && remaining.length < 2) {
+          diagnostics('geometry.rejected', { reason: 'not_on_current_road' });
+          return false;
+        }
         // Google can still return the old leg while a reroute is pending.
-        // Retain it for deviation checks but do not repaint a disconnected line.
+        // Confirm continuity against the GPS at ACCEPTANCE, not only the frozen
+        // request origin: the car may travel while setDestination is pending.
         const confirmation = confirmedRerouteRef.current;
         const confirmedFreshStart = iosCurrentLeg && confirmation?.request === navigationRequestRef.current
           && Date.now() - confirmation.atMs <= 30_000
-          && driverRouteStartsAtLocation(points, confirmation.origin);
+          && remaining.length >= 2
+          && (driverRouteStartsAtLocation(points, currentLocation)
+            || driverRouteStartsAtLocation(points, confirmation.origin));
         const replacementIsUnconfirmed = staleRoutePlanRef.current
           && isSameDriverRoadPlan(points, staleRoutePlanRef.current)
           && !confirmedFreshStart;
@@ -705,6 +803,11 @@ function DriverNavigationSurface({
           diagnostics('geometry.rejected', { reason: remaining.length < 2 ? 'not_on_current_road' : 'unconfirmed_shared_road' });
           return false;
         }
+        // Quarantine unknown-location replacements, but keep a previously
+        // verified route during a temporary loss of BOTH location feeds.
+        if (iosCurrentLeg && !currentLocation && (staleRoutePlanRef.current || !routePointsRef.current.length
+          || !isSameDriverRoadPlan(points, routePointsRef.current))) return false;
+        routePointsRef.current = points;
         // A valid Google route is still the best visual guidance available if
         // the native location callback is momentarily stale. Do not erase the
         // last visible route just because trimming it to the latest fix is not
@@ -855,11 +958,13 @@ function DriverNavigationSurface({
       || !targetKey
       || lastTargetKeyRef.current !== targetKey
       || arrivedTargetKeyRef.current === targetKey
+      || (Platform.OS === 'ios' && Date.now() - lastFallbackRerouteAtMsRef.current < 12_000)
     ) return;
 
     const request = navigationRequestRef.current;
     const stillCurrent = () => navigationRequestRef.current === request && lastTargetKeyRef.current === targetKey;
     forcedRerouteInFlightRef.current = true;
+    if (Platform.OS === 'ios') lastFallbackRerouteAtMsRef.current = Date.now();
     // Invalidate delayed redraws of the old road immediately. Queue removal
     // ahead of all future branded-route writes so a late callback cannot put
     // the obsolete green line back on the map while Google recalculates.
@@ -881,6 +986,11 @@ function DriverNavigationSurface({
         }
         diagnostics('route.request', { request, accuracyMeters: observedOrigin.accuracyMeters,
           ageMs: observedOrigin.time != null ? Math.max(0, Date.now() - observedOrigin.time) : null });
+        if (Platform.OS === 'ios') {
+          // Expo GPS does not initialize Google's independent origin provider.
+          navigationController.setBackgroundLocationUpdatesEnabled(true);
+          navigationController.startUpdatingLocation();
+        }
         // Keep the destination server-owned. This only asks Google Navigation
         // to replace its route from the Driver's verified current GPS position.
         const routeStatus = await navigationController.setDestination(
@@ -945,14 +1055,18 @@ function DriverNavigationSurface({
 
     const usableFix = Boolean(observedLocation
       && hasFreshNavigationFix(observedLocation.accuracyMeters, observedLocation.time));
+    // Native on-road samples cannot reset independent raw-GPS deviation proof.
+    const nativeEvidence = Platform.OS === 'ios' && observedLocation?.source === 'ios-navigation';
+    const offRouteRef = nativeEvidence ? nativeOffRouteMonitorRef : offRouteMonitorRef;
+    const wrongWayRef = nativeEvidence ? nativeWrongWayMonitorRef : wrongWayMonitorRef;
     diagnostics('gps.sample', {
       valid: usableFix,
       accuracyMeters: observedLocation?.accuracyMeters ?? null,
       ageMs: observedLocation?.time != null ? Math.max(0, Date.now() - observedLocation.time) : null,
     });
     if (!observedLocation || (Platform.OS === 'ios' && !usableFix)) {
-      offRouteMonitorRef.current = { ...offRouteMonitorRef.current, consecutiveOffRouteSamples: 0 };
-      wrongWayMonitorRef.current = { ...wrongWayMonitorRef.current, previousLocation: null, consecutiveSamples: 0 };
+      offRouteRef.current = { ...offRouteRef.current, consecutiveOffRouteSamples: 0 };
+      wrongWayRef.current = { ...wrongWayRef.current, previousLocation: null, consecutiveSamples: 0 };
       diagnostics('route.assessment', { shouldReroute: false, reason: 'stale_or_imprecise_gps' });
       // Keep the last verified route visible while the native provider catches
       // up; replacement geometry is drawn only from a fresh trusted sample.
@@ -963,26 +1077,32 @@ function DriverNavigationSurface({
       ? `timestamp:${Number(observedLocation.time)}`
       : `coordinate:${observedLocation.latitude.toFixed(6)}:${observedLocation.longitude.toFixed(6)}`}`;
     const assessment = assessDriverOffRoute(
-      offRouteMonitorRef.current,
+      offRouteRef.current,
       observedLocation,
       routePointsRef.current,
       sampleKey,
       Date.now(),
     );
-    offRouteMonitorRef.current = assessment.next;
+    offRouteRef.current = assessment.next;
     const wrongWay = assessDriverWrongWay(
-      wrongWayMonitorRef.current,
+      wrongWayRef.current,
       observedLocation,
       routePointsRef.current,
       sampleKey,
       Date.now(),
     );
-    wrongWayMonitorRef.current = wrongWay.next;
+    wrongWayRef.current = wrongWay.next;
+    if (Platform.OS === 'ios' && observedLocation.source === 'expo'
+      && (assessment.shouldReroute || assessment.next.consecutiveOffRouteSamples >= 2 || wrongWay.shouldReroute)) {
+      rawDeviationConfirmedRef.current = true;
+      animateObservationRef.current(currentNavigationLocation());
+    }
     diagnostics('route.assessment', { distanceMeters: assessment.distanceMeters, thresholdMeters: assessment.thresholdMeters,
       offRoute: assessment.offRoute, wrongWay: wrongWay.shouldReroute, shouldReroute: assessment.shouldReroute || wrongWay.shouldReroute });
     if (assessment.shouldReroute || wrongWay.shouldReroute) requestGpsFallbackReroute();
     updateRemainingRoute();
   }, [
+    currentNavigationLocation,
     diagnostics,
     hasTarget,
     requestGpsFallbackReroute,
@@ -1051,7 +1171,7 @@ function DriverNavigationSurface({
         nativeDeltaMeters: point && expo ? distanceBetweenPositionsMetres({ ...point, heading: 0 }, { ...expo, heading: 0 }) : null,
       });
       if (Platform.OS === 'ios' && point && hasFreshNavigationFix(point.accuracyMeters, point.time)
-        && (!previous || Number(point.time) >= Number(previous.time))) {
+        && (!previous || Number(point.time) > Number(previous.time))) {
         nativeLocationRef.current = point;
         const current = currentNavigationLocation();
         // `onLocationChanged` is iOS's road-snapped provider. It remains a
@@ -1059,18 +1179,9 @@ function DriverNavigationSurface({
         // meter, fares, or trip state. When Expo is unavailable or older, the
         // custom HY3N car must nevertheless match the route we draw.
         if (current?.source === 'ios-navigation' && Number(current.time) === Number(point.time)) {
-          clearVehicleMotion();
-          const vehicle = {
-            latitude: current.latitude,
-            longitude: current.longitude,
-            heading: Number.isFinite(Number(current.heading))
-              ? Number(current.heading)
-              : (vehiclePositionRef.current?.heading ?? 0),
-          };
-          vehiclePositionRef.current = vehicle;
-          applyVehiclePosition(vehicle, hasTarget);
+          animateVehicleObservation(current);
+          assessNavigationLocation(point);
         }
-        assessNavigationLocation(current);
       }
     });
     setOnArrival((arrivalEvent) => {
@@ -1120,7 +1231,7 @@ function DriverNavigationSurface({
       clearRouteRefresh();
       removeAllListeners();
     };
-  }, [acceptRemainingMetrics, applyVehiclePosition, assessNavigationLocation, clearGuidance, clearRouteLines, clearRouteRefresh, clearVehicleMotion, currentNavigationLocation, diagnostics, hasTarget, navigationController, refreshBrandedRouteAfterNativeChange, refreshRemainingMetrics, removeAllListeners, setOnArrival, setOnLocationChanged, setOnRouteChanged, setOnReroutingRequestedByOffRoute, setOnTurnByTurn, setOnRemainingTimeOrDistanceChanged, setOnTrafficUpdated]);
+  }, [acceptRemainingMetrics, animateVehicleObservation, assessNavigationLocation, clearGuidance, clearRouteLines, clearRouteRefresh, currentNavigationLocation, diagnostics, navigationController, refreshBrandedRouteAfterNativeChange, refreshRemainingMetrics, removeAllListeners, setOnArrival, setOnLocationChanged, setOnRouteChanged, setOnReroutingRequestedByOffRoute, setOnTurnByTurn, setOnRemainingTimeOrDistanceChanged, setOnTrafficUpdated]);
 
   // The branded overlay is not a NavigationView: Google does not update it for
   // us. A low-frequency single-flight read recovers a dropped native callback;
@@ -1173,7 +1284,7 @@ function DriverNavigationSurface({
   }, [navigationController, navigationPaused, refreshBrandedRouteAfterNativeChange, refreshRemainingMetrics, targetKey]);
 
   useEffect(() => {
-    assessNavigationLocation(currentNavigationLocation());
+    assessNavigationLocation(Platform.OS === 'ios' ? expoLocationRef.current : currentNavigationLocation());
   }, [
     assessNavigationLocation,
     currentNavigationLocation,
@@ -1191,6 +1302,8 @@ function DriverNavigationSurface({
     cameraControllerRef.current = null;
     followingRef.current = false;
     navigationController.setTurnByTurnLoggingEnabled(false);
+    pendingVehicleMarkerRef.current = null;
+    vehicleMarkerControllerRef.current = null;
     navigationRequestRef.current += 1;
     routePointsRef.current = [];
     routeTrafficSegmentsRef.current = [];
@@ -1198,6 +1311,10 @@ function DriverNavigationSurface({
     confirmedRerouteRef.current = null;
     offRouteMonitorRef.current = EMPTY_DRIVER_OFF_ROUTE_MONITOR;
     wrongWayMonitorRef.current = EMPTY_DRIVER_WRONG_WAY_MONITOR;
+    nativeOffRouteMonitorRef.current = EMPTY_DRIVER_OFF_ROUTE_MONITOR;
+    nativeWrongWayMonitorRef.current = EMPTY_DRIVER_WRONG_WAY_MONITOR;
+    rawDeviationConfirmedRef.current = false;
+    lastFallbackRerouteAtMsRef.current = 0;
     forcedRerouteInFlightRef.current = false;
     if (initializedRef.current) void navigationController.cleanup().catch(() => {});
   }, [clearRouteRefresh, clearVehicleMotion, navigationController]);
@@ -1208,6 +1325,10 @@ function DriverNavigationSurface({
     if (hasTarget && targetKey && !navigationPaused && lastTargetKeyRef.current === targetKey) return;
     const request = ++navigationRequestRef.current;
     confirmedRerouteRef.current = null;
+    nativeOffRouteMonitorRef.current = EMPTY_DRIVER_OFF_ROUTE_MONITOR;
+    nativeWrongWayMonitorRef.current = EMPTY_DRIVER_WRONG_WAY_MONITOR;
+    rawDeviationConfirmedRef.current = false;
+    lastFallbackRerouteAtMsRef.current = 0;
     clearGuidance();
     expectedNativeGenerationRef.current = null;
     pendingCameraRef.current = null;
