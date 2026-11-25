@@ -44,7 +44,12 @@ const env = {
 // either native release command too, so CLI metadata and the binary agree.
 // Preserve unspecified/web and the released Android configuration unchanged.
 const buildPlatform = process.env.EAS_BUILD_PLATFORM;
-const appVersion = buildPlatform === "android" || buildPlatform === "ios" ? "1.0.3" : "1.0.2";
+const appVersion =
+  buildPlatform === "android"
+    ? "1.0.4"
+    : buildPlatform === "ios"
+      ? "1.0.3"
+      : "1.0.2";
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
@@ -83,8 +88,8 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    // 57023 retains prior fixes and adds Android routes, alerts, dock and turn guidance.
-    versionCode: 57023,
+    // 57024 carries the Android document-status release metadata only.
+    versionCode: buildPlatform === "android" ? 57024 : 57023,
     googleServicesFile: "./firebase/google-services.json",
     permissions: [
       "POST_NOTIFICATIONS",

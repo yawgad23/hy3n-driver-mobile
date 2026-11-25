@@ -37,8 +37,11 @@ test('Driver iOS release is explicitly 1.0.3 (126) for the correct app', () => {
   assert.equal(ios.owner, 'yawgad');
 });
 
-test('every Android config field remains identical to the released 57023 source', () => {
-  assert.deepEqual(config(current('app.config.ts'), 'android'), config(previous('app.config.ts'), 'android'));
+test('Android release changes only marketing version and version code from the released 57023 source', () => {
+  const expected = config(previous('app.config.ts'), 'android');
+  expected.version = '1.0.4';
+  expected.android.versionCode = 57024;
+  assert.deepEqual(config(current('app.config.ts'), 'android'), expected);
 });
 
 test('unspecified and web config remain identical to the preserved source', () => {
