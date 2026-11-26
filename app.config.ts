@@ -42,11 +42,11 @@ const env = {
 };
 // EAS supplies this platform on native workers. Set it locally when invoking
 // either native release command too, so CLI metadata and the binary agree.
-// Preserve unspecified/web and the released Android configuration unchanged.
+// Preserve unspecified/web and the released iOS configuration unchanged.
 const buildPlatform = process.env.EAS_BUILD_PLATFORM;
 const appVersion =
   buildPlatform === "android"
-    ? "1.0.4"
+    ? "1.0.5"
     : buildPlatform === "ios"
       ? "1.0.3"
       : "1.0.2";
@@ -88,8 +88,9 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    // 57024 carries the Android document-status release metadata only.
-    versionCode: buildPlatform === "android" ? 57024 : 57023,
+    // 1.0.5 (57025) is the source-only automatic-photo release candidate;
+    // retain every existing Android fix without importing the iOS camera changes.
+    versionCode: buildPlatform === "android" ? 57025 : 57023,
     googleServicesFile: "./firebase/google-services.json",
     permissions: [
       "POST_NOTIFICATIONS",
