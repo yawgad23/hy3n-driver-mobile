@@ -58,9 +58,9 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // 127 retains build 126's UI and adds verified document recovery plus SDK 27.
-    // Source preparation only: no native build has been started or reserved.
-    buildNumber: buildPlatform === "ios" ? "127" : "124",
+    // 128 retains build 127's updates and SDK 27, adding the combined iPhone
+    // reroute, vehicle motion/orientation, location recovery and camera fixes.
+    buildNumber: buildPlatform === "ios" ? "128" : "124",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,

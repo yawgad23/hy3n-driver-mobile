@@ -28,10 +28,10 @@ function config(source: string, platform?: string, keys: Record<string, string> 
 
 const ios = config(current('app.config.ts'), 'ios');
 
-test('SDK 27 document recovery candidate uses verified fresh iOS metadata and retains Driver identity', () => {
+test('SDK 27 combined navigation candidate uses approved iOS build 128 and retains Driver identity', () => {
   assert.equal(ios.name, 'HY3N Driver');
   assert.equal(ios.version, '1.0.4');
-  assert.equal(ios.ios.buildNumber, '127');
+  assert.equal(ios.ios.buildNumber, '128');
   assert.equal(ios.ios.bundleIdentifier, 'com.hy3n.driver');
   assert.equal(ios.extra.eas.projectId, 'd19afe45-8e3d-42f9-ad5e-70b12b2c2ce9');
   assert.equal(ios.owner, 'yawgad');
@@ -42,7 +42,7 @@ test('only the enumerated SDK 27 compatibility and iPhone release metadata diffe
     const expected = config(previous('app.config.ts'), platform);
     if (platform === 'ios') {
       expected.version = '1.0.4';
-      expected.ios.buildNumber = '127';
+      expected.ios.buildNumber = '128';
     }
     delete expected.newArchEnabled; // SDK 57 makes the New Architecture mandatory.
     delete expected.ios.jsEngine; // SDK 57 no longer exposes this JSC switch.
