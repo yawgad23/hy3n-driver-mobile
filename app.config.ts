@@ -46,7 +46,7 @@ const env = {
 const buildPlatform = process.env.EAS_BUILD_PLATFORM;
 const appVersion =
   buildPlatform === "android"
-    ? "1.0.5"
+    ? "1.0.6"
     : buildPlatform === "ios"
       ? "1.0.3"
       : "1.0.2";
@@ -88,9 +88,9 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    // 1.0.5 (57025) is the source-only automatic-photo release candidate;
-    // retain every existing Android fix without importing the iOS camera changes.
-    versionCode: buildPlatform === "android" ? 57025 : 57023,
+    // 1.0.6 (57026) carries the reviewed Android request-sound fix over 57025;
+    // retain the existing song, photo flow and every other platform configuration.
+    versionCode: buildPlatform === "android" ? 57026 : 57023,
     googleServicesFile: "./firebase/google-services.json",
     permissions: [
       "POST_NOTIFICATIONS",

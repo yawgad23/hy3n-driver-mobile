@@ -12,20 +12,24 @@ const baseline = '1f219aa7c3ef3573d08f265d060409d6a8ad4f59';
 const previous = (file: string) => execFileSync('git', ['show', `${baseline}:${file}`], { cwd: root, encoding: 'utf8' });
 const releaseBase = '38c2443127ee375b710dcbae27a0f5a48ff913d0';
 const releaseSource = (file: string) => execFileSync('git', ['show', `${releaseBase}:${file}`], { cwd: root, encoding: 'utf8' });
+const delivered57025 = 'f50da8cc6bc405afcde69e0548b197ab8d948d81';
+const deliveredSource = (file: string) => execFileSync('git', ['show', `${delivered57025}:${file}`], { cwd: root, encoding: 'utf8' });
+const soundFix = '30f4f1227e2ce56e522722e58c07279bc64308bd';
+const soundFixSource = (file: string) => execFileSync('git', ['show', `${soundFix}:${file}`], { cwd: root, encoding: 'utf8' });
 const current = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
 const clientKeys = {
   GOOGLE_MAPS_IOS_API_KEY: 'ios-client-test-key',
   GOOGLE_MAPS_ANDROID_API_KEY: 'android-client-test-key',
 };
 
-function config(source: string, platform?: string) {
+function config(source: string, platform?: string, keys: Record<string, string> = clientKeys) {
   const code = ts.transpileModule(source, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
   }).outputText;
   const exports: any = {};
   vm.runInNewContext(code, {
     exports,
-    process: { env: { ...clientKeys, ...(platform ? { EAS_BUILD_PLATFORM: platform } : {}) } },
+    process: { env: { ...keys, ...(platform ? { EAS_BUILD_PLATFORM: platform } : {}) } },
     require: (name: string) => {
       assert.equal(name, './scripts/load-env.js');
       return {};
@@ -47,27 +51,87 @@ test('historical Android 57024 config differs from its released baseline only by
   assert.equal(android.extra.eas.projectId, 'd19afe45-8e3d-42f9-ad5e-70b12b2c2ce9');
 });
 
-test('Android 1.0.5 (57025) candidate changes exactly version and versionCode from the automatic-photo base', () => {
+test('historical Android 1.0.5 (57025) candidate changes exactly version and versionCode from the automatic-photo base', () => {
   for (const platform of ['android', 'ios', 'web', undefined]) {
     const expected = config(releaseSource('app.config.ts'), platform);
     if (platform === 'android') {
       expected.version = '1.0.5';
       expected.android.versionCode = 57025;
     }
-    // No SDK, plugin, dependency, other-platform or default/web allowances.
-    assert.deepEqual(config(current('app.config.ts'), platform), expected);
+    // Preserve the exact delivered 57025 proof, not a rolling current-version allowance.
+    assert.deepEqual(config(deliveredSource('app.config.ts'), platform), expected);
   }
 });
 
-test('release preparation preserves every automatic-photo base file outside explicit metadata/test paths', () => {
+test('historical 57025 release preparation preserves every automatic-photo base file outside explicit metadata/test paths', () => {
   const allowed = new Set([
     'app.config.ts', 'tests/driver-android-release-metadata.test.ts', 'tests/driver-ios-release-metadata.test.ts',
   ]);
-  const changed = execFileSync('git', ['diff', '--name-only', releaseBase, '--'], { cwd: root, encoding: 'utf8' });
+  const changed = execFileSync('git', ['diff', '--name-only', releaseBase, delivered57025, '--'], { cwd: root, encoding: 'utf8' });
+  for (const file of changed.split('\n').filter(Boolean)) {
+    assert.ok(allowed.has(file), `non-metadata automatic-photo base source changed in delivered 57025: ${file}`);
+  }
+});
+
+test('Android 1.0.6 (57026) changes exactly version and versionCode from the reviewed sound fix for every platform/key configuration', () => {
+  const keyScenarios: Record<string, string>[] = [
+    clientKeys,
+    {},
+    { EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_IOS: 'ios-fallback-test-key', EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID: 'android-fallback-test-key' },
+    { ...clientKeys, EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_IOS: 'unused-ios-fallback-test-key', EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID: 'unused-android-fallback-test-key' },
+  ];
+  for (const keys of keyScenarios) for (const platform of ['android', 'ios', 'web', undefined]) {
+    const expected = config(soundFixSource('app.config.ts'), platform, keys);
+    if (platform === 'android') {
+      expected.version = '1.0.6';
+      expected.android.versionCode = 57026;
+    }
+    // No SDK, plugin, dependency, other-platform or default/web allowances.
+    assert.deepEqual(config(current('app.config.ts'), platform, keys), expected);
+  }
+});
+
+test('57026 config source differs from the reviewed sound fix only by exact Android version/code literals and comments', () => {
+  let expected = soundFixSource('app.config.ts');
+  const changes = [
+    ['buildPlatform === "android"\n    ? "1.0.5"', 'buildPlatform === "android"\n    ? "1.0.6"'],
+    [
+      '    // 1.0.5 (57025) is the source-only automatic-photo release candidate;\n    // retain every existing Android fix without importing the iOS camera changes.\n    versionCode: buildPlatform === "android" ? 57025 : 57023,',
+      '    // 1.0.6 (57026) carries the reviewed Android request-sound fix over 57025;\n    // retain the existing song, photo flow and every other platform configuration.\n    versionCode: buildPlatform === "android" ? 57026 : 57023,',
+    ],
+  ];
+  for (const [before, after] of changes) {
+    assert.equal(expected.split(before).length - 1, 1, 'exact Android metadata baseline must occur once');
+    expected = expected.replace(before, after);
+  }
+  assert.equal(current('app.config.ts'), expected, 'all default/web/iOS, native-key, API and plugin configuration text must remain exact');
+});
+
+test('57026 release worktree changes only the exact Android config, metadata test, stale Home guard and release note paths', () => {
+  const allowed = new Set([
+    'app.config.ts',
+    'tests/driver-android-release-metadata.test.ts',
+    'tests/driver-android-home-layout.test.ts',
+    'tests/driver-ios-release-metadata.test.ts',
+    'docs/driver-android-1.0.6-57026-request-sound-20261126.md',
+  ]);
+  const changed = execFileSync('git', ['diff', '--name-only', soundFix, '--'], { cwd: root, encoding: 'utf8' });
   const added = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' });
   for (const file of `${changed}\n${added}`.split('\n').filter(Boolean)) {
-    assert.ok(allowed.has(file), `non-metadata automatic-photo base source changed: ${file}`);
+    assert.ok(allowed.has(file), `non-release-preparation file changed from reviewed sound fix: ${file}`);
   }
+});
+
+test('Home, request-audio source and the existing song remain byte-identical to the reviewed sound fix', () => {
+  for (const file of ['app/(tabs)/home.tsx', 'lib/driver-request-audio.ts', 'assets/audio/incoming-trip-alert.wav']) {
+    const expected = execFileSync('git', ['show', `${soundFix}:${file}`], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
+    assert.deepEqual(fs.readFileSync(path.join(root, file)), expected, `${file} must remain byte-identical`);
+  }
+  assert.equal(current('package.json'), soundFixSource('package.json'));
+  assert.equal(current('pnpm-lock.yaml'), soundFixSource('pnpm-lock.yaml'));
+  const dependencies = JSON.parse(current('package.json')).dependencies;
+  assert.equal(dependencies.expo, '~54.0.37');
+  assert.equal(dependencies['expo-audio'], '~1.1.1');
 });
 
 test('iOS, web, and unspecified configs remain identical to clean HEAD', () => {

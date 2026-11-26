@@ -10,6 +10,8 @@ import { addSdkMatchedPhotoDependencies, withoutDriverPhotoLockAdditions } from 
 const root = path.join(__dirname, '..');
 const baseline = '3aed02cdf4dfe02da445e2592112ed894226c59a';
 const previous = (file: string) => execFileSync('git', ['show', `${baseline}:${file}`], { cwd: root, encoding: 'utf8' });
+const delivered57025 = 'f50da8cc6bc405afcde69e0548b197ab8d948d81';
+const deliveredSource = (file: string) => execFileSync('git', ['show', `${delivered57025}:${file}`], { cwd: root, encoding: 'utf8' });
 const current = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
 const clientKeys = { GOOGLE_MAPS_IOS_API_KEY: 'ios-client-test-key', GOOGLE_MAPS_ANDROID_API_KEY: 'android-client-test-key' };
 
@@ -38,11 +40,11 @@ test('Driver iOS release is explicitly 1.0.3 (126) for the correct app', () => {
   assert.equal(ios.owner, 'yawgad');
 });
 
-test('Android 57025 candidate changes only marketing version and version code from the released 57023 source', () => {
+test('historical Android 57025 changes only marketing version and version code from the released 57023 source', () => {
   const expected = config(previous('app.config.ts'), 'android');
   expected.version = '1.0.5';
   expected.android.versionCode = 57025;
-  assert.deepEqual(config(current('app.config.ts'), 'android'), expected);
+  assert.deepEqual(config(deliveredSource('app.config.ts'), 'android'), expected);
 });
 
 test('unspecified and web config remain identical to the preserved source', () => {
