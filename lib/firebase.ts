@@ -600,9 +600,23 @@ export const firestoreDB = {
 // ─── Storage Helpers ──────────────────────────────────────────────────────────
 
 export const firebaseStorage = {
-  async uploadFile(file: Blob, path: string): Promise<string> {
+  async uploadFile(file: Blob, path: string, metadata?: { contentType: string }): Promise<string> {
     const storageRef = ref(storage, path);
-    await uploadBytes(storageRef, file);
-    return getDownloadURL(storageRef);
+    try {
+      await uploadBytes(storageRef, file, metadata);
+    } catch (error: any) {
+      throw Object.assign(new Error('The photo could not be securely uploaded.'), {
+        code: typeof error?.code === 'string' ? error.code : 'storage/unknown',
+        driverDocumentStage: 'upload',
+      });
+    }
+    try {
+      return await getDownloadURL(storageRef);
+    } catch (error: any) {
+      throw Object.assign(new Error('The uploaded photo could not be confirmed.'), {
+        code: typeof error?.code === 'string' ? error.code : 'storage/unknown',
+        driverDocumentStage: 'confirm',
+      });
+    }
   },
 };

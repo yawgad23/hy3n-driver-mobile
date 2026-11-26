@@ -14,6 +14,8 @@ import { openDriverSupportWhatsApp } from '@/lib/support-whatsapp';
 import { useDriverDocumentManifest } from '@/hooks/use-driver-document-manifest';
 import { canConfirmDriverSubmission, isOwnedDriverStorageReference } from '@/lib/driver-document-manifest';
 import { awaitDriverVerification } from '@/lib/driver-document-verification';
+import { prepareDriverDocumentPhoto } from '@/lib/driver-photo-native';
+import { formatDriverDocumentUploadError } from '@/lib/driver-photo-preparation';
 import {
   clampDriverDraftStep, createDriverRegistrationDraftSession, driverRegistrationDetailsMissing,
   driverRegistrationMissingLabels, driverRegistrationRecoveryStep, driverRegistrationRejectionReason,
@@ -497,8 +499,10 @@ export default function DriverRegisterScreen() {
     try {
       const submitUser = firebaseAuthObj.currentUser;
       if (!submitUser || !isCurrent(captured)) throw new Error('Please sign in again before submitting.');
+      let uploadsCancelled = false;
       const assertCurrent = () => {
         if (!isCurrent(captured) || editRevisionRef.current !== editRevision || approvedRef.current) throw new Error('Account or application changed. Please retry.');
+        if (uploadsCancelled) throw new Error('Document upload stopped. Your selections are retained. Please retry.');
       };
       // Recheck before replacing fixed-slot objects that an administrator may
       // have reviewed since this repair screen was opened.
@@ -514,16 +518,29 @@ export default function DriverRegisterScreen() {
           if (checked?.status !== 'valid' || checked.reference !== uri) throw new Error('Please select the document again; this reference has not been verified.');
           return uri;
         }
-        const response = await fetch(uri);
-        assertCurrent();
-        const blob = await response.blob();
-        assertCurrent();
-        const uploaded = await firebaseStorage.uploadFile(blob, `drivers/${submitUser.uid}/${key}.jpg`);
-        assertCurrent();
-        if (!isOwnedDriverStorageReference(uploaded, submitUser.uid)) throw new Error('Document upload was not confirmed. Please retry.');
-        return uploaded;
+        const label = beforeUpload.documents[manifestKey as keyof typeof beforeUpload.documents].label;
+        let prepared: Awaited<ReturnType<typeof prepareDriverDocumentPhoto>> | undefined;
+        let stage: 'prepare' | 'upload' | 'confirm' = 'prepare';
+        try {
+          // Drivers only choose a photo. Actual JPEG conversion, readable-size
+          // resizing and compression happen locally and automatically.
+          prepared = await prepareDriverDocumentPhoto(uri, assertCurrent);
+          assertCurrent();
+          stage = 'upload';
+          const uploaded = await firebaseStorage.uploadFile(prepared.blob, `drivers/${submitUser.uid}/${key}.jpg`, { contentType: prepared.contentType });
+          assertCurrent();
+          stage = 'confirm';
+          if (!isOwnedDriverStorageReference(uploaded, submitUser.uid)) throw new Error('Document upload was not confirmed.');
+          return uploaded;
+        } catch (err: any) {
+          assertCurrent();
+          throw new Error(formatDriverDocumentUploadError(err, label, err?.driverDocumentStage === 'confirm' ? 'confirm' : stage));
+        } finally {
+          await prepared?.dispose();
+        }
       };
-      const uploadedDocuments = await Promise.all([
+      let firstUploadError: unknown;
+      const documentUploads = [
         uploadDocument(ghanaCardFront, 'ghana-card-front', 'ghanaCardFront'),
         uploadDocument(ghanaCardBack, 'ghana-card-back', 'ghanaCardBack'),
         uploadDocument(licenseFront, 'drivers-license-front', 'licenseFront'),
@@ -532,8 +549,22 @@ export default function DriverRegisterScreen() {
         uploadDocument(vehiclePhoto, 'vehicle-photo', 'vehiclePhoto'),
         uploadDocument(insurancePhoto, 'insurance', 'insurance'),
         uploadDocument(roadworthyPhoto, 'roadworthy', 'roadworthy'),
-      ]);
+      ].map(pending => pending.catch(err => {
+        if (!uploadsCancelled) {
+          firstUploadError = err;
+          uploadsCancelled = true;
+        }
+        throw err;
+      }));
+      // A failed attempt must retain the retry lock until every started upload
+      // settles. Otherwise a late old write can overwrite a replacement photo.
+      const settledUploads = await Promise.allSettled(documentUploads);
+      if (uploadsCancelled) throw firstUploadError;
       assertCurrent();
+      const uploadedDocuments = settledUploads.map(result => {
+        if (result.status !== 'fulfilled') throw new Error('Document upload could not be confirmed. Please retry.');
+        return result.value;
+      });
       const [uploadedGhanaCardFront, uploadedGhanaCardBack, uploadedLicenseFront, uploadedLicenseBack,
         uploadedDriverPhoto, uploadedVehiclePhoto, uploadedInsurance, uploadedRoadworthy] = uploadedDocuments;
       await firebaseAuth.submitDriverProfile({
@@ -835,6 +866,7 @@ export default function DriverRegisterScreen() {
       </View>
 
       <Text style={styles.sectionTitle}>Required Documents</Text>
+      <Text style={[styles.stepSubtitle, { marginBottom: 12 }]}>Choose a photo or use Camera. We prepare and resize your photos automatically.</Text>
       <FileUploadField label="Ghana Card (Front)" uri={ghanaCardFront} onPick={setGhanaCardFront} />
       <FileUploadField label="Ghana Card (Back)" uri={ghanaCardBack} onPick={setGhanaCardBack} />
       <FileUploadField label="Driver's License (Front)" uri={licenseFront} onPick={setLicenseFront} />
@@ -847,7 +879,7 @@ export default function DriverRegisterScreen() {
       {!!error && <Text style={styles.errorText}>{error}</Text>}
 
       <TouchableOpacity style={[styles.primaryBtn, { opacity: loading ? 0.7 : 1 }]} onPress={handleSubmitApplication} disabled={loading}>
-        {loading ? <ActivityIndicator color="#000" /> : <Text style={styles.primaryBtnText}>Submit Application</Text>}
+        {loading ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><ActivityIndicator color="#000" /><Text style={styles.primaryBtnText}>Preparing & uploading…</Text></View> : <Text style={styles.primaryBtnText}>Submit Application</Text>}
       </TouchableOpacity>
 
       {!!error && <TouchableOpacity style={[styles.outlineBtn, { marginTop: 8 }]} onPress={retryRecovery} disabled={loading}>

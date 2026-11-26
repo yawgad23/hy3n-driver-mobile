@@ -5,6 +5,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { execFileSync } from 'node:child_process';
 import ts from 'typescript';
+import { addSdkMatchedPhotoDependencies, withoutDriverPhotoLockAdditions } from './helpers/driver-photo-dependencies';
 
 const root = path.join(__dirname, '..');
 const baseline = '674e81c0e15353c4e813d5e688fb3d1240ed5d81';
@@ -104,7 +105,7 @@ test('the exact stable Xcode 27 image is the only EAS configuration change', () 
   assert.equal(eas.submit.production.ios.appleTeamId, '49Q5ZSPMZ9');
 });
 
-test('dependency changes are limited to the SDK catalogue, required Router cleanup and explicit released backend pin', () => {
+test('dependency changes are limited to SDK compatibility, the released backend pin and SDK-matched photo modules', () => {
   const expected = JSON.parse(previous('package.json'));
   const catalogue = JSON.parse(current('node_modules/expo/bundledNativeModules.json'));
   for (const group of ['dependencies', 'devDependencies']) {
@@ -119,9 +120,19 @@ test('dependency changes are limited to the SDK catalogue, required Router clean
   expected.devDependencies['@types/react'] = '~19.2.18';
   expected.devDependencies['react-test-renderer'] = catalogue.react;
   expected.devDependencies.typescript = '~6.0.3';
+  addSdkMatchedPhotoDependencies(expected, root);
   assert.deepEqual(JSON.parse(current('package.json')), expected);
   assert.equal(JSON.parse(current('node_modules/expo/package.json')).version, '57.0.34');
   assert.equal(JSON.parse(current('node_modules/react-native/package.json')).version, '0.86.3');
+});
+
+test('automatic-photo preparation preserves every pre-existing dependency and lock resolution', () => {
+  const photoBase = '032312f35570136da4dd4b8a1c8f81f78c89e6c6';
+  const source = (file: string) => execFileSync('git', ['show', `${photoBase}:${file}`], { cwd: root, encoding: 'utf8' });
+  const expected = JSON.parse(source('package.json'));
+  addSdkMatchedPhotoDependencies(expected, root);
+  assert.deepEqual(JSON.parse(current('package.json')), expected);
+  assert.equal(withoutDriverPhotoLockAdditions(current('pnpm-lock.yaml')), withoutDriverPhotoLockAdditions(source('pnpm-lock.yaml')));
 });
 
 test('the backend source revision and pinned Google Navigation/Firebase modules stay fixed', () => {
