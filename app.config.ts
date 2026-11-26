@@ -46,7 +46,7 @@ const env = {
 const buildPlatform = process.env.EAS_BUILD_PLATFORM;
 const appVersion =
   buildPlatform === "android"
-    ? "1.0.6"
+    ? "1.0.7"
     : buildPlatform === "ios"
       ? "1.0.3"
       : "1.0.2";
@@ -88,9 +88,9 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    // 1.0.6 (57026) carries the reviewed Android request-sound fix over 57025;
+    // 1.0.7 (57027) adds the Android-only DataStore 16 KB infrastructure patch;
     // retain the existing song, photo flow and every other platform configuration.
-    versionCode: buildPlatform === "android" ? 57026 : 57023,
+    versionCode: buildPlatform === "android" ? 57027 : 57023,
     googleServicesFile: "./firebase/google-services.json",
     permissions: [
       "POST_NOTIFICATIONS",
@@ -196,6 +196,8 @@ const config: ExpoConfig = {
         },
       },
     ],
+    // Android-only DataStore infrastructure patch; independent of Maps keys.
+    ...(buildPlatform === "android" ? ["./plugins/with-android-datastore-16kb"] : []),
     ...(nativeGoogleNavigationPlugin ? [nativeGoogleNavigationPlugin] : []),
   ],
   experiments: {
