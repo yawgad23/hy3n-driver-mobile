@@ -239,8 +239,9 @@ function DriverNavigationSurface({
   // its native controller. Join both independent callbacks before route writes.
   // iOS retains its existing controller-created lifecycle.
   const [androidMapReady, setAndroidMapReady] = useState(false);
+  const hasDeviceLocation = hasPoint(latitude, longitude);
   const mapViewController = Platform.OS === 'android' && (!androidMapReady || !hasPoint(latitude, longitude))
-    ? null : createdMapViewController;
+    || Platform.OS === 'ios' && !hasDeviceLocation ? null : createdMapViewController;
   const routeMapReadyRef = useRef(Platform.OS !== 'android');
   routeMapReadyRef.current = Platform.OS !== 'android' || (androidMapReady && hasPoint(latitude, longitude));
   const [navigationMessage, setNavigationMessage] = useState<string | null>(null);
@@ -256,8 +257,14 @@ function DriverNavigationSurface({
   const cameraOptionsRef = useRef<DriverNavigationCameraOptions>({});
   const cameraControllerRef = useRef<MapViewController | null>(null);
   cameraControllerRef.current = mapViewController;
-  const pendingCameraRef = useRef<{ sample: DriverFollowCameraSample; controller: MapViewController; targetKey: string; request: number } | null>(null);
+  const pendingCameraRef = useRef<{ sample: DriverFollowCameraSample; position: DriverMapPosition; options: DriverNavigationCameraOptions; controller: MapViewController; targetKey: string; request: number } | null>(null);
+  const cameraDispatchedRef = useRef<{ sample: DriverFollowCameraSample; controller: MapViewController; targetKey: string; request: number } | null>(null);
+  const cameraHeadingAuthorityRef = useRef<{ position: DriverMapPosition; metres: number; untilMs: number; controller: MapViewController; targetKey: string; request: number } | null>(null);
+  const resumeCameraSettleRef = useRef<() => void>(() => {});
   const cameraWritingRef = useRef(false);
+  const cameraAfterRecenterRef = useRef(false);
+  const cameraSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cameraSettleRunRef = useRef(0);
   const [bannerHeight, setBannerHeight] = useState(170);
   const [viewportHeight, setViewportHeight] = useState(800);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -299,7 +306,6 @@ function DriverNavigationSurface({
   const offRouteMonitorRef = useRef(EMPTY_DRIVER_OFF_ROUTE_MONITOR);
   const wrongWayMonitorRef = useRef(EMPTY_DRIVER_WRONG_WAY_MONITOR);
   const forcedRerouteInFlightRef = useRef(false);
-  const hasDeviceLocation = hasPoint(latitude, longitude);
   const normalizedServiceType = normalizeDriverMapServiceType(serviceType);
   const vehicleMarkerAsset = DRIVER_VEHICLE_MARKER_ASSETS[normalizedServiceType];
   const lastVehicleMarkerAssetRef = useRef<string | null>(null);
@@ -345,10 +351,10 @@ function DriverNavigationSurface({
   }, [currentNavigationLocation, latitude, locationAccuracy, locationTimestamp, longitude]);
 
   useEffect(() => {
-    if (Platform.OS !== 'android' || hasDeviceLocation) return;
+    if (hasDeviceLocation) return;
     // The location gate unmounts MapView. Its replacement has a new nativeID;
     // old readiness and the old JS controller cannot authorize new route work.
-    setAndroidMapReady(false);
+    if (Platform.OS === 'android') setAndroidMapReady(false);
     setMapViewController(null);
     trafficPolylineIdsRef.current.clear();
   }, [hasDeviceLocation]);
@@ -361,16 +367,28 @@ function DriverNavigationSurface({
     setNativeMetrics(null);
   }, []);
 
-  const updateFollowingCamera = useCallback((position: DriverMapPosition, force = false) => {
+  const clearCameraSettle = useCallback(() => {
+    cameraSettleRunRef.current += 1;
+    if (cameraSettleTimerRef.current) clearTimeout(cameraSettleTimerRef.current);
+    cameraSettleTimerRef.current = null;
+  }, []);
+
+  const updateFollowingCamera = useCallback((position: DriverMapPosition, force = false, acceptedMovementMeters?: number) => {
     if (!mapViewController || !activeTargetRef.current || !followingRef.current) return;
     const now = Date.now();
     const options = Platform.OS === 'ios' ? { ...cameraOptionsRef.current,
-      acceptedMovementMeters: now <= cameraMovementRef.current.untilMs ? cameraMovementRef.current.metres : 0,
+      acceptedMovementMeters: acceptedMovementMeters ?? (now <= cameraMovementRef.current.untilMs ? cameraMovementRef.current.metres : 0),
     } : cameraOptionsRef.current;
-    const next = driverNavigationCamera(position, cameraSampleRef.current, now, force, options);
+    // Recenter can occur a few milliseconds before a scheduled car frame.
+    // Let that first live travel frame through instead of letting the manual
+    // force call reset its cadence and leave the camera at the captured point.
+    const resumedTravel = Platform.OS === 'ios' && cameraAfterRecenterRef.current && !force
+      && cameraSampleRef.current && distanceBetweenPositionsMetres(cameraSampleRef.current.position, position) >= 0.01;
+    const next = driverNavigationCamera(position, cameraSampleRef.current, now, force || Boolean(resumedTravel), options);
     if (!next) return;
+    if (resumedTravel) cameraAfterRecenterRef.current = false;
     cameraSampleRef.current = next;
-    pendingCameraRef.current = { sample: next, controller: mapViewController, targetKey: activeTargetRef.current.key, request: navigationRequestRef.current };
+    pendingCameraRef.current = { sample: next, position, options, controller: mapViewController, targetKey: activeTargetRef.current.key, request: navigationRequestRef.current };
     if (cameraWritingRef.current) return;
     cameraWritingRef.current = true;
     void (async () => {
@@ -380,7 +398,21 @@ function DriverNavigationSurface({
           pendingCameraRef.current = null;
           if (pending.controller !== cameraControllerRef.current || pending.targetKey !== activeTargetRef.current.key
             || pending.request !== navigationRequestRef.current) continue;
-          await Promise.resolve(pending.controller.moveCamera(pending.sample.camera));
+          // Coalescing may drop many logical frames while the bridge is busy.
+          // Rebase the bearing on the last ACTUALLY dispatched command, keeping
+          // the newest car coordinates/framing rather than replaying a backlog.
+          const dispatched = cameraDispatchedRef.current;
+          const prior = dispatched?.controller === pending.controller && dispatched.targetKey === pending.targetKey
+            && dispatched.request === pending.request ? dispatched.sample : null;
+          const sample = pending.options.stabilizeFollowing
+            ? driverNavigationCamera(pending.position, prior, Date.now(), true, pending.options) : pending.sample;
+          if (!sample) continue;
+          cameraDispatchedRef.current = { sample, controller: pending.controller, targetKey: pending.targetKey, request: pending.request };
+          if (pending.options.stabilizeFollowing) cameraSampleRef.current = sample;
+          await Promise.resolve(pending.controller.moveCamera(sample.camera));
+          if (!pendingCameraRef.current && !vehicleMotionTimerRef.current && !cameraSettleTimerRef.current) {
+            resumeCameraSettleRef.current();
+          }
         }
       } catch (error) {
         diagnostics('polyline.failed', { reason: 'camera', code: navigationErrorCode(error) });
@@ -390,17 +422,71 @@ function DriverNavigationSurface({
     })();
   }, [diagnostics, mapViewController]);
 
+  const settleFollowingCamera = useCallback((position: DriverMapPosition, acceptedMovementMeters: number) => {
+    clearCameraSettle();
+    if (Platform.OS !== 'ios' || !cameraOptionsRef.current.stabilizeFollowing || acceptedMovementMeters < 1.5
+      || vehicleMotionTimerRef.current || !followingRef.current || !mapViewController || !activeTargetRef.current) return;
+    const untilMs = (vehiclePositionTimestampRef.current ?? Date.now()) + 15_000;
+    if (Date.now() > untilMs) return;
+    cameraHeadingAuthorityRef.current = { position, metres: acceptedMovementMeters, untilMs,
+      controller: mapViewController, targetKey: activeTargetRef.current.key, request: navigationRequestRef.current };
+    // moveCamera is the SDK's supported JS API and assigns immediately. Finish
+    // a real road turn in bounded frames, not an unsupported/overlapping native
+    // animation. This never advances the car or fabricates a GPS observation.
+    const run = cameraSettleRunRef.current;
+    const request = navigationRequestRef.current;
+    const key = activeTargetRef.current.key;
+    const controller = mapViewController;
+    const startedAt = Date.now();
+    const tick = () => {
+      cameraSettleTimerRef.current = null;
+      if (cameraSettleRunRef.current !== run || !followingRef.current || !cameraOptionsRef.current.stabilizeFollowing
+        || cameraControllerRef.current !== controller || activeTargetRef.current?.key !== key
+        || navigationRequestRef.current !== request || Date.now() - startedAt >= 2_500) return;
+      if (Date.now() > untilMs || vehicleMotionTimerRef.current) return;
+      const bearing = cameraDispatchedRef.current?.sample.camera.bearing;
+      if (bearing === undefined || !Number.isFinite(position.heading)
+        || Math.abs(((position.heading - bearing + 540) % 360) - 180) <= 0.1) {
+        cameraHeadingAuthorityRef.current = null;
+        return;
+      }
+      updateFollowingCamera(position, false, acceptedMovementMeters);
+      cameraSettleTimerRef.current = setTimeout(tick, 50);
+    };
+    cameraSettleTimerRef.current = setTimeout(tick, 50);
+  }, [clearCameraSettle, mapViewController, updateFollowingCamera]);
+  useLayoutEffect(() => {
+    resumeCameraSettleRef.current = () => {
+      const authority = cameraHeadingAuthorityRef.current;
+      if (!authority || authority.untilMs < Date.now() || authority.controller !== cameraControllerRef.current
+        || authority.targetKey !== activeTargetRef.current?.key || authority.request !== navigationRequestRef.current) return;
+      settleFollowingCamera(authority.position, authority.metres);
+    };
+  }, [settleFollowingCamera]);
+
   const pauseFollowing = useCallback(() => {
     followingRef.current = false;
     pendingCameraRef.current = null;
+    clearCameraSettle();
+    cameraAfterRecenterRef.current = false;
     setIsFollowing(false);
-  }, []);
+  }, [clearCameraSettle]);
   const recenter = useCallback(() => {
     followingRef.current = true;
     setIsFollowing(true);
     if (Platform.OS !== 'ios') cameraSampleRef.current = null;
-    if (vehiclePositionRef.current) updateFollowingCamera(vehiclePositionRef.current, true);
-  }, [updateFollowingCamera]);
+    if (vehiclePositionRef.current) {
+      const position = vehiclePositionRef.current;
+      const authority = cameraHeadingAuthorityRef.current;
+      const unfinished = authority && authority.untilMs >= Date.now() && authority.controller === mapViewController
+        && authority.targetKey === activeTargetRef.current?.key && authority.request === navigationRequestRef.current
+        && distanceBetweenPositionsMetres(authority.position, position) < 0.01 ? authority.metres : 0;
+      const movement = Math.max(unfinished, cameraSampleRef.current ? distanceBetweenPositionsMetres(cameraSampleRef.current.position, position) : 0);
+      updateFollowingCamera(position, true, Platform.OS === 'ios' ? movement : undefined);
+      if (!vehicleMotionTimerRef.current) settleFollowingCamera(position, movement);
+      else if (Platform.OS === 'ios') cameraAfterRecenterRef.current = true;
+    }
+  }, [mapViewController, settleFollowingCamera, updateFollowingCamera]);
   const mapPadding = useMemo(() => driverNavigationMapPadding(
     hasTarget ? navigationTopInset + bannerHeight + 12 : navigationTopInset,
     navigationBottomInset, viewportHeight, Platform.OS === 'android' ? (PixelRatio?.get?.() ?? 1) : 1,
@@ -410,6 +496,7 @@ function DriverNavigationSurface({
   cameraOptionsRef.current = {
     closeDrivingView,
     routeForwardView,
+    stabilizeFollowing: Platform.OS === 'ios' && !navigationPaused,
     usableViewportHeight: Math.max(0, viewportHeight - mapPadding.top - mapPadding.bottom),
     visibleTopOverlapPoints: Platform.OS === 'ios'
       ? Math.max(0, (hasTarget ? navigationTopInset + bannerHeight + 12 : navigationTopInset) - mapPadding.top) : 0,
@@ -426,7 +513,9 @@ function DriverNavigationSurface({
     vehicleMotionRunRef.current += 1;
     if (vehicleMotionTimerRef.current) clearTimeout(vehicleMotionTimerRef.current);
     vehicleMotionTimerRef.current = null;
-  }, []);
+    clearCameraSettle();
+    cameraAfterRecenterRef.current = false;
+  }, [clearCameraSettle]);
 
   const clearRouteRefresh = useCallback(() => {
     routeRefreshRunRef.current += 1;
@@ -523,6 +612,7 @@ function DriverNavigationSurface({
     const previousObservation = vehicleObservationRef.current;
     if (previousObservation?.key === key) return;
     if (previousObservation && timestamp <= previousObservation.time && fix.source === previousObservation.source) return;
+    cameraHeadingAuthorityRef.current = null;
     // Provider clocks do not establish spatial authority. The selected fresh
     // raw fix must take over after confirmed deviation, even if its timestamp
     // trails an obsolete snapped point. Reset cadence for a backward handoff;
@@ -536,6 +626,7 @@ function DriverNavigationSurface({
     // validates endpoint proximity, direction and path length before bends.
     const frames = driverMapMotionFrames(vehiclePositionRef.current, incoming, durationMs, {
       alignHeadingToMovement: true,
+      stabilizeHeadingCorrections: true,
       routePoints: staleRoutePlanRef.current ? [] : routePointsRef.current,
     });
     if (!frames.length) return;
@@ -560,10 +651,11 @@ function DriverNavigationSurface({
         vehicleMotionTimerRef.current = null;
         updateFollowingCamera(frame, true);
         cameraMovementRef.current = { metres: 0, untilMs: 0 };
+        settleFollowingCamera(frame, movement);
       }
     };
     showFrame();
-  }, [clearVehicleMotion, mapViewController, updateFollowingCamera]);
+  }, [clearVehicleMotion, mapViewController, settleFollowingCamera, updateFollowingCamera]);
   useLayoutEffect(() => {
     animateObservationRef.current = animateVehicleObservation;
   }, [animateVehicleObservation]);
@@ -572,6 +664,17 @@ function DriverNavigationSurface({
     if (Platform.OS !== 'ios') return;
     vehicleObservationRef.current = null;
     vehiclePositionTimestampRef.current = null;
+    // A new native view has no visible motion history. Seed it from the next
+    // accepted fresh observation, never replay the disposed view's old car.
+    vehiclePositionRef.current = null;
+    cameraMovementRef.current = { metres: 0, untilMs: 0 };
+    cameraSampleRef.current = null;
+    pendingCameraRef.current = null;
+    cameraDispatchedRef.current = null;
+    cameraHeadingAuthorityRef.current = null;
+    pendingVehicleMarkerRef.current = null;
+    vehicleMarkerControllerRef.current = mapViewController;
+    lastVehicleMarkerAssetRef.current = null;
     return clearVehicleMotion;
   }, [clearVehicleMotion, mapViewController]);
 
@@ -940,7 +1043,7 @@ function DriverNavigationSurface({
   }, [clearGuidance, clearRouteRefresh, drawNavigationRoute]);
 
   useEffect(() => {
-    if (Platform.OS !== 'android' || !androidMapReady || !mapViewController
+    if ((Platform.OS === 'android' && !androidMapReady) || !mapViewController
       || !hasDeviceLocation || navigationPaused || !targetKey
       || lastTargetKeyRef.current !== targetKey || !initializedRef.current) return;
     // A ready replacement map needs the existing accepted route immediately.
@@ -1337,6 +1440,8 @@ function DriverNavigationSurface({
     clearGuidance();
     expectedNativeGenerationRef.current = null;
     pendingCameraRef.current = null;
+    clearCameraSettle();
+    cameraHeadingAuthorityRef.current = null;
     navigationController.setTurnByTurnLoggingEnabled(false);
     // A pickup/drop-off target replacement must also invalidate an older
     // route-change retry that captured the previous marker target.
@@ -1462,7 +1567,7 @@ function DriverNavigationSurface({
     });
 
     return () => { cancelled = true; };
-  }, [androidMapReady, clearGuidance, clearRoute, clearRouteRefresh, diagnostics, drawNavigationRoute, hasDeviceLocation, hasTarget, mapViewController, navigationController, navigationPaused, refreshRemainingMetrics, runNavigationWork, targetKey, targetLabel, targetLatitude, targetLongitude, updateFollowingCamera]);
+  }, [androidMapReady, clearCameraSettle, clearGuidance, clearRoute, clearRouteRefresh, diagnostics, drawNavigationRoute, hasDeviceLocation, hasTarget, mapViewController, navigationController, navigationPaused, refreshRemainingMetrics, runNavigationWork, targetKey, targetLabel, targetLatitude, targetLongitude, updateFollowingCamera]);
 
   // Start/resume already restores following in the target lifecycle above.
   // This camera-only refresh also adapts stationary framing after a banner or

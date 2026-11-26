@@ -10,6 +10,9 @@ import { addSdkMatchedPhotoDependencies, withoutDriverPhotoLockAdditions } from 
 const root = path.join(__dirname, '..');
 const baseline = '674e81c0e15353c4e813d5e688fb3d1240ed5d81';
 const previous = (file: string) => execFileSync('git', ['show', `${baseline}:${file}`], { cwd: root, encoding: 'utf8' });
+const build130 = 'bfe0522f023fffa264f529b00875df7471513dcd';
+const historical = (commit: string, file: string) => execFileSync('git', ['show', `${commit}:${file}`], { cwd: root, encoding: 'utf8' });
+const released = (file: string) => historical(build130, file);
 const current = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
 const clientKeys = { GOOGLE_MAPS_IOS_API_KEY: 'ios-client-test-key', GOOGLE_MAPS_ANDROID_API_KEY: 'android-client-test-key' };
 
@@ -41,9 +44,11 @@ test('SDK 27 automatic-photo candidate uses iOS version 1.2 build 130 and retain
 test('build 130 changes only the iPhone build number from the tested photo-fix source', () => {
   const photoCommit = '90e416716d7b0cf05a68b71c2cd4e5e55409e9ac';
   const photoSource = (file: string) => execFileSync('git', ['show', `${photoCommit}:${file}`], { cwd: root, encoding: 'utf8' });
+  assert.equal(current('app.config.ts'), released('app.config.ts'));
   for (const platform of ['ios', 'android', undefined, 'web']) {
     const expected = config(photoSource('app.config.ts'), platform);
     if (platform === 'ios') expected.ios.buildNumber = '130';
+    assert.deepEqual(config(released('app.config.ts'), platform), expected);
     assert.deepEqual(config(current('app.config.ts'), platform), expected);
   }
   for (const file of [
@@ -51,23 +56,83 @@ test('build 130 changes only the iPhone build number from the tested photo-fix s
     'lib/firebase.ts', 'package.json', 'pnpm-lock.yaml', 'eas.json',
     'plugins/with-google-navigation.js', 'plugins/with-driver-ios-sdk27.js',
     'components/NativeDriverGoogleMap.tsx', 'lib/driver-map-motion.ts', 'lib/driver-navigation-camera.ts',
-  ]) assert.equal(current(file), photoSource(file), file);
+  ]) assert.equal(released(file), photoSource(file), file);
 });
 
 test('version-train correction changes only iOS release metadata and retains all combined fixes from build 128', () => {
+  const corrected = '032312f35570136da4dd4b8a1c8f81f78c89e6c6';
+  const correctedSource = (file: string) => historical(corrected, file);
   const combined = 'e37d43892e6e7d4d24d5401edcd6afa8bbcc114b';
   const combinedSource = (file: string) => execFileSync('git', ['show', `${combined}:${file}`], { cwd: root, encoding: 'utf8' });
   for (const platform of ['ios', 'android', undefined, 'web']) {
     const expected = config(combinedSource('app.config.ts'), platform);
     if (platform === 'ios') {
       expected.version = '1.2';
-      expected.ios.buildNumber = '130';
+      expected.ios.buildNumber = '129';
     }
-    assert.deepEqual(config(current('app.config.ts'), platform), expected);
+    assert.deepEqual(config(correctedSource('app.config.ts'), platform), expected);
   }
   for (const file of ['components/NativeDriverGoogleMap.tsx', 'lib/driver-map-motion.ts', 'lib/driver-navigation-camera.ts', 'eas.json']) {
-    assert.equal(current(file), combinedSource(file), file);
+    assert.equal(correctedSource(file), combinedSource(file), file);
   }
+});
+
+test('current changes stay in camera/heading scope and preserve every unrelated released file', () => {
+  const allowed = new Set([
+    'components/NativeDriverGoogleMap.tsx', 'lib/driver-map-motion.ts', 'lib/driver-navigation-camera.ts',
+    'tests/driver-ios-release-metadata.test.ts', 'tests/driver-map-motion.test.ts',
+    'tests/driver-navigation-camera.test.ts', 'tests/driver-ios-camera-stability-runtime.test.ts',
+    'tests/driver-ios-reroute-runtime.test.ts',
+  ]);
+  // Include staged, unstaged and newly added files. This protects SDK/config,
+  // photos, authentication/permissions, DriverTypes, call UI and background work.
+  const changed = execFileSync('git', ['diff', '--name-only', build130, '--'], { cwd: root, encoding: 'utf8' });
+  const added = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' });
+  for (const file of `${changed}\n${added}`.split('\n').filter(Boolean)) {
+    assert.ok(allowed.has(file), `unrelated release source changed: ${file}`);
+  }
+
+  const scope = (source: string, start: string, end: string) => {
+    const from = source.indexOf(start);
+    const to = source.indexOf(end, from);
+    assert.ok(from >= 0 && to > from, `missing camera scope: ${start}`);
+    return source.slice(0, from) + `/* camera scope: ${end} */\n` + source.slice(to);
+  };
+  const outsideCamera = (source: string) => {
+    source = scope(source, '  const pendingCameraRef =', '  const [bannerHeight,');
+    source = scope(source, source.includes('  const clearCameraSettle =')
+      ? '  const clearCameraSettle =' : '  const updateFollowingCamera =', '  const mapPadding =');
+    source = scope(source, '  const clearVehicleMotion =', '  const clearRouteRefresh =');
+    source = scope(source, '    vehicleObservationRef.current = null;', '    return clearVehicleMotion;');
+    return source
+      .replace('  const hasDeviceLocation = hasPoint(latitude, longitude);\n', '')
+      .replace("    || Platform.OS === 'ios' && !hasDeviceLocation ? null : createdMapViewController;", '    ? null : createdMapViewController;')
+      .replace("    if (hasDeviceLocation) return;\n    // The location gate", "    if (Platform.OS !== 'android' || hasDeviceLocation) return;\n    // The location gate")
+      .replace("    if (Platform.OS === 'android') setAndroidMapReady(false);", '    setAndroidMapReady(false);')
+      .replace('    stabilizeFollowing: Platform.OS === \'ios\' && !navigationPaused,\n', '')
+      .replace('      stabilizeHeadingCorrections: true,\n', '')
+      .replace('        settleFollowingCamera(frame, movement);\n', '')
+      .replace('[clearVehicleMotion, mapViewController, settleFollowingCamera, updateFollowingCamera]', '[clearVehicleMotion, mapViewController, updateFollowingCamera]')
+      .replace("    if ((Platform.OS === 'android' && !androidMapReady) || !mapViewController", "    if (Platform.OS !== 'android' || !androidMapReady || !mapViewController")
+      .replaceAll('    cameraHeadingAuthorityRef.current = null;\n', '')
+      .replace('    expectedNativeGenerationRef.current = null;\n    pendingCameraRef.current = null;\n    clearCameraSettle();', '    expectedNativeGenerationRef.current = null;\n    pendingCameraRef.current = null;')
+      .replace('[androidMapReady, clearCameraSettle, clearGuidance,', '[androidMapReady, clearGuidance,');
+  };
+  assert.equal(outsideCamera(current('components/NativeDriverGoogleMap.tsx')),
+    outsideCamera(released('components/NativeDriverGoogleMap.tsx')));
+  // Framing, native padding, coordinate validation, projection validation and
+  // the default motion branch are not part of the new bearing/cadence opt-in.
+  const camera = current('lib/driver-navigation-camera.ts');
+  const referenceCamera = released('lib/driver-navigation-camera.ts');
+  assert.equal(camera.slice(camera.indexOf('  const radians =')), referenceCamera.slice(referenceCamera.indexOf('  const radians =')));
+  const motion = current('lib/driver-map-motion.ts');
+  const referenceMotion = released('lib/driver-map-motion.ts');
+  assert.equal(motion.slice(motion.indexOf('type RouteSegmentLike ='), motion.indexOf('const MAX_ROUTE_PROJECTION_METRES')),
+    referenceMotion.slice(referenceMotion.indexOf('type RouteSegmentLike ='), referenceMotion.indexOf('const MAX_ROUTE_PROJECTION_METRES')));
+  assert.equal(motion.slice(motion.indexOf('function projectOntoRoute('), motion.indexOf('  // Only the two endpoint-to-projection legs')),
+    referenceMotion.slice(referenceMotion.indexOf('function projectOntoRoute('), referenceMotion.indexOf('  return path;')));
+  assert.equal(motion.slice(motion.indexOf('/** Align visual movement')),
+    referenceMotion.slice(referenceMotion.indexOf('/** Align visual movement')));
 });
 
 test('only the enumerated SDK 27 compatibility and iPhone release metadata differ from build 126', () => {
@@ -208,8 +273,20 @@ test('navigation fixes preserve the released default motion branch and opt in on
   assert.equal(legacyMotion(current('lib/driver-map-motion.ts')), legacyMotion(previous('lib/driver-map-motion.ts')));
   const map = current('components/NativeDriverGoogleMap.tsx');
   assert.match(map, /if \(Platform\.OS === 'ios'\) \{\s+animateVehicleObservation\(currentNavigationLocation\(\)\);\s+return;/);
-  assert.match(map, /alignHeadingToMovement: true/);
-  assert.match(map, /acceptedMovementMeters: now <= cameraMovementRef\.current\.untilMs/);
+  const iosAnimator = map.slice(map.indexOf('  const animateVehicleObservation ='), map.indexOf('  useLayoutEffect(() => {\n    animateObservationRef.current'));
+  assert.match(iosAnimator, /alignHeadingToMovement: true,\s+stabilizeHeadingCorrections: true/);
+  assert.equal((map.match(/stabilizeHeadingCorrections: true/g) ?? []).length, 1);
+  assert.match(map, /stabilizeFollowing: Platform\.OS === 'ios' && !navigationPaused/);
+  // Settling/recentering may supply the accepted GPS interval explicitly; the
+  // normal frame path still falls back to the bounded observation window.
+  assert.match(map, /const options = Platform\.OS === 'ios' \? \{ \.\.\.cameraOptionsRef\.current,\s+acceptedMovementMeters: acceptedMovementMeters \?\? \(now <= cameraMovementRef\.current\.untilMs \? cameraMovementRef\.current\.metres : 0\),\s+\} : cameraOptionsRef\.current;/);
+  const androidBranch = (source: string) => {
+    const start = source.indexOf('    // Preserve the released Android Expo interpolation');
+    const end = source.indexOf('\n  }, [', start);
+    assert.ok(start >= 0 && end > start);
+    return source.slice(start, end);
+  };
+  assert.equal(androidBranch(map), androidBranch(released('components/NativeDriverGoogleMap.tsx')));
   const camera = current('lib/driver-navigation-camera.ts');
   assert.match(camera, /\? acceptedMovement : movement/);
   assert.match(camera, /const zoom = routeForwardView \? 17\.6 : closeDrivingView \? 18 : 17\.2/);

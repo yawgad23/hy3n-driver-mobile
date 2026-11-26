@@ -226,6 +226,7 @@ test('iOS clears the old branded line and replaces it when Navigation moves but 
 });
 
 test('iOS reroutes from fresh Navigation GPS when the Expo foreground watcher has no current fix', async () => {
+  const clock = requireHere('@sinonjs/fake-timers').install({ now: Date.now(), toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
   const map = await mountIos();
   try {
     // A real iPhone can keep Google Navigation's CLLocation callbacks alive
@@ -241,11 +242,17 @@ test('iOS reroutes from fresh Navigation GPS when the Expo foreground watcher ha
 
     assert.equal(map.calls.length, 2, 'fresh native iOS movement must still request one safe replacement route');
     assert.deepEqual(map.calls.at(-1).point.position, target, 'native-only GPS may not change the server-owned destination');
+    // No MapView exists while the location gate is rendered. Never send visual
+    // writes to its disposed controller; recover on the replacement map without
+    // stopping the native GPS/guidance session or making a duplicate reroute.
+    await map.update({ latitude: nativeLater.lat, longitude: nativeLater.lng,
+      locationTimestamp: Date.now() + 1, locationAccuracy: 5 });
+    assert.equal(map.calls.length, 2, 'map recreation must reuse the healthy native destination/guidance session');
     assert.deepEqual(map.lines.get('hy3n-driver-route')?.points[0], nativeLater,
-      'the old green/white road must be replaced even when Expo currently has no fix');
+      'the replacement view must immediately draw the current native road, not revive the stale Expo route');
     assert.deepEqual(map.markers.get('hy3n-driver-vehicle')?.position, { lat: nativeLater.lat, lng: nativeLater.lng },
-      'the branded car must not remain at the last Expo point when Navigation has the current valid iPhone fix');
-  } finally { await map.dispose(); }
+      'the replacement map must immediately use the fresh accepted native fix, not glide from its disposed view');
+  } finally { await map.dispose(); clock.uninstall(); }
 });
 
 test('iOS rejects an older native sample and keeps the newer valid Expo fix authoritative', async () => {

@@ -8,6 +8,8 @@ type NativeRoutePoint = { lat: number; lng: number };
 
 export type DriverMapMotionOptions = {
   alignHeadingToMovement?: boolean;
+  /** Opt-in for iOS: short verified-road endpoint corrections do not steer the car sideways. */
+  stabilizeHeadingCorrections?: boolean;
   /** Caller-verified current geometry; pass [] while deviating or rerouting. */
   routePoints?: readonly NativeRoutePoint[];
 };
@@ -79,6 +81,9 @@ function interpolateHeading(from: number, to: number, progress: number) {
 }
 
 const MAX_ROUTE_PROJECTION_METRES = 20;
+// Heading-only authority is narrower than the positional projection gate. Longer
+// endpoint legs may be real movement and must keep their own travel bearing.
+const MAX_HEADING_CORRECTION_METRES = 8;
 // Sparse or disconnected geometry cannot establish a safe connected road span.
 const MAX_CONNECTED_ROUTE_SEGMENT_METRES = 250;
 const MAX_ROUTE_DETOUR_RATIO = 1.8;
@@ -168,7 +173,16 @@ function verifiedRoadPath(previous: DriverMapPosition, next: DriverMapPosition, 
   if (!Number.isFinite(span) || span > MAX_SMOOTH_MOVE_METRES
     || span > directMetres * MAX_ROUTE_DETOUR_RATIO + MAX_ROUTE_DETOUR_ALLOWANCE_METRES
     || path.length - 1 > MAX_MOTION_FRAMES) return null;
-  return path;
+  // Only the two endpoint-to-projection legs can borrow a bearing, and only
+  // after the complete road span has passed the existing validation. Internal
+  // road legs (including short bends) remain actual movement, never corrections.
+  return {
+    path,
+    startCorrectionHeading: from.distance > 0 && from.distance <= MAX_HEADING_CORRECTION_METRES
+      ? bearingBetweenPositions(road[0], road[1]) : null,
+    endCorrectionHeading: to.distance > 0 && to.distance <= MAX_HEADING_CORRECTION_METRES
+      ? bearingBetweenPositions(road[road.length - 2], road[road.length - 1]) : null,
+  };
 }
 
 function movementAlignedFrames(previous: DriverMapPosition | null, incoming: DriverMapPosition, durationMs: number, options: DriverMapMotionOptions) {
@@ -178,7 +192,8 @@ function movementAlignedFrames(previous: DriverMapPosition | null, incoming: Dri
   const metres = distanceBetweenPositionsMetres(previous, next);
   if (!Number.isFinite(metres) || metres < MIN_MOVEMENT_METRES) return [{ ...next, heading: priorHeading }];
   if (metres > MAX_SMOOTH_MOVE_METRES) return [{ ...next, heading: bearingBetweenPositions(previous, next) }];
-  const path = verifiedRoadPath(previous, next, options.routePoints ?? [], metres) ?? [previous, next];
+  const verified = verifiedRoadPath(previous, next, options.routePoints ?? [], metres);
+  const path = verified?.path ?? [previous, next];
   const lengths = path.slice(1).map((point, index) => distanceBetweenPositionsMetres(path[index], point));
   const span = lengths.reduce((sum, length) => sum + length, 0);
   const safeDuration = Number.isFinite(durationMs) ? Math.max(1, Math.min(DRIVER_MAX_MOTION_DURATION_MS, durationMs)) : DEFAULT_DRIVER_MOTION_DURATION_MS;
@@ -199,6 +214,10 @@ function movementAlignedFrames(previous: DriverMapPosition | null, incoming: Dri
   for (let leg = 0; leg < lengths.length; leg += 1) {
     const from = path[leg];
     const to = path[leg + 1];
+    const correctionHeading = options.stabilizeHeadingCorrections === true && verified
+      ? (leg === 0 ? verified.startCorrectionHeading
+        : leg === lengths.length - 1 ? verified.endCorrectionHeading : null)
+      : null;
     for (let index = 1; index <= counts[leg]; index += 1) {
       const progress = index / counts[leg];
       const point = {
@@ -206,7 +225,7 @@ function movementAlignedFrames(previous: DriverMapPosition | null, incoming: Dri
         longitude: index === counts[leg] ? to.longitude : from.longitude + (to.longitude - from.longitude) * progress,
         heading: priorHeading,
       };
-      point.heading = bearingBetweenPositions(rendered, point);
+      point.heading = correctionHeading ?? bearingBetweenPositions(rendered, point);
       frames.push(point);
       rendered = point;
     }

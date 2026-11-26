@@ -286,3 +286,121 @@ test('reference framing uses physical overlay bounds when native padding has bee
     }
   }
 });
+
+const stableFollowOptions = { routeForwardView: true, stabilizeFollowing: true, acceptedMovementMeters: 22, usableViewportHeight: 400 };
+const angleDifference = (from: number, to: number) => ((to - from + 540) % 360) - 180;
+
+test('stable iPhone follow consumes the same small 50 ms steps as the vehicle without camera batching', () => {
+  const frames = driverMapMotionFrames(position, { ...position, latitude: position.latitude + 0.0002 }, 1_940, { alignHeadingToMovement: true });
+  let sample = driverNavigationCamera(position, null, 1_000, false, stableFollowOptions)!;
+  const targets = [sample.camera.target];
+  for (const [index, frame] of frames.entries()) {
+    const next = driverNavigationCamera(frame, sample, 1_000 + (index + 1) * 50, false, stableFollowOptions);
+    assert.ok(next, 'each rendered travel frame must advance the camera, not wait for 0.6 metres or 100 ms');
+    assert.equal(next.camera.zoom, 17.6);
+    assert.equal(next.camera.tilt, 0);
+    assert.equal(next.position.latitude, frame.latitude);
+    sample = next;
+    targets.push(next.camera.target);
+  }
+  for (let index = 1; index < targets.length; index += 1) {
+    const distance = distanceBetweenPositionsMetres(
+      { latitude: targets[index - 1].lat, longitude: targets[index - 1].lng, heading: 0 },
+      { latitude: targets[index].lat, longitude: targets[index].lng, heading: 0 },
+    );
+    assert.ok(distance < 0.6, 'camera must not batch smooth marker frames into visible metre-sized jumps');
+  }
+});
+
+test('stable iPhone camera bounds a genuine turn and converges without resetting zoom or coordinates', () => {
+  let sample = driverNavigationCamera(position, null, 1_000, false, stableFollowOptions)!;
+  for (let index = 1; index <= 40; index += 1) {
+    const nextPosition = { ...position, latitude: position.latitude + index * 0.000004, heading: 90 };
+    const next = driverNavigationCamera(nextPosition, sample, 1_000 + index * 50, false, stableFollowOptions)!;
+    assert.ok(next);
+    assert.ok(angleDifference(sample.camera.bearing, next.camera.bearing) >= 0);
+    assert.ok(angleDifference(sample.camera.bearing, next.camera.bearing) <= 6 + 1e-9, '120 degrees/second maximum at the existing vehicle cadence');
+    assert.equal(next.position.latitude, nextPosition.latitude, 'bearing filtering may not alter accepted position');
+    assert.equal(next.camera.zoom, 17.6);
+    sample = next;
+  }
+  assert.ok(Math.abs(sample.camera.bearing - 90) < 0.1, 'actual road turns are not frozen or flattened');
+});
+
+test('stable iPhone camera turns 359 to 1 by the shortest arc and does not jump after a long GPS gap', () => {
+  const first = driverNavigationCamera({ ...position, heading: 359 }, null, 1_000, false, stableFollowOptions)!;
+  const wrap = driverNavigationCamera({ ...position, latitude: position.latitude + 0.000004, heading: 1 }, first, 1_050, false, stableFollowOptions)!;
+  assert.ok(angleDifference(359, wrap.camera.bearing) > 0 && angleDifference(359, wrap.camera.bearing) < 2);
+  const gap = driverNavigationCamera({ ...position, latitude: position.latitude + 0.001, heading: 90 }, first, 61_000, false, stableFollowOptions)!;
+  assert.ok(Math.abs(angleDifference(first.camera.bearing, gap.camera.bearing)) <= 12 + 1e-9, 'stale elapsed time cannot authorize one giant bearing jump');
+});
+
+test('stable iPhone follow still suppresses parked drift and enforces a bounded bridge cadence', () => {
+  const first = driverNavigationCamera({ ...position, heading: 90 }, null, 1_000, false, stableFollowOptions)!;
+  const parked = { ...stableFollowOptions, acceptedMovementMeters: 0 };
+  assert.equal(driverNavigationCamera({ ...position, heading: 270 }, first, 2_000, false, parked), null);
+  assert.equal(driverNavigationCamera({ ...position, latitude: position.latitude + 0.000001, heading: 270 }, first, 2_000, false, parked), null);
+  assert.equal(driverNavigationCamera({ ...position, latitude: position.latitude + 0.0001 }, first, 1_039, false, stableFollowOptions), null);
+  const forced = driverNavigationCamera({ ...position, heading: 270 }, first, 1_001, true, parked)!;
+  assert.equal(forced.camera.bearing, 90);
+});
+
+test('stable iPhone camera can finish a bounded heading correction at a fixed accepted endpoint', () => {
+  let sample = driverNavigationCamera(position, null, 1_000, false, stableFollowOptions)!;
+  const endpoint = { ...position, latitude: position.latitude + 0.0002, heading: 90 };
+  for (let index = 1; index <= 40; index += 1) {
+    const next = driverNavigationCamera(endpoint, sample, 1_000 + index * 50, false, stableFollowOptions);
+    if (next) sample = next;
+    assert.equal(sample.position.latitude, endpoint.latitude);
+  }
+  assert.ok(Math.abs(sample.camera.bearing - endpoint.heading) < 0.1);
+});
+
+test('omitting stable follow preserves every legacy camera policy', () => {
+  const first = driverNavigationCamera(position, null, 1_000)!;
+  for (const stableFlag of [undefined, false]) {
+    for (const now of [1_050, 1_100, 2_000]) {
+      const point = { ...position, latitude: position.latitude + 0.000001, heading: 90 };
+      assert.deepEqual(driverNavigationCamera(point, first, now, false, { stabilizeFollowing: stableFlag }), driverNavigationCamera(point, first, now));
+    }
+  }
+});
+
+test('stable iPhone motion and camera together eliminate repeated short-connector look-ahead swings', () => {
+  const routePoints = [{ lat: 5.7, lng: -0.1 }, { lat: 5.702, lng: -0.1 }];
+  let endpoint = { latitude: 5.7, longitude: -0.09995, heading: 0 };
+  let stable = driverNavigationCamera(endpoint, null, 1_000, false, stableFollowOptions)!;
+  let legacy = driverNavigationCamera(endpoint, null, 1_000, false, { ...stableFollowOptions, stabilizeFollowing: false })!;
+  let now = 1_000;
+  let largestStableJump = 0;
+  let largestLegacyJump = 0;
+  const targetDistance = (from: typeof stable, to: typeof stable) => distanceBetweenPositionsMetres(
+    { latitude: from.camera.target.lat, longitude: from.camera.target.lng, heading: 0 },
+    { latitude: to.camera.target.lat, longitude: to.camera.target.lng, heading: 0 },
+  );
+  for (let interval = 1; interval <= 3; interval += 1) {
+    const incoming = { ...endpoint, latitude: 5.7 + interval * 0.0002 };
+    const oldFrames = driverMapMotionFrames(endpoint, incoming, 1_940, { alignHeadingToMovement: true, routePoints });
+    const frames = driverMapMotionFrames(endpoint, incoming, 1_940, {
+      alignHeadingToMovement: true, stabilizeHeadingCorrections: true, routePoints,
+    });
+    assert.deepEqual(frames.map(({ latitude, longitude }) => ({ latitude, longitude })),
+      oldFrames.map(({ latitude, longitude }) => ({ latitude, longitude })), 'car coordinates/cadence remain identical');
+    frames.forEach((frame, index) => {
+      now += 50;
+      const next = driverNavigationCamera(frame, stable, now, false, stableFollowOptions)!;
+      assert.ok(next);
+      largestStableJump = Math.max(largestStableJump, targetDistance(stable, next));
+      assert.ok(Math.abs(angleDifference(0, next.camera.bearing)) < 0.01, 'parallel endpoint offsets are not road turns');
+      stable = next;
+      const old = driverNavigationCamera(oldFrames[index], legacy, now, false, { ...stableFollowOptions, stabilizeFollowing: false });
+      if (old) {
+        largestLegacyJump = Math.max(largestLegacyJump, targetDistance(legacy, old));
+        legacy = old;
+      }
+    });
+    endpoint = incoming;
+  }
+  assert.ok(largestStableJump < 2, `stable target increments were ${largestStableJump}m`);
+  assert.ok(largestLegacyJump > 50, 'fixture reproduces the previous look-ahead swing rather than merely testing a straight zero-offset path');
+});

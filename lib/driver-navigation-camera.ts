@@ -18,7 +18,19 @@ export type DriverNavigationCameraOptions = {
   visibleBottomOverlapPoints?: number;
   /** iOS opt-in: accepted GPS interval distance, not a tiny animated frame step. */
   acceptedMovementMeters?: number;
+  /** iOS opt-in: follow rendered travel frames and ease, rather than snap, road turns. */
+  stabilizeFollowing?: boolean;
 };
+
+function stableTravelBearing(previous: DriverFollowCameraSample, heading: number, nowMs: number) {
+  const delta = ((heading - previous.camera.bearing + 540) % 360) - 180;
+  // Never spend an entire GPS/bridge gap in one instantaneous SDK moveCamera.
+  // 120 degrees/second bounds real turns; damping removes brief corrections.
+  const elapsed = Math.max(0, Math.min(100, nowMs - previous.atMs));
+  const eased = delta * (1 - Math.exp(-elapsed / 150));
+  const limit = 120 * elapsed / 1_000;
+  return normalisedHeading(previous.camera.bearing + Math.max(-limit, Math.min(limit, eased)));
+}
 
 /** Keep the car below center, with useful road detail and no speed-based zoom pumping. */
 export function driverNavigationCamera(position: DriverMapPosition, previous: DriverFollowCameraSample | null, nowMs: number, force = false, options: DriverNavigationCameraOptions = {}): DriverFollowCameraSample | null {
@@ -31,9 +43,18 @@ export function driverNavigationCamera(position: DriverMapPosition, previous: Dr
   const bearingMovement = typeof acceptedMovement === 'number' && Number.isFinite(acceptedMovement) && acceptedMovement >= 0
     ? acceptedMovement : movement;
   // Compass drift while parked must not make the map rotate under the Driver.
-  const bearing = previous && bearingMovement < 1.5 ? previous.camera.bearing : heading;
+  const stableFollow = options.stabilizeFollowing === true;
+  const bearing = previous && bearingMovement < 1.5 ? previous.camera.bearing
+    : previous && stableFollow ? stableTravelBearing(previous, heading, nowMs) : heading;
   const turn = previous ? Math.abs(((bearing - previous.camera.bearing + 540) % 360) - 180) : 180;
-  if (!force && previous && (nowMs - previous.atMs < 100 || (movement < 0.6 && turn < 2))) return null;
+  if (!force && previous) {
+    // The iPhone's vehicle stream already validates the whole GPS observation.
+    // Reapplying the parked 0.6m gate to each tiny moving frame batches them
+    // into ~150ms map jumps while the car itself continues at ~50ms.
+    const still = stableFollow && bearingMovement >= 1.5
+      ? movement < 0.01 && turn < 0.01 : movement < 0.6 && turn < 2;
+    if (nowMs - previous.atMs < (stableFollow ? 40 : 100) || still) return null;
+  }
   const radians = bearing * Math.PI / 180;
   const closeDrivingView = options.closeDrivingView === true;
   const routeForwardView = options.routeForwardView === true;

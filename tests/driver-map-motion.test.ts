@@ -255,3 +255,184 @@ test('default/Android interpolation ignores supplied geometry and retains legacy
   assert.equal(driverMapMotionFrames(eastStart, { ...eastStart, heading: 270 })[0].heading, 270);
   assert.equal(driverMapMotionFrames(eastStart, { ...eastStart, heading: null as unknown as number })[0].heading, 0);
 });
+
+const stabilizedMovementOptions = { ...movementOptions, stabilizeHeadingCorrections: true };
+const northRoute = [{ lat: 5.7, lng: -0.1 }, { lat: 5.702, lng: -0.1 }];
+const northStart = { latitude: 5.7, longitude: -0.09995, heading: 0 };
+const northEnd = { latitude: 5.7002, longitude: -0.09995, heading: 0 };
+
+function assertHeadingNear(actual: number, expected: number) {
+  assert.ok(Math.abs(((actual - expected + 540) % 360) - 180) < 0.01,
+    `heading ${actual} should face ${expected}`);
+}
+
+function positionsOnly(frames: DriverMapPosition[]) {
+  return frames.map(({ latitude, longitude }) => ({ latitude, longitude }));
+}
+
+test('heading correction opt-in removes straight-road connector 270/0/90 without changing any positions or cadence', () => {
+  for (const duration of [1, 50, 1_940, 9_000]) {
+    const legacy = driverMapMotionFrames(northStart, northEnd, duration, { ...movementOptions, routePoints: northRoute });
+    const corrected = driverMapMotionFrames(northStart, northEnd, duration, { ...stabilizedMovementOptions, routePoints: northRoute });
+    assertMovementFacing(northStart, legacy);
+    assertHeadingNear(legacy[0].heading, 270);
+    assert.ok(legacy.some((frame) => frame.heading === 0));
+    assertHeadingNear(legacy.at(-1)!.heading, 90);
+    assert.deepEqual(positionsOnly(corrected), positionsOnly(legacy), 'all interpolation positions and frame counts are unchanged');
+    for (const frame of corrected) assertHeadingNear(frame.heading, 0);
+    assert.equal(corrected.at(-1)?.latitude, northEnd.latitude);
+    assert.equal(corrected.at(-1)?.longitude, northEnd.longitude);
+  }
+  assert.equal(driverMapMotionFrames(northStart, northEnd, 1_940,
+    { ...stabilizedMovementOptions, routePoints: northRoute }).length, 39);
+});
+
+test('heading correction holds north across repeated straight fixes on either side of a verified road', () => {
+  let previous = northStart;
+  const fixes = [
+    { latitude: 5.7002, longitude: -0.09995, heading: 270 },
+    { latitude: 5.7004, longitude: -0.10004, heading: 90 },
+    { latitude: 5.7006, longitude: -0.09996, heading: 180 },
+    { latitude: 5.7008, longitude: -0.09995, heading: 0 },
+  ];
+  for (const incoming of fixes) {
+    const frames = driverMapMotionFrames(previous, incoming, 1_940, { ...stabilizedMovementOptions, routePoints: northRoute });
+    const legacy = driverMapMotionFrames(previous, incoming, 1_940, { ...movementOptions, routePoints: northRoute });
+    assert.deepEqual(positionsOnly(frames), positionsOnly(legacy));
+    for (const frame of frames) assertHeadingNear(frame.heading, 0);
+    assert.equal(frames.at(-1)?.latitude, incoming.latitude);
+    assert.equal(frames.at(-1)?.longitude, incoming.longitude);
+    previous = frames.at(-1)!;
+  }
+});
+
+test('heading correction borrows each adjoining L-road bearing instead of flattening genuine turns', () => {
+  for (const offset of [0.00005, 0.00000001]) {
+    const start = { ...roadStart, latitude: roadStart.latitude - offset };
+    const end = { ...roadEnd, longitude: roadEnd.longitude + offset };
+    for (const duration of [1, 1_940]) {
+      const frames = driverMapMotionFrames(start, end, duration, { ...stabilizedMovementOptions, routePoints: verifiedL });
+      const legacy = driverMapMotionFrames(start, end, duration, { ...movementOptions, routePoints: verifiedL });
+      assert.deepEqual(positionsOnly(frames), positionsOnly(legacy));
+      const bendIndex = frames.findIndex((frame) => frame.latitude === roadBend.lat && frame.longitude === roadBend.lng);
+      assert.ok(bendIndex >= 0, 'the exact bend is still rendered');
+      frames.forEach((frame, index) => assertHeadingNear(frame.heading, index <= bendIndex ? 90 : 0));
+      assert.equal(frames.at(-1)?.latitude, end.latitude);
+      assert.equal(frames.at(-1)?.longitude, end.longitude);
+    }
+  }
+});
+
+test('heading correction does not classify a short interior road leg as projection noise', () => {
+  const routePoints = [
+    { lat: 5.7, lng: -0.1 },
+    { lat: 5.7, lng: -0.099 },
+    { lat: 5.70005, lng: -0.099 },
+    { lat: 5.70005, lng: -0.098 },
+  ];
+  const start = { latitude: 5.69995, longitude: -0.1, heading: 0 };
+  const end = { latitude: 5.7001, longitude: -0.098, heading: 0 };
+  const frames = driverMapMotionFrames(start, end, 1_940, { ...stabilizedMovementOptions, routePoints });
+  const legacy = driverMapMotionFrames(start, end, 1_940, { ...movementOptions, routePoints });
+  assert.deepEqual(positionsOnly(frames), positionsOnly(legacy));
+  const interior = frames.filter((frame) => frame.longitude === -0.099 && frame.latitude > 5.7);
+  assert.ok(interior.length > 0, 'short northward road leg is retained');
+  for (const frame of interior) assertHeadingNear(frame.heading, 0);
+  assertHeadingNear(frames[0].heading, 90);
+  assertHeadingNear(frames.at(-1)!.heading, 90);
+});
+
+test('heading correction never borrows a road bearing for connectors longer than eight metres', () => {
+  for (const offset of [0.00008, 0.00017]) {
+    const start = { ...roadStart, latitude: roadStart.latitude - offset };
+    const end = { ...roadEnd, longitude: roadEnd.longitude + offset };
+    assert.ok(distanceBetweenPositionsMetres(start, { ...start, latitude: roadStart.latitude }) > 8);
+    assert.ok(distanceBetweenPositionsMetres(end, { ...end, longitude: roadEnd.longitude }) > 8);
+    const options = { ...movementOptions, routePoints: verifiedL };
+    const legacy = driverMapMotionFrames(start, end, 1_940, options);
+    assertMovementFacing(start, legacy);
+    assertHeadingNear(legacy[0].heading, 0);
+    assertHeadingNear(legacy.at(-1)!.heading, 90);
+    assert.deepEqual(driverMapMotionFrames(start, end, 1_940, { ...options, stabilizeHeadingCorrections: true }), legacy);
+  }
+});
+
+test('heading correction eligibility is independent for the two endpoint connectors', () => {
+  for (const [startOffset, endOffset] of [[0.00005, 0.00008], [0.00008, 0.00005]]) {
+    const start = { ...roadStart, latitude: roadStart.latitude - startOffset };
+    const end = { ...roadEnd, longitude: roadEnd.longitude + endOffset };
+    const frames = driverMapMotionFrames(start, end, 1_940, { ...stabilizedMovementOptions, routePoints: verifiedL });
+    const legacy = driverMapMotionFrames(start, end, 1_940, { ...movementOptions, routePoints: verifiedL });
+    assert.deepEqual(positionsOnly(frames), positionsOnly(legacy));
+    assertHeadingNear(frames[0].heading, startOffset < 0.00008 ? 90 : 0);
+    assertHeadingNear(frames.at(-1)!.heading, endOffset < 0.00008 ? 0 : 90);
+  }
+});
+
+test('heading correction is not applied to an absent connector or an on-road genuine bend', () => {
+  const cases = [
+    [roadStart, roadEnd],
+    [roadStart, { ...roadEnd, longitude: roadEnd.longitude + 0.00005 }],
+    [{ ...roadStart, latitude: roadStart.latitude - 0.00005 }, roadEnd],
+  ] as const;
+  for (const [start, end] of cases) {
+    const frames = driverMapMotionFrames(start, end, 1_940, { ...stabilizedMovementOptions, routePoints: verifiedL });
+    const legacy = driverMapMotionFrames(start, end, 1_940, { ...movementOptions, routePoints: verifiedL });
+    assert.deepEqual(positionsOnly(frames), positionsOnly(legacy));
+    assertHeadingNear(frames[0].heading, 90);
+    assertHeadingNear(frames.at(-1)!.heading, 0);
+    if (start === roadStart && end === roadEnd) assert.deepEqual(frames, legacy);
+  }
+});
+
+test('heading correction still rejects reversed, stale, disconnected, invalid, detouring, and looped road geometry', () => {
+  const routes = [
+    [],
+    [...verifiedL].reverse(),
+    verifiedL.map(({ lat, lng }) => ({ lat: lat + 0.01, lng })),
+    [verifiedL[0], { lat: roadStart.latitude, lng: roadStart.longitude + 0.01 }, verifiedL[2]],
+    [verifiedL[0], { lat: Number.NaN, lng: roadBend.lng }, verifiedL[2]],
+    [verifiedL[0], { lat: roadStart.latitude - 0.002, lng: roadStart.longitude },
+      { lat: roadStart.latitude - 0.002, lng: roadBend.lng }, roadBend, verifiedL[2]],
+    [verifiedL[0], { lat: roadStart.latitude, lng: roadStart.longitude + 0.0004 },
+      { lat: roadStart.latitude, lng: roadStart.longitude + 0.00038 }, roadBend, verifiedL[2]],
+    [verifiedL[0], { lat: roadStart.latitude, lng: roadStart.longitude + 0.0004 },
+      { lat: roadStart.latitude + 0.00002, lng: roadStart.longitude + 0.0004 },
+      { lat: roadStart.latitude + 0.00002, lng: roadStart.longitude + 0.00042 },
+      { lat: roadStart.latitude, lng: roadStart.longitude + 0.0004 }, roadBend, verifiedL[2]],
+  ];
+  const start = { ...roadStart, latitude: roadStart.latitude - 0.00005 };
+  const end = { ...roadEnd, longitude: roadEnd.longitude + 0.00005 };
+  const direct = driverMapMotionFrames(start, end, 1_940, movementOptions);
+  for (const routePoints of routes) {
+    const frames = driverMapMotionFrames(start, end, 1_940, { ...stabilizedMovementOptions, routePoints });
+    assert.deepEqual(frames, direct);
+    assertMovementFacing(start, frames);
+  }
+});
+
+test('heading correction leaves direct movement, real direction changes, large jumps, and stationary fixes unchanged', () => {
+  for (const [start, end] of [
+    [eastStart, eastEnd],
+    [northStart, northEnd],
+    [northEnd, northStart],
+    [eastStart, { ...eastEnd, longitude: eastStart.longitude + 0.02 }],
+    [eastStart, { ...eastStart, latitude: eastStart.latitude + 0.000009, heading: 270 }],
+  ]) {
+    assert.deepEqual(driverMapMotionFrames(start, end, 1_940, stabilizedMovementOptions),
+      driverMapMotionFrames(start, end, 1_940, movementOptions));
+  }
+  const south = driverMapMotionFrames(northEnd, northStart, 1_940, { ...stabilizedMovementOptions, routePoints: northRoute });
+  for (const frame of south) assertHeadingNear(frame.heading, 180);
+});
+
+test('heading correction requires both flags and does not change default/Android or explicitly disabled outputs', () => {
+  const legacy = driverMapMotionFrames(northStart, northEnd, 1_940, { ...movementOptions, routePoints: northRoute });
+  assert.deepEqual(driverMapMotionFrames(northStart, northEnd, 1_940,
+    { ...movementOptions, routePoints: northRoute, stabilizeHeadingCorrections: false }), legacy);
+  for (const alignHeadingToMovement of [undefined, false]) {
+    const options = { alignHeadingToMovement, routePoints: northRoute };
+    assert.deepEqual(driverMapMotionFrames(northStart, northEnd, 1_940, { ...options, stabilizeHeadingCorrections: true }),
+      driverMapMotionFrames(northStart, northEnd, 1_940, options));
+  }
+});
