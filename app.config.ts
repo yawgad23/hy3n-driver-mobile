@@ -44,7 +44,7 @@ const env = {
 // either native release command too, so CLI metadata and the binary agree.
 // Preserve unspecified/web and the released Android configuration unchanged.
 const buildPlatform = process.env.EAS_BUILD_PLATFORM;
-const appVersion = buildPlatform === "ios" ? "1.2" : buildPlatform === "android" ? "1.0.3" : "1.0.2";
+const appVersion = buildPlatform === "ios" ? "1.3" : buildPlatform === "android" ? "1.0.3" : "1.0.2";
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
@@ -58,9 +58,9 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // 1.2 (130) adds automatic registration-photo preparation while retaining
-    // SDK 27 and all released reroute, vehicle motion and camera fixes.
-    buildNumber: buildPlatform === "ios" ? "130" : "124",
+    // 1.3 (131) is the source-only release candidate for automatic registration
+    // photos and camera/heading stability; preserve SDK 27 and all existing fixes.
+    buildNumber: buildPlatform === "ios" ? "131" : "124",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,

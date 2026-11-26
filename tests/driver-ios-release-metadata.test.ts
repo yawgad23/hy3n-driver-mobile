@@ -13,6 +13,8 @@ const previous = (file: string) => execFileSync('git', ['show', `${baseline}:${f
 const build130 = 'bfe0522f023fffa264f529b00875df7471513dcd';
 const historical = (commit: string, file: string) => execFileSync('git', ['show', `${commit}:${file}`], { cwd: root, encoding: 'utf8' });
 const released = (file: string) => historical(build130, file);
+const releaseBase = '3548f00ed9c9f6e0bc6ed4b465eae5f32d0188cc';
+const releaseSource = (file: string) => historical(releaseBase, file);
 const current = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
 const clientKeys = { GOOGLE_MAPS_IOS_API_KEY: 'ios-client-test-key', GOOGLE_MAPS_ANDROID_API_KEY: 'android-client-test-key' };
 
@@ -32,24 +34,47 @@ function config(source: string, platform?: string, keys: Record<string, string> 
 
 const ios = config(current('app.config.ts'), 'ios');
 
-test('SDK 27 automatic-photo candidate uses iOS version 1.2 build 130 and retains Driver identity', () => {
-  assert.equal(ios.name, 'HY3N Driver');
-  assert.equal(ios.version, '1.2');
-  assert.equal(ios.ios.buildNumber, '130');
-  assert.equal(ios.ios.bundleIdentifier, 'com.hy3n.driver');
-  assert.equal(ios.extra.eas.projectId, 'd19afe45-8e3d-42f9-ad5e-70b12b2c2ce9');
-  assert.equal(ios.owner, 'yawgad');
+test('historical SDK 27 automatic-photo release uses iOS version 1.2 build 130 and retains Driver identity', () => {
+  const historicalIos = config(released('app.config.ts'), 'ios');
+  assert.equal(historicalIos.name, 'HY3N Driver');
+  assert.equal(historicalIos.version, '1.2');
+  assert.equal(historicalIos.ios.buildNumber, '130');
+  assert.equal(historicalIos.ios.bundleIdentifier, 'com.hy3n.driver');
+  assert.equal(historicalIos.extra.eas.projectId, 'd19afe45-8e3d-42f9-ad5e-70b12b2c2ce9');
+  assert.equal(historicalIos.owner, 'yawgad');
+});
+
+test('iOS 1.3 (131) candidate changes exactly version and buildNumber from the camera-stability base', () => {
+  for (const keys of [clientKeys, {}]) {
+    for (const platform of ['ios', 'android', undefined, 'web']) {
+      const expected = config(releaseSource('app.config.ts'), platform, keys);
+      if (platform === 'ios') {
+        expected.version = '1.3';
+        expected.ios.buildNumber = '131';
+      }
+      // No SDK, plugin, dependency, other-platform or default/web allowances.
+      assert.deepEqual(config(current('app.config.ts'), platform, keys), expected);
+    }
+  }
+});
+
+test('release preparation preserves every camera-stability base file outside explicit metadata/test paths', () => {
+  const allowed = new Set(['app.config.ts', 'tests/driver-ios-release-metadata.test.ts']);
+  const changed = execFileSync('git', ['diff', '--name-only', releaseBase, '--'], { cwd: root, encoding: 'utf8' });
+  const added = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' });
+  for (const file of `${changed}\n${added}`.split('\n').filter(Boolean)) {
+    assert.ok(allowed.has(file), `non-metadata camera-stability base source changed: ${file}`);
+  }
 });
 
 test('build 130 changes only the iPhone build number from the tested photo-fix source', () => {
   const photoCommit = '90e416716d7b0cf05a68b71c2cd4e5e55409e9ac';
   const photoSource = (file: string) => execFileSync('git', ['show', `${photoCommit}:${file}`], { cwd: root, encoding: 'utf8' });
-  assert.equal(current('app.config.ts'), released('app.config.ts'));
+  assert.equal(releaseSource('app.config.ts'), released('app.config.ts'));
   for (const platform of ['ios', 'android', undefined, 'web']) {
     const expected = config(photoSource('app.config.ts'), platform);
     if (platform === 'ios') expected.ios.buildNumber = '130';
     assert.deepEqual(config(released('app.config.ts'), platform), expected);
-    assert.deepEqual(config(current('app.config.ts'), platform), expected);
   }
   for (const file of [
     'app/driver/register.tsx', 'lib/driver-photo-native.ts', 'lib/driver-photo-preparation.ts',
@@ -77,15 +102,16 @@ test('version-train correction changes only iOS release metadata and retains all
   }
 });
 
-test('current changes stay in camera/heading scope and preserve every unrelated released file', () => {
+test('current changes stay in camera/heading and explicit release-metadata scope and preserve every unrelated released file', () => {
   const allowed = new Set([
     'components/NativeDriverGoogleMap.tsx', 'lib/driver-map-motion.ts', 'lib/driver-navigation-camera.ts',
+    'app.config.ts',
     'tests/driver-ios-release-metadata.test.ts', 'tests/driver-map-motion.test.ts',
     'tests/driver-navigation-camera.test.ts', 'tests/driver-ios-camera-stability-runtime.test.ts',
     'tests/driver-ios-reroute-runtime.test.ts',
   ]);
-  // Include staged, unstaged and newly added files. This protects SDK/config,
-  // photos, authentication/permissions, DriverTypes, call UI and background work.
+  // Include staged, unstaged and newly added files. The exact candidate config
+  // comparison above protects SDK/plugins; all other preservation rules remain.
   const changed = execFileSync('git', ['diff', '--name-only', build130, '--'], { cwd: root, encoding: 'utf8' });
   const added = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' });
   for (const file of `${changed}\n${added}`.split('\n').filter(Boolean)) {
@@ -135,7 +161,7 @@ test('current changes stay in camera/heading scope and preserve every unrelated 
     referenceMotion.slice(referenceMotion.indexOf('/** Align visual movement')));
 });
 
-test('only the enumerated SDK 27 compatibility and iPhone release metadata differ from build 126', () => {
+test('historical build 130 differs from build 126 only by enumerated SDK 27 compatibility and iPhone release metadata', () => {
   for (const platform of ['ios', 'android', undefined, 'web']) {
     const expected = config(previous('app.config.ts'), platform);
     if (platform === 'ios') {
@@ -153,7 +179,7 @@ test('only the enumerated SDK 27 compatibility and iPhone release metadata diffe
       useHermesV1: true,
       usePrecompiledModules: false,
     });
-    assert.deepEqual(config(current('app.config.ts'), platform), expected);
+    assert.deepEqual(config(released('app.config.ts'), platform), expected);
   }
 });
 
