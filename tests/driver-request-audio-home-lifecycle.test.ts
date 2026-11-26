@@ -58,10 +58,14 @@ function setup(platform: 'ios' | 'android') {
   const configurationModes: any[] = [];
   let configure = async () => {};
   let seek = async () => {};
+  let nextPlayerLoaded = true;
   const factory = () => {
-    const p = { isLoaded: true, playing: false, muted: true, volume: 0, loop: false, released: false, removes: 0, plays: 0,
+    const listeners = new Set<(status: { isLoaded: boolean }) => void>();
+    const p = { isLoaded: nextPlayerLoaded, playing: false, muted: true, volume: 0, loop: false, released: false, removes: 0, plays: 0,
       play() { this.playing = true; this.plays++; }, pause() { this.playing = false; }, seekTo: () => seek(),
-      addListener: () => ({ remove() {} }), remove() { this.removes++; }, release() { this.released = true; } };
+      addListener: (_event: string, listener: (status: { isLoaded: boolean }) => void) => { listeners.add(listener); return { remove() { listeners.delete(listener); } }; },
+      load() { this.isLoaded = true; for (const listener of [...listeners]) listener({ isLoaded: true }); },
+      remove() { this.removes++; }, release() { this.released = true; this.playing = false; } };
     players.push(p); return p;
   };
   const placeholder = factory();
@@ -76,7 +80,7 @@ function setup(platform: 'ios' | 'android') {
   let requests = 0;
   let previousDependencies: any[] | undefined;
   const env: Record<string, any> = {
-    Platform: { OS: platform }, incomingRide: offer(), incomingTripAlertStatus: { isLoaded: true },
+    Platform: { OS: platform }, AppState: { currentState: 'active' }, requestAudioForeground: true, incomingRide: offer(), incomingTripAlertStatus: { isLoaded: true },
     activeTrip: null, isOnline: true, hasCurrentLocation: true, prefs: { soundAlerts: true }, user: { uid: 'driver-1' }, driverProfile: {},
     tripActionPending: false, tripActionInFlightRef: { current: false },
     acceptedOfferAudioSuppressionRef: { current: null }, incomingOfferReceivedAtRef: { current: Date.now() },
@@ -92,7 +96,9 @@ function setup(platform: 'ios' | 'android') {
     setActiveTrip(value: any) { env.activeTrip = value; syncEligibility(); },
     setIncomingRide(value: any) { env.incomingRide = value; syncEligibility(); },
     setRideOfferSeconds() {}, stopIncomingTripAlert(force = false) { runtime.stop(placeholder, { force }); },
-    playIncomingTripAlert(id: string) { void runtime.play(id, placeholder, async (mode) => { configurationModes.push(mode); await configure(); }); },
+    incomingTripAlertPlayer: placeholder, useCallback: (callback: any) => callback,
+    setAudioModeAsync: async (mode: any) => { configurationModes.push(mode); await configure(); },
+    playIncomingTripAlert(id: string) { evaluate(expression('playIncomingTripAlert'), env)(id); },
     respondToOffer: { mutateAsync() { requests++; assert.equal(players.every(p => !p.playing), true, 'request audio stops before server mutation'); return response.promise; } },
   };
   function syncEligibility() {
@@ -112,6 +118,7 @@ function setup(platform: 'ios' | 'android') {
     setServerRide: (ride: any) => { serverRide = ride; }, setServerReadError: (error: Error) => { serverReadError = error; },
     setServerRead: (read: () => Promise<any>) => { serverRead = read; }, requestCount: () => requests,
     setConfigure: (fn: () => Promise<void>) => { configure = fn; }, setSeek: (fn: () => Promise<void>) => { seek = fn; },
+    setNextPlayerLoaded: (loaded: boolean) => { nextPlayerLoaded = loaded; },
     plays: () => players.reduce((sum, p) => sum + p.plays, 0), playing: () => players.some(p => p.playing) };
 }
 
@@ -141,14 +148,11 @@ for (const platform of ['ios', 'android'] as const) {
     assert.deepEqual(h.rearmCalls, platform === 'ios' ? ['offer-A'] : []);
     h.effect(); await flush(); assert.equal(h.playing(), true); assert.equal(h.plays(), 2);
     h.effect(true); await flush(); assert.equal(h.plays(), 2, 'duplicate effect cannot replay twice');
-    if (platform === 'ios') {
-      assert.equal(h.players.length, 1, 'iOS must keep its hook-owned WAV player');
-      assert.equal(h.placeholder.released, false); assert.equal(h.placeholder.removes, 0);
-      assert.equal(h.configurationModes.every(mode => mode.playsInSilentMode && !mode.allowsRecording && !mode.shouldPlayInBackground), true);
-    } else {
-      assert.equal(h.players.length, 3); assert.equal(h.players[1].released, true);
-      assert.equal(h.players[2].released, false);
-    }
+    assert.equal(h.players.length, 3, 'native retry creates a fresh owned source');
+    assert.equal(h.placeholder.released, false); assert.equal(h.placeholder.removes, 0, 'never release the empty hook');
+    assert.equal(h.players[1].released, true); assert.equal(h.players[1].removes, 1);
+    assert.equal(h.players[2].released, false);
+    assert.equal(h.configurationModes.every(mode => mode.playsInSilentMode && !mode.allowsRecording && !mode.shouldPlayInBackground), true);
   });
 
   test(`${platform}: reconciled assignment stays silent and fresh later offer plays after completion`, async () => {
@@ -202,10 +206,10 @@ for (const platform of ['ios', 'android'] as const) {
     test(`${platform}: actual Accept during async ${stage} prevents stale late playback`, async () => {
       const h = setup(platform); const wait = deferred<void>();
       if (stage === 'configure') h.setConfigure(() => wait.promise); else h.setSeek(() => wait.promise);
-      h.effect(); await flush(); const pending = h.accept(); h.effect();
-      wait.resolve(); await flush(); assert.equal(h.plays(), 0); assert.equal(h.playing(), false);
-      if (platform === 'ios') { assert.equal(h.players.length, 1); assert.equal(h.placeholder.released, false); }
-      else assert.equal(h.players[1].released, true);
+    h.effect(); await flush(); const pending = h.accept(); h.effect();
+    wait.resolve(); await flush(); assert.equal(h.plays(), 0); assert.equal(h.playing(), false);
+      assert.equal(h.placeholder.released, false);
+      assert.equal(h.players[1].released, true);
       h.response.resolve({ ride: assignedRide() }); await pending; h.effect(); await flush(); assert.equal(h.plays(), 0);
     });
   }
@@ -237,7 +241,7 @@ for (const [reason, change] of iOSGuards) {
     assert.equal(h.env.acceptedOfferAudioSuppressionRef.current, 'offer-A');
     // A fresh B may play after pending clears; none of these paths may replay A.
     if (!reason.includes('changed to B')) assert.equal(h.playing(), false);
-    else { assert.equal(h.players.length, 1); assert.equal(h.playing(), true); }
+    else { assert.equal(h.players.length, 3); assert.equal(h.players[1].released, true); assert.equal(h.playing(), true); }
   });
 }
 
@@ -260,12 +264,53 @@ test('ios: late failure cannot rearm after another reconciliation already confir
   assert.deepEqual(h.rearmCalls, []); assert.equal(h.playing(), false);
 });
 
-test('ios: same eligible offer rearm waits for hook readiness and then plays once', async () => {
+test('ios: same eligible offer rearm waits for its fresh owned player readiness and then plays once', async () => {
   const h = setup('ios'); h.effect(); await flush(); const pending = h.accept(); h.effect();
-  h.placeholder.isLoaded = false; h.env.incomingTripAlertStatus = { isLoaded: false };
+  h.setNextPlayerLoaded(false); h.env.incomingTripAlertStatus = { isLoaded: false };
   h.response.reject(Error('temporary connection failure')); await pending; h.effect(); await flush();
   assert.equal(h.plays(), 1); assert.equal(h.playing(), false);
-  h.placeholder.isLoaded = true; h.env.incomingTripAlertStatus = { isLoaded: true }; h.effect(); await flush();
-  assert.equal(h.plays(), 2); assert.equal(h.playing(), true); assert.equal(h.players.length, 1);
+  h.players[2].load(); await flush();
+  assert.equal(h.plays(), 2); assert.equal(h.playing(), true); assert.equal(h.players.length, 3);
+  assert.equal(h.players[1].released, true); assert.equal(h.placeholder.released, false);
   h.effect(true); await flush(); assert.equal(h.plays(), 2);
 });
+
+function installActualAppStateHandler(env: Record<string, any>) {
+  let callback: ts.Expression | undefined;
+  function visit(node: ts.Node) {
+    if (ts.isCallExpression(node) && node.expression.getText(tree) === 'useEffect'
+      && node.arguments[0]?.getText(tree).includes('let previousAppState = AppState.currentState')) callback = node.arguments[0];
+    ts.forEachChild(node, visit);
+  }
+  visit(tree); assert.ok(callback, 'actual Home AppState handler must exist');
+  let listener: ((state: string) => void) | undefined;
+  env.AppState.addEventListener = (_event: string, fn: (state: string) => void) => { listener = fn; return { remove() {} }; };
+  env.setRequestAudioForeground = (value: boolean) => { env.requestAudioForeground = value; };
+  env.shouldRefreshDriverRideOffersOnAppResume = (input: any) => input.nextAppState === 'active' && input.authenticated && input.online && input.hasCurrentLocation;
+  evaluate(callback.getText(tree), env)(); assert.ok(listener);
+  return (state: string) => { env.AppState.currentState = state; listener!(state); };
+}
+for (const platform of ['ios', 'android'] as const) {
+  for (const inactive of ['inactive', 'background']) {
+    test(`${platform}: actual AppState ${inactive} disposes the request immediately before any render`, async () => {
+      const h = setup(platform); h.effect(); await flush(); const change = installActualAppStateHandler(h.env);
+      change(inactive);
+      assert.equal(h.playing(), false); assert.equal(h.players[1].released, true);
+      assert.equal(h.players[1].removes, 1); assert.equal(h.placeholder.released, false);
+      h.effect(); change('active'); h.effect(); await flush();
+      assert.equal(h.plays(), 2); assert.equal(h.players[2].released, false, 'eligible unanswered request resumes with a fresh player');
+    });
+  }
+  test(`${platform}: actual foreground resume cannot re-ring an offer whose lease expired in background`, async () => {
+    const h = setup(platform); h.effect(); await flush(); const change = installActualAppStateHandler(h.env);
+    change('background'); h.effect(); h.env.incomingRide.driver_offer_expires_at = new Date(Date.now() - 1).toISOString();
+    change('active'); h.effect(); await flush();
+    assert.equal(h.plays(), 1); assert.equal(h.players.length, 2); assert.equal(h.playing(), false);
+  });
+  test(`${platform}: actual background/foreground after accepted assignment stays silent`, async () => {
+    const h = setup(platform); h.effect(); await flush(); const pending = h.accept();
+    h.response.resolve({ ride: assignedRide() }); await pending; h.effect(); await flush();
+    const change = installActualAppStateHandler(h.env); change('background'); h.effect(); change('active'); h.effect(); await flush();
+    assert.equal(h.plays(), 1); assert.equal(h.playing(), false); assert.equal(h.players[1].released, true);
+  });
+}

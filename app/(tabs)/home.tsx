@@ -196,10 +196,11 @@ export default function DriverHomeScreen() {
   const [androidDockHeight, setAndroidDockHeight] = useState(0);
   const [iosHomeHeight, setIosHomeHeight] = useState(0);
   const [iosDockHeight, setIosDockHeight] = useState(0);
-  // iOS retains its existing hook-owned player. Android request sources are
-  // controller-owned per offer so a stopped source cannot natively auto-resume.
+  const [requestAudioForeground, setRequestAudioForeground] = useState(AppState.currentState === 'active');
+  // Both native platforms own a fresh request-only source per offer. The empty
+  // hook is never released manually; terminal stops dispose the owned source.
   const incomingTripAlertPlayer = useAudioPlayer(
-    Platform.OS === 'android' ? null : require('@/assets/audio/incoming-trip-alert.wav'),
+    Platform.OS === 'android' || Platform.OS === 'ios' ? null : require('@/assets/audio/incoming-trip-alert.wav'),
     { keepAudioSessionActive: false },
   );
   const incomingTripAlertStatus = useAudioPlayerStatus(incomingTripAlertPlayer);
@@ -257,7 +258,25 @@ export default function DriverHomeScreen() {
   }, [incomingTripAlertPlayer]);
 
   const playIncomingTripAlert = useCallback((rideId: string) => {
-    void incomingTripAudioRuntimeRef.current.play(rideId, incomingTripAlertPlayer, setAudioModeAsync);
+    // Read refs again after configure/readiness/seek: an old render must not
+    // start a song after Accept, expiry, a background switch, or reassignment.
+    const expectedDriverId = incomingOfferAudioEligibilityRef.current.driverId;
+    const isCurrentOfferEligible = () => {
+      const current = incomingOfferAudioEligibilityRef.current;
+      if ((Platform.OS === 'android' || Platform.OS === 'ios') && AppState.currentState !== 'active') return false;
+      if (!current.driverId || current.driverId !== expectedDriverId || !current.hasCurrentLocation || tripActionInFlightRef.current || acceptedOfferAudioSuppressionRef.current === rideId) return false;
+      if (String(current.incomingRide?.id || '') !== rideId || !shouldPlayIncomingTripAlert({
+        isOnline: current.isOnline,
+        incomingRideId: rideId,
+        activeTripId: current.activeTripId,
+        soundAlerts: current.prefs.soundAlerts,
+      })) return false;
+      const expiresAtMs = driverOfferExpiryMs(current.incomingRide.driver_offer_expires_at, incomingOfferReceivedAtRef.current ?? Date.now());
+      return isDriverOfferWithinWindow(expiresAtMs, Date.now())
+        && shouldPresentDriverOffer(current.incomingRide, retiredOfferLeaseRef.current)
+        && offerMatchesDriverPreferences(current.incomingRide, current.prefs);
+    };
+    void incomingTripAudioRuntimeRef.current.play(rideId, incomingTripAlertPlayer, setAudioModeAsync, isCurrentOfferEligible);
   }, [incomingTripAlertPlayer]);
 
   // The previous demand-zone circles obscured the map and were not real cars.
@@ -334,6 +353,12 @@ export default function DriverHomeScreen() {
   useEffect(() => {
     let previousAppState = AppState.currentState;
     const subscription = AppState.addEventListener('change', (nextAppState) => {
+      setRequestAudioForeground(nextAppState === 'active');
+      if (nextAppState !== 'active') {
+        // Stop and unregister synchronously; do not wait for a React render.
+        // Background push notifications and location tracking remain enabled.
+        incomingTripAudioRuntimeRef.current.suspend(incomingTripAlertPlayer);
+      }
       if (shouldRefreshDriverRideOffersOnAppResume({
         previousAppState,
         nextAppState,
@@ -346,7 +371,7 @@ export default function DriverHomeScreen() {
       previousAppState = nextAppState;
     });
     return () => subscription.remove();
-  }, [hasCurrentLocation, isOnline, refreshAvailableOffers, user?.uid]);
+  }, [hasCurrentLocation, incomingTripAlertPlayer, isOnline, refreshAvailableOffers, user?.uid]);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const deliveryContact = deliveryContactForDriver(activeTrip);
@@ -679,7 +704,7 @@ export default function DriverHomeScreen() {
 
   useEffect(() => {
     const incomingRideId = incomingRide?.id ? String(incomingRide.id) : null;
-    if (((Platform.OS === 'android' || Platform.OS === 'ios') && tripActionPending) || acceptedOfferAudioSuppressionRef.current === incomingRideId || !shouldPlayIncomingTripAlert({
+    if (((Platform.OS === 'android' || Platform.OS === 'ios') && (!requestAudioForeground || tripActionPending)) || acceptedOfferAudioSuppressionRef.current === incomingRideId || !shouldPlayIncomingTripAlert({
       isOnline,
       incomingRideId,
       activeTripId: activeTrip?.id || null,
@@ -688,12 +713,11 @@ export default function DriverHomeScreen() {
       stopIncomingTripAlert(true);
       return;
     }
-    // iOS keeps its existing hook readiness subscription. Android's controller
-    // waits for the per-offer player and cancels that wait on acceptance/cleanup.
-    if (!incomingRideId || (Platform.OS !== 'android' && !incomingTripAlertStatus.isLoaded)) return;
+    // Native readiness belongs to the owned player, not the empty hook.
+    if (!incomingRideId || ((Platform.OS !== 'android' && Platform.OS !== 'ios') && !incomingTripAlertStatus.isLoaded)) return;
     playIncomingTripAlert(incomingRideId);
     // Failed mobile Accept re-arms eligibility before pending becomes false.
-  }, [activeTrip?.id, incomingRide?.id, incomingTripAlertStatus.isLoaded, isOnline, playIncomingTripAlert, prefs.soundAlerts, stopIncomingTripAlert, (Platform.OS === 'android' || Platform.OS === 'ios') && tripActionPending]);
+  }, [activeTrip?.id, activeTrip?.status, incomingRide?.id, incomingRide?.driver_offer_expires_at, incomingTripAlertStatus.isLoaded, isOnline, playIncomingTripAlert, prefs.soundAlerts, requestAudioForeground, stopIncomingTripAlert, (Platform.OS === 'android' || Platform.OS === 'ios') && tripActionPending]);
 
   useEffect(() => () => stopIncomingTripAlert(true), [stopIncomingTripAlert]);
 
@@ -1248,6 +1272,7 @@ export default function DriverHomeScreen() {
       Alert.alert('Arrive first', 'Mark that you have arrived at the pickup point before starting the trip.');
       return;
     }
+    stopIncomingTripAlert(true);
     if (activeTrip.pickup_code && !activeTrip.pickup_verified_at) {
       setShowOtp(true);
       return;
@@ -1257,6 +1282,7 @@ export default function DriverHomeScreen() {
 
   const handleVerifyPickupCode = async () => {
     if (!activeTrip || !user?.uid || !pickupCode.trim() || tripActionInFlightRef.current) return;
+    stopIncomingTripAlert(true);
     tripActionInFlightRef.current = true;
     setTripActionPending(true);
     try {

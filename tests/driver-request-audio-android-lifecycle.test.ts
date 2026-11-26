@@ -235,7 +235,7 @@ for (const stage of ['configure', 'seek'] as const) {
   });
 }
 
-for (const platform of ['ios', 'web', undefined]) {
+for (const platform of ['web', undefined]) {
   test(`Android lifecycle opt-in leaves ${String(platform)} playback and retry behavior unchanged`, async () => {
     const native = androidNative(); const p = native.create(); let creates = 0;
     const runtime = createDriverRequestAudio({ platform, createPlayer: () => { creates++; return native.create(); } } as any);
