@@ -15,6 +15,11 @@ const historical = (commit: string, file: string) => execFileSync('git', ['show'
 const released = (file: string) => historical(build130, file);
 const releaseBase = '3548f00ed9c9f6e0bc6ed4b465eae5f32d0188cc';
 const releaseSource = (file: string) => historical(releaseBase, file);
+const build131 = 'e4fd60fef058866ea57ad65295ca33a89893f90a';
+const delivered131 = (file: string) => historical(build131, file);
+const soundFix = '05754fe2ccc966c096000c42b8d20e574991ec1f';
+const soundSource = (file: string) => historical(soundFix, file);
+const releaseNote = 'docs/driver-ios-1.3-132-request-sound-20261126.md';
 const current = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
 const clientKeys = { GOOGLE_MAPS_IOS_API_KEY: 'ios-client-test-key', GOOGLE_MAPS_ANDROID_API_KEY: 'android-client-test-key' };
 
@@ -44,7 +49,7 @@ test('historical SDK 27 automatic-photo release uses iOS version 1.2 build 130 a
   assert.equal(historicalIos.owner, 'yawgad');
 });
 
-test('iOS 1.3 (131) candidate changes exactly version and buildNumber from the camera-stability base', () => {
+test('historical iOS 1.3 (131) changes exactly version and buildNumber from the camera-stability base', () => {
   for (const keys of [clientKeys, {}]) {
     for (const platform of ['ios', 'android', undefined, 'web']) {
       const expected = config(releaseSource('app.config.ts'), platform, keys);
@@ -53,17 +58,49 @@ test('iOS 1.3 (131) candidate changes exactly version and buildNumber from the c
         expected.ios.buildNumber = '131';
       }
       // No SDK, plugin, dependency, other-platform or default/web allowances.
-      assert.deepEqual(config(current('app.config.ts'), platform, keys), expected);
+      assert.deepEqual(config(delivered131('app.config.ts'), platform, keys), expected);
+      assert.deepEqual(config(soundSource('app.config.ts'), platform, keys), expected);
     }
   }
 });
 
-test('release preparation preserves every camera-stability base file outside explicit metadata/test paths', () => {
-  const allowed = new Set(['app.config.ts', 'tests/driver-ios-release-metadata.test.ts']);
-  const changed = execFileSync('git', ['diff', '--name-only', releaseBase, '--'], { cwd: root, encoding: 'utf8' });
+test('current iOS 1.3 (132) changes only buildNumber from the reviewed request-sound fix; other platforms are identical', () => {
+  for (const keys of [clientKeys, {}]) {
+    for (const platform of ['ios', 'android', undefined, 'web']) {
+      const expected = config(soundSource('app.config.ts'), platform, keys);
+      const actual = config(current('app.config.ts'), platform, keys);
+      if (platform === 'ios') {
+        assert.equal(expected.version, '1.3');
+        assert.equal(expected.ios.buildNumber, '131');
+        expected.ios.buildNumber = '132';
+        assert.equal(actual.version, '1.3');
+        assert.equal(actual.ios.buildNumber, '132');
+      }
+      // Only the iPhone build number changes: no version, SDK, plugin,
+      // Firebase, Android, default or web configuration allowances.
+      assert.deepEqual(actual, expected);
+    }
+  }
+});
+
+test('132 preparation preserves every reviewed request-sound source file outside the exact metadata/test/new-note paths', () => {
+  const allowed = new Set(['app.config.ts', 'tests/driver-ios-release-metadata.test.ts', 'tests/driver-android-home-layout.test.ts', releaseNote]);
+  const changed = execFileSync('git', ['diff', '--name-only', soundFix, '--'], { cwd: root, encoding: 'utf8' });
   const added = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' });
   for (const file of `${changed}\n${added}`.split('\n').filter(Boolean)) {
-    assert.ok(allowed.has(file), `non-metadata camera-stability base source changed: ${file}`);
+    assert.ok(allowed.has(file), `non-metadata request-sound source changed: ${file}`);
+  }
+});
+
+test('132 retains delivered 131 camera/navigation source and regressions byte-for-byte', () => {
+  for (const file of [
+    'components/NativeDriverGoogleMap.tsx', 'lib/driver-map-motion.ts', 'lib/driver-navigation-camera.ts',
+    'lib/native-map-camera.ts', 'lib/driver-navigation-guidance.ts', 'lib/driver-turn-navigation.ts',
+    'tests/driver-map-motion.test.ts', 'tests/driver-navigation-camera.test.ts',
+    'tests/driver-ios-camera-stability-runtime.test.ts', 'tests/driver-ios-reroute-runtime.test.ts',
+  ]) {
+    assert.equal(soundSource(file), delivered131(file), `${file}: sound fix preserves delivered 131`);
+    assert.equal(current(file), delivered131(file), `${file}: 132 preserves delivered 131`);
   }
 });
 
@@ -102,16 +139,23 @@ test('version-train correction changes only iOS release metadata and retains all
   }
 });
 
-test('current changes stay in camera/heading and explicit release-metadata scope and preserve every unrelated released file', () => {
+test('current changes since build 130 stay in enumerated camera/heading, request-audio and release-preparation scope', () => {
   const allowed = new Set([
     'components/NativeDriverGoogleMap.tsx', 'lib/driver-map-motion.ts', 'lib/driver-navigation-camera.ts',
+    'app/(tabs)/home.tsx', 'lib/driver-request-audio.ts',
+    'tests/driver-request-audio-android-lifecycle.test.ts', 'tests/driver-request-audio-home-lifecycle.test.ts',
+    'tests/driver-request-audio-native-retirement.test.ts', 'tests/driver-request-audio-runtime.test.ts',
+    'tests/driver-request-audio-start-boundary.test.ts',
     'app.config.ts',
     'tests/driver-ios-release-metadata.test.ts', 'tests/driver-map-motion.test.ts',
     'tests/driver-navigation-camera.test.ts', 'tests/driver-ios-camera-stability-runtime.test.ts',
-    'tests/driver-ios-reroute-runtime.test.ts',
+    'tests/driver-ios-reroute-runtime.test.ts', 'tests/driver-android-home-layout.test.ts',
+    releaseNote,
   ]);
   // Include staged, unstaged and newly added files. The exact candidate config
-  // comparison above protects SDK/plugins; all other preservation rules remain.
+  // comparison protects SDK/plugins. This historical scope does not authorize
+  // fresh source changes: the stricter soundFix guard allows only four paths,
+  // and the exact delivered131 camera guard freezes the previous camera fix.
   const changed = execFileSync('git', ['diff', '--name-only', build130, '--'], { cwd: root, encoding: 'utf8' });
   const added = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' });
   for (const file of `${changed}\n${added}`.split('\n').filter(Boolean)) {
@@ -267,9 +311,11 @@ test('scene-aware Apple sign-in uses the reviewed SDK 57 package and source comp
   assert.match(plugin, /RequestNotInteractiveException/);
 });
 
-test('all unrelated iPhone UI, trip and authenticated GPS publisher source remains preserved', () => {
+test('fixed Home/request audio is preserved from 057, while unrelated iPhone UI/trip/GPS source remains at its existing baseline', () => {
+  for (const file of ['app/(tabs)/home.tsx', 'lib/driver-request-audio.ts']) {
+    assert.equal(current(file), soundSource(file), `${file}: preserve reviewed request-sound fix`);
+  }
   for (const file of [
-    'app/(tabs)/home.tsx',
     'components/DriverNavigationBanner.tsx',
     'lib/driver-ios-overlay-theme.ts',
     'hooks/use-driver-ios-overlay-palette.ts',
@@ -278,7 +324,6 @@ test('all unrelated iPhone UI, trip and authenticated GPS publisher source remai
     'lib/driver-android-home-layout.tsx',
     'lib/driver-location-publisher.ts',
     'lib/driver-turn-navigation.ts',
-    'lib/driver-request-audio.ts',
   ]) {
     assert.equal(current(file), previous(file), file);
   }

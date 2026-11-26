@@ -58,9 +58,9 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // 1.3 (131) is the source-only release candidate for automatic registration
-    // photos and camera/heading stability; preserve SDK 27 and all existing fixes.
-    buildNumber: buildPlatform === "ios" ? "131" : "124",
+    // 1.3 (132) adds the request-song terminal-stop fix while preserving
+    // SDK 27, automatic registration photos and camera/heading stability.
+    buildNumber: buildPlatform === "ios" ? "132" : "124",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,

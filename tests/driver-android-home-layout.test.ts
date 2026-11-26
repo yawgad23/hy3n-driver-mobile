@@ -15,6 +15,9 @@ const BASELINE = 'a7209d6a32f6e1df10a6760a66141e0242a56cf6';
 const HOME = 'app/(tabs)/home.tsx';
 const IOS_RELEASE = 'ddd131a4849b1784ff0e83861bf02d00ad42a9de';
 const helperPath = path.resolve('lib/driver-android-home-layout.tsx');
+const SOUND_FIX = '05754fe2ccc966c096000c42b8d20e574991ec1f';
+const reviewedSoundHome = execFileSync('git', ['show', `${SOUND_FIX}:${HOME}`], { encoding: 'utf8' });
+const beforeNativeRetirement = execFileSync('git', ['show', `${SOUND_FIX}^:${HOME}`], { encoding: 'utf8' });
 const baseline = execFileSync('git', ['show', `${BASELINE}:${HOME}`], { encoding: 'utf8' });
 const iosRelease = execFileSync('git', ['show', `${IOS_RELEASE}:${HOME}`], { encoding: 'utf8' });
 const current = readFileSync(HOME, 'utf8');
@@ -379,7 +382,8 @@ test('Android preserves every label, handler and disabled-state contract includi
   }
 });
 
-test('scope proof: old styles, server/offer handlers and keyboard/rating JSX stay unchanged except verified Android/iOS audio deltas', () => {
+test('scope proof: current Home is the reviewed sound fix; historical layout/handler proof and current styles/modals remain protected', () => {
+  assert.equal(current, reviewedSoundHome, 'current Home must remain byte-identical to the separately tested native retirement fix');
   const oldFile = parse(baseline), newFile = parse(current);
   const styleProperties = (file: ts.SourceFile) => {
     const node = file.statements.find((s) => ts.isVariableStatement(s) && s.declarationList.declarations.some((d) => d.name.getText(file) === 'styles')) as ts.VariableStatement;
@@ -389,7 +393,10 @@ test('scope proof: old styles, server/offer handlers and keyboard/rating JSX sta
   const newStyles = styleProperties(newFile);
   for (const prop of styleProperties(oldFile)) assert.equal(newStyles.find((p) => p.name?.getText(newFile) === prop.name?.getText(oldFile))?.getText(newFile), prop.getText(oldFile));
   // Reverse only these exact separately behavior-tested audio expressions for
-  // the layout scope comparison. Do not whitelist whole handlers or effects.
+  // the delivered 131 historical layout proof. Current Home is frozen above to
+  // the reviewed sound fix and is still rendered by all current UI tests.
+  // Native-retirement/start-boundary suites test that new audio wiring directly;
+  // do not silently whitelist changed handlers or disable this historical proof.
   const audioDeltas = [
     ["Platform.OS === 'android' ? null : require('@/assets/audio/incoming-trip-alert.wav')", "require('@/assets/audio/incoming-trip-alert.wav')"],
     ["createDriverRequestAudio({\n    platform: Platform.OS,\n    createPlayer: () => createAudioPlayer(\n      require('@/assets/audio/incoming-trip-alert.wav'),\n      { keepAudioSessionActive: false },\n    ),\n  })", 'createDriverRequestAudio()'],
@@ -429,7 +436,7 @@ test('scope proof: old styles, server/offer handlers and keyboard/rating JSX sta
         }`, "        if (String(incomingRide?.id || '') === rideId) acceptedOfferAudioSuppressionRef.current = null;\n        const message = String(err?.message || '');"],
     ['if (unavailable) {', 'if (/no longer available|already been accepted|has expired/i.test(message)) {'],
   ];
-  let compatibleSource = current;
+  let compatibleSource = beforeNativeRetirement;
   for (const [approved, original] of audioDeltas) {
     assert.equal(compatibleSource.split(approved).length - 1, 1, `approved audio expression must occur exactly once: ${approved}`);
     compatibleSource = compatibleSource.replace(approved, original);
