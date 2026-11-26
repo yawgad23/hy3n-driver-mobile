@@ -19,29 +19,33 @@ export type DriverRequestAudioPlayer = {
   play: () => void;
 };
 
-export type AndroidDriverRequestAudioPlayer = DriverRequestAudioPlayer & {
+export type OwnedDriverRequestAudioPlayer = DriverRequestAudioPlayer & {
   addListener: (event: 'playbackStatusUpdate', listener: (status: { isLoaded: boolean }) => void) => { remove: () => void };
   remove: () => void;
   release: () => void;
 };
 
+// Keep the existing exported type available to Android callers.
+export type AndroidDriverRequestAudioPlayer = OwnedDriverRequestAudioPlayer;
+
 type DriverRequestAudioOptions = {
   platform?: string;
-  /** Android ONLY: this controller owns and retires these per-offer players. */
-  createPlayer?: () => AndroidDriverRequestAudioPlayer;
+  /** Native ONLY: the controller owns and retires each request's player. */
+  createPlayer?: () => OwnedDriverRequestAudioPlayer;
 };
 
-/** No notifications, timers, background playback, or recording. */
+/** Request-only audio: never disable the shared session or other app sounds. */
 export function createDriverRequestAudio(options: DriverRequestAudioOptions = {}) {
-  const ownsAndroidPlayer = options.platform === 'android' && Boolean(options.createPlayer);
+  const ownsNativePlayer = (options.platform === 'android' || options.platform === 'ios') && Boolean(options.createPlayer);
   let generation = 0;
   let lastPlayedRide: string | null = null;
   let pendingRide: string | null = null;
-  let ownedPlayer: AndroidDriverRequestAudioPlayer | null = null;
+  let ownedPlayer: OwnedDriverRequestAudioPlayer | null = null;
+  let ownedRide: string | null = null;
   let cancelReadiness: (() => void) | null = null;
 
   function silence(player: DriverRequestAudioPlayer, force: boolean) {
-    // Keep every native operation isolated: a failed setter must never skip pause.
+    // Isolate every native operation: a failed setter must never skip pause.
     let shouldPause = force;
     if (!shouldPause) {
       try { shouldPause = player.playing; } catch { shouldPause = true; }
@@ -54,20 +58,21 @@ export function createDriverRequestAudio(options: DriverRequestAudioOptions = {}
     try { player.volume = 0; } catch {}
   }
 
-  function retireAndroidPlayer() {
+  function retireNativePlayer() {
     cancelReadiness?.();
     const player = ownedPlayer;
     ownedPlayer = null;
+    ownedRide = null;
     if (!player) return;
     silence(player, true);
-    // expo-audio 1.1.1 Android pause() leaves isPaused armed after native
-    // background/focus suspension. remove() unregisters native auto-resume;
-    // release() disposes the ExoPlayer. Neither affects other audio players.
+    // pause alone leaves native background/resume intent armed. remove()
+    // unregisters this player; release() also cancels pending native seeks and
+    // tears down iOS observers / Android ExoPlayer. Never release a hook player.
     try { player.remove(); } catch {}
     try { player.release(); } catch {}
   }
 
-  function waitForAndroidReadiness(player: AndroidDriverRequestAudioPlayer): Promise<boolean> {
+  function waitForNativeReadiness(player: OwnedDriverRequestAudioPlayer): Promise<boolean> {
     if (player.isLoaded) return Promise.resolve(true);
     return new Promise((resolve) => {
       let subscription: { remove: () => void } | undefined;
@@ -81,72 +86,89 @@ export function createDriverRequestAudio(options: DriverRequestAudioOptions = {}
       };
       cancelReadiness = () => finish(false);
       subscription = player.addListener('playbackStatusUpdate', () => {
+        // Android's event field can precede STATE_READY; read the player itself.
         try { if (player.isLoaded) finish(true); } catch { finish(false); }
       });
-      // Close the subscription/readiness race without treating an Android
-      // loading-change event's isLoaded field as STATE_READY.
       if (finished) { try { subscription.remove(); } catch {} }
       else if (player.isLoaded) finish(true);
     });
   }
 
+  function stop(player: DriverRequestAudioPlayer, stopOptions: { force?: boolean } = {}) {
+    generation++;
+    pendingRide = null;
+    if (ownsNativePlayer) {
+      retireNativePlayer();
+      // Preserve iOS's consumed-offer latch until a genuinely failed Accept
+      // explicitly rearms it. Android's Home suppression remains authoritative.
+      if (options.platform === 'android') lastPlayedRide = null;
+      return;
+    }
+    silence(player, stopOptions.force === true);
+  }
+
   return {
-    async play(rideId: string, player: DriverRequestAudioPlayer, configure: (mode: typeof DRIVER_REQUEST_AUDIO_MODE) => Promise<void>) {
-      if (!rideId || lastPlayedRide === rideId || pendingRide === rideId) return false;
-      if (!ownsAndroidPlayer && !player.isLoaded) return false;
+    async play(
+      rideId: string,
+      player: DriverRequestAudioPlayer,
+      configure: (mode: typeof DRIVER_REQUEST_AUDIO_MODE) => Promise<void>,
+      isEligible: () => boolean = () => true,
+    ) {
+      if (!rideId || lastPlayedRide === rideId || pendingRide === rideId || !isEligible()) return false;
+      if (!ownsNativePlayer && !player.isLoaded) return false;
       const current = ++generation;
       pendingRide = rideId;
+      const stillEligible = () => generation === current && isEligible();
+      let started = false;
       try {
-        if (ownsAndroidPlayer) {
-          retireAndroidPlayer();
+        if (ownsNativePlayer) {
+          retireNativePlayer();
           ownedPlayer = options.createPlayer!();
+          ownedRide = rideId;
           player = ownedPlayer;
         }
-        // Preserve iOS silent-mode configuration and existing seek cancellation.
         await configure(DRIVER_REQUEST_AUDIO_MODE);
-        if (generation !== current) return false;
-        if (ownsAndroidPlayer && !await waitForAndroidReadiness(player as AndroidDriverRequestAudioPlayer)) return false;
-        if (generation !== current || !player.isLoaded) return false;
+        if (!stillEligible()) return false;
+        if (ownsNativePlayer && !await waitForNativeReadiness(player as OwnedDriverRequestAudioPlayer)) return false;
+        if (!stillEligible() || !player.isLoaded) return false;
         if (player.playing) player.pause();
         player.muted = false;
         player.volume = INCOMING_TRIP_ALERT_PLAYBACK.volume;
         player.loop = INCOMING_TRIP_ALERT_PLAYBACK.loop;
         await player.seekTo(0);
-        if (generation !== current) return false;
-        if (ownsAndroidPlayer && !await waitForAndroidReadiness(player as AndroidDriverRequestAudioPlayer)) return false;
-        if (generation !== current || !player.isLoaded) return false;
+        if (!stillEligible()) return false;
+        if (ownsNativePlayer && !await waitForNativeReadiness(player as OwnedDriverRequestAudioPlayer)) return false;
+        if (!stillEligible() || !player.isLoaded) return false;
         player.play();
-        // A failed load/configuration/seek cannot consume this offer's alert.
         lastPlayedRide = rideId;
+        started = true;
         return true;
       } catch {
-        if (ownsAndroidPlayer && generation === current) retireAndroidPlayer();
         return false;
       } finally {
-        if (generation === current) pendingRide = null;
+        if (generation === current) {
+          pendingRide = null;
+          // Failed or no-longer-eligible requests must not leave a registered
+          // player that native focus/background recovery could resume later.
+          if (!started) {
+            if (ownsNativePlayer) retireNativePlayer();
+            else silence(player, true);
+          }
+        }
       }
     },
     rearmAfterFailedAccept(rideId: string) {
-      // Home calls this only after failed server reconciliation for the same
-      // current, eligible, unexpired iOS offer. Ordinary stops keep the latch:
-      // never release/replace the hook player or restart an accepted request.
       if (options.platform !== 'ios' || !rideId || lastPlayedRide !== rideId) return false;
       lastPlayedRide = null;
       return true;
     },
-    stop(player: DriverRequestAudioPlayer, stopOptions: { force?: boolean } = {}) {
-      // Invalidate configure/seek/readiness before touching the native player.
-      generation++;
-      pendingRide = null;
-      if (ownsAndroidPlayer) {
-        retireAndroidPlayer();
-        // Home gates accepted/active/expired offers. A genuine failed Accept
-        // may explicitly re-arm that SAME still-eligible offer with a new player.
-        lastPlayedRide = null;
-        return;
-      }
-      // Default (including iOS): retain the existing hook-owned playback/UX.
-      silence(player, stopOptions.force === true);
+    suspend(player: DriverRequestAudioPlayer) {
+      // Only an actually live/pending unanswered source can re-ring on resume.
+      // Calling this after a terminal stop cannot clear an accepted iOS latch.
+      const suspendedRide = ownedRide || pendingRide;
+      stop(player, { force: true });
+      if (suspendedRide && lastPlayedRide === suspendedRide) lastPlayedRide = null;
     },
+    stop,
   };
 }
