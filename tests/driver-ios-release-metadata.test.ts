@@ -28,21 +28,37 @@ function config(source: string, platform?: string, keys: Record<string, string> 
 
 const ios = config(current('app.config.ts'), 'ios');
 
-test('SDK 27 combined navigation candidate uses approved iOS build 128 and retains Driver identity', () => {
+test('SDK 27 combined navigation candidate uses approved iOS version 1.2 build 129 and retains Driver identity', () => {
   assert.equal(ios.name, 'HY3N Driver');
-  assert.equal(ios.version, '1.0.4');
-  assert.equal(ios.ios.buildNumber, '128');
+  assert.equal(ios.version, '1.2');
+  assert.equal(ios.ios.buildNumber, '129');
   assert.equal(ios.ios.bundleIdentifier, 'com.hy3n.driver');
   assert.equal(ios.extra.eas.projectId, 'd19afe45-8e3d-42f9-ad5e-70b12b2c2ce9');
   assert.equal(ios.owner, 'yawgad');
+});
+
+test('version-train correction changes only iOS release metadata and retains all combined fixes from build 128', () => {
+  const combined = 'e37d43892e6e7d4d24d5401edcd6afa8bbcc114b';
+  const combinedSource = (file: string) => execFileSync('git', ['show', `${combined}:${file}`], { cwd: root, encoding: 'utf8' });
+  for (const platform of ['ios', 'android', undefined, 'web']) {
+    const expected = config(combinedSource('app.config.ts'), platform);
+    if (platform === 'ios') {
+      expected.version = '1.2';
+      expected.ios.buildNumber = '129';
+    }
+    assert.deepEqual(config(current('app.config.ts'), platform), expected);
+  }
+  for (const file of ['components/NativeDriverGoogleMap.tsx', 'lib/driver-map-motion.ts', 'lib/driver-navigation-camera.ts', 'eas.json']) {
+    assert.equal(current(file), combinedSource(file), file);
+  }
 });
 
 test('only the enumerated SDK 27 compatibility and iPhone release metadata differ from build 126', () => {
   for (const platform of ['ios', 'android', undefined, 'web']) {
     const expected = config(previous('app.config.ts'), platform);
     if (platform === 'ios') {
-      expected.version = '1.0.4';
-      expected.ios.buildNumber = '128';
+      expected.version = '1.2';
+      expected.ios.buildNumber = '129';
     }
     delete expected.newArchEnabled; // SDK 57 makes the New Architecture mandatory.
     delete expected.ios.jsEngine; // SDK 57 no longer exposes this JSC switch.
