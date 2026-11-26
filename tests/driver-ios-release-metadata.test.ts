@@ -29,13 +29,29 @@ function config(source: string, platform?: string, keys: Record<string, string> 
 
 const ios = config(current('app.config.ts'), 'ios');
 
-test('SDK 27 combined navigation candidate uses approved iOS version 1.2 build 129 and retains Driver identity', () => {
+test('SDK 27 automatic-photo candidate uses iOS version 1.2 build 130 and retains Driver identity', () => {
   assert.equal(ios.name, 'HY3N Driver');
   assert.equal(ios.version, '1.2');
-  assert.equal(ios.ios.buildNumber, '129');
+  assert.equal(ios.ios.buildNumber, '130');
   assert.equal(ios.ios.bundleIdentifier, 'com.hy3n.driver');
   assert.equal(ios.extra.eas.projectId, 'd19afe45-8e3d-42f9-ad5e-70b12b2c2ce9');
   assert.equal(ios.owner, 'yawgad');
+});
+
+test('build 130 changes only the iPhone build number from the tested photo-fix source', () => {
+  const photoCommit = '90e416716d7b0cf05a68b71c2cd4e5e55409e9ac';
+  const photoSource = (file: string) => execFileSync('git', ['show', `${photoCommit}:${file}`], { cwd: root, encoding: 'utf8' });
+  for (const platform of ['ios', 'android', undefined, 'web']) {
+    const expected = config(photoSource('app.config.ts'), platform);
+    if (platform === 'ios') expected.ios.buildNumber = '130';
+    assert.deepEqual(config(current('app.config.ts'), platform), expected);
+  }
+  for (const file of [
+    'app/driver/register.tsx', 'lib/driver-photo-native.ts', 'lib/driver-photo-preparation.ts',
+    'lib/firebase.ts', 'package.json', 'pnpm-lock.yaml', 'eas.json',
+    'plugins/with-google-navigation.js', 'plugins/with-driver-ios-sdk27.js',
+    'components/NativeDriverGoogleMap.tsx', 'lib/driver-map-motion.ts', 'lib/driver-navigation-camera.ts',
+  ]) assert.equal(current(file), photoSource(file), file);
 });
 
 test('version-train correction changes only iOS release metadata and retains all combined fixes from build 128', () => {
@@ -45,7 +61,7 @@ test('version-train correction changes only iOS release metadata and retains all
     const expected = config(combinedSource('app.config.ts'), platform);
     if (platform === 'ios') {
       expected.version = '1.2';
-      expected.ios.buildNumber = '129';
+      expected.ios.buildNumber = '130';
     }
     assert.deepEqual(config(current('app.config.ts'), platform), expected);
   }
@@ -59,7 +75,7 @@ test('only the enumerated SDK 27 compatibility and iPhone release metadata diffe
     const expected = config(previous('app.config.ts'), platform);
     if (platform === 'ios') {
       expected.version = '1.2';
-      expected.ios.buildNumber = '129';
+      expected.ios.buildNumber = '130';
     }
     delete expected.newArchEnabled; // SDK 57 makes the New Architecture mandatory.
     delete expected.ios.jsEngine; // SDK 57 no longer exposes this JSC switch.

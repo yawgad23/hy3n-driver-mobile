@@ -58,9 +58,9 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // 1.2 (129) clears the closed 1.0.4 version train while retaining SDK 27
-    // and all combined reroute, vehicle motion/orientation and camera fixes.
-    buildNumber: buildPlatform === "ios" ? "129" : "124",
+    // 1.2 (130) adds automatic registration-photo preparation while retaining
+    // SDK 27 and all released reroute, vehicle motion and camera fixes.
+    buildNumber: buildPlatform === "ios" ? "130" : "124",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
