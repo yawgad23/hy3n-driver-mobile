@@ -212,3 +212,77 @@ test('omitted or malformed accepted movement retains legacy camera behavior', ()
     assert.deepEqual(driverNavigationCamera(jitter, first, 2_000, false, { acceptedMovementMeters }), driverNavigationCamera(jitter, first, 2_000));
   }
 });
+
+test('reference route-forward view is flat, heading-up, and shows most of the usable map ahead of the car', () => {
+  const height = 400;
+  for (const heading of [0, 90, 180, 270, 359]) {
+    const point = { ...position, heading };
+    const sample = driverNavigationCamera(point, null, 1_000, false, { routeForwardView: true, usableViewportHeight: height })!;
+    assert.equal(sample.camera.zoom, 17.6);
+    assert.equal(sample.camera.tilt, 0);
+    assert.equal(sample.camera.bearing, heading, 'actual travel direction stays up the screen');
+    const metres = distanceBetweenPositionsMetres(point, { latitude: sample.camera.target.lat, longitude: sample.camera.target.lng, heading });
+    const metresPerPoint = 156543.03392 * Math.cos(point.latitude * Math.PI / 180) / 2 ** sample.camera.zoom;
+    const offsetPoints = metres / metresPerPoint;
+    assert.ok(offsetPoints > 120 && offsetPoints < 135, 'lower anchor reserves substantially more space ahead than behind');
+    assert.ok(height / 2 + offsetPoints < height - 44 + 1, 'realistic car stays above the dock with clearance');
+    const moved = driverNavigationCamera({ ...point, latitude: point.latitude + 0.001 }, sample, 2_000, false,
+      { routeForwardView: true, usableViewportHeight: height })!;
+    assert.equal(moved.camera.zoom, 17.6, 'GPS speed/movement never pumps the reference zoom');
+  }
+});
+
+test('reference route-forward anchor adapts to short padded viewports without putting the car below controls', () => {
+  for (const height of [0, 40, 88, 100, 160, 400, 620]) {
+    const sample = driverNavigationCamera(position, null, 1_000, false, { routeForwardView: true, usableViewportHeight: height })!;
+    const metres = distanceBetweenPositionsMetres(position, { latitude: sample.camera.target.lat, longitude: sample.camera.target.lng, heading: 0 });
+    const metresPerPoint = 156543.03392 * Math.cos(position.latitude * Math.PI / 180) / 2 ** sample.camera.zoom;
+    const expectedPoints = Math.min(height * 0.32, Math.max(0, height / 2 - 44));
+    assert.ok(Math.abs(metres / metresPerPoint - expectedPoints) < 1);
+    if (height >= 88) assert.ok(height / 2 + metres / metresPerPoint <= height - 44 + 1);
+    assert.equal(sample.camera.tilt, 0);
+  }
+  for (const height of [undefined, -1, Number.NaN, Infinity]) {
+    assert.ok(driverNavigationCamera(position, null, 1_000, false, { routeForwardView: true, usableViewportHeight: height }));
+  }
+});
+
+test('reference framing keeps parked bearing and forced recenter while leaving Android/default policies unchanged', () => {
+  const point = { ...position, heading: 90 };
+  const first = driverNavigationCamera(point, null, 1_000, false, { routeForwardView: true, usableViewportHeight: 400 })!;
+  const resized = driverNavigationCamera({ ...point, heading: 0 }, first, 2_000, true,
+    { routeForwardView: true, acceptedMovementMeters: 0, usableViewportHeight: 160 })!;
+  assert.equal(resized.camera.bearing, 90);
+  assert.equal(resized.camera.zoom, 17.6);
+  assert.equal(resized.camera.tilt, 0);
+  assert.ok(resized.camera.target.lng < first.camera.target.lng, 'shorter map safely reduces look-ahead');
+  assert.deepEqual(driverNavigationCamera(position, null, 1_000, false, { routeForwardView: false }),
+    driverNavigationCamera(position, null, 1_000));
+  const oldClose = driverNavigationCamera(position, null, 1_000, false, { closeDrivingView: true })!;
+  assert.equal(oldClose.camera.zoom, 18);
+  assert.equal(oldClose.camera.tilt, 45);
+});
+
+test('reference framing uses physical overlay bounds when native padding has been compressed', () => {
+  for (const layout of [
+    { height: 500, top: 200, bottom: 260 },
+    { height: 550, top: 160, bottom: 240 },
+  ]) {
+    const padding = driverNavigationMapPadding(layout.top, layout.bottom, layout.height);
+    const usable = layout.height - padding.top - padding.bottom;
+    const sample = driverNavigationCamera(position, null, 1_000, false, {
+      routeForwardView: true,
+      usableViewportHeight: usable,
+      visibleTopOverlapPoints: Math.max(0, layout.top - padding.top),
+      visibleBottomOverlapPoints: Math.max(0, layout.bottom - padding.bottom),
+    })!;
+    const metresPerPoint = 156543.03392 * Math.cos(position.latitude * Math.PI / 180) / 2 ** sample.camera.zoom;
+    const signedOffset = (sample.camera.target.lat - position.latitude) * 111_320 / metresPerPoint;
+    const carY = padding.top + usable / 2 + signedOffset;
+    assert.ok(carY >= layout.top && carY <= layout.height - layout.bottom,
+      'car center remains in the actual visible map, not inside the physical dock');
+    if (layout.height - layout.top - layout.bottom >= 88) {
+      assert.ok(layout.height - layout.bottom - carY >= 44 - 1e-6, 'full clearance is maintained when the actual region has room');
+    }
+  }
+});

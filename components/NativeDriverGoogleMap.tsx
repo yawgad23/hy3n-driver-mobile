@@ -311,6 +311,7 @@ function DriverNavigationSurface({
   const targetLabel = target?.label?.trim() || (tripStatus === 'dropoff' ? 'Drop-off' : 'Pickup');
   const hasTarget = hasPoint(targetLatitude, targetLongitude);
   const closeDrivingView = Platform.OS === 'ios' && hasTarget && tripStatus === 'dropoff' && !navigationPaused;
+  const routeForwardView = Platform.OS === 'ios' && hasTarget && !navigationPaused;
   const targetKey = hasTarget
     ? `${navigationId || 'trip'}:${tripStatus || 'target'}:${target?.kind || 'target'}:${targetLatitude.toFixed(6)}:${targetLongitude.toFixed(6)}:${targetLabel}`
     : null;
@@ -408,7 +409,11 @@ function DriverNavigationSurface({
   // the camera callback's identity and cancel an in-flight destination setup.
   cameraOptionsRef.current = {
     closeDrivingView,
+    routeForwardView,
     usableViewportHeight: Math.max(0, viewportHeight - mapPadding.top - mapPadding.bottom),
+    visibleTopOverlapPoints: Platform.OS === 'ios'
+      ? Math.max(0, (hasTarget ? navigationTopInset + bannerHeight + 12 : navigationTopInset) - mapPadding.top) : 0,
+    visibleBottomOverlapPoints: Platform.OS === 'ios' ? Math.max(0, navigationBottomInset - mapPadding.bottom) : 0,
   };
 
   const runNavigationWork = useCallback((operation: () => Promise<void>) => {
@@ -1463,10 +1468,10 @@ function DriverNavigationSurface({
   // This camera-only refresh also adapts stationary framing after a banner or
   // dock resize; it never resets destinations or overrides Explore map.
   useEffect(() => {
-    if (!closeDrivingView || !followingRef.current || !vehiclePositionRef.current) return;
+    if (!(routeForwardView || closeDrivingView) || !followingRef.current || !vehiclePositionRef.current) return;
     pendingCameraRef.current = null;
     updateFollowingCamera(vehiclePositionRef.current, true);
-  }, [closeDrivingView, mapPadding.top, mapPadding.bottom, updateFollowingCamera, viewportHeight]);
+  }, [closeDrivingView, routeForwardView, mapPadding.top, mapPadding.bottom, updateFollowingCamera, viewportHeight]);
 
   const visibleGuidance = !navigationPaused && guidance?.targetKey === targetKey ? guidance.data : null;
   const visibleMetrics = !navigationPaused && nativeMetrics?.targetKey === targetKey ? nativeMetrics : null;
@@ -1492,9 +1497,9 @@ function DriverNavigationSurface({
           style={StyleSheet.absoluteFill}
           initialCameraPosition={{
             target: { lat: Number(latitude), lng: Number(longitude) },
-            zoom: closeDrivingView ? 18 : hasTarget ? 17 : 16,
+            zoom: routeForwardView ? 17.6 : closeDrivingView ? 18 : hasTarget ? 17 : 16,
             bearing: Number(heading) || 0,
-            tilt: hasTarget ? 45 : 0,
+            tilt: routeForwardView ? 0 : hasTarget ? 45 : 0,
           }}
           // The branded MapView never switches at acceptance. The HY3N car is
           // its only live vehicle marker; the Google blue location arrow stays

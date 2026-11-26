@@ -10,7 +10,12 @@ export type DriverFollowCameraSample = { position: DriverMapPosition; atMs: numb
 
 export type DriverNavigationCameraOptions = {
   closeDrivingView?: boolean;
+  /** iPhone reference framing: flat, heading-up and most visible map ahead. */
+  routeForwardView?: boolean;
   usableViewportHeight?: number;
+  /** Physical overlays may extend past proportionally compressed native padding. */
+  visibleTopOverlapPoints?: number;
+  visibleBottomOverlapPoints?: number;
   /** iOS opt-in: accepted GPS interval distance, not a tiny animated frame step. */
   acceptedMovementMeters?: number;
 };
@@ -31,7 +36,8 @@ export function driverNavigationCamera(position: DriverMapPosition, previous: Dr
   if (!force && previous && (nowMs - previous.atMs < 100 || (movement < 0.6 && turn < 2))) return null;
   const radians = bearing * Math.PI / 180;
   const closeDrivingView = options.closeDrivingView === true;
-  const zoom = closeDrivingView ? 18 : 17.2;
+  const routeForwardView = options.routeForwardView === true;
+  const zoom = routeForwardView ? 17.6 : closeDrivingView ? 18 : 17.2;
   // A close view must not shift the car below a short usable viewport. Limit
   // forward framing by the actual overlay-free map height and map latitude,
   // instead of fitting the entire city-spanning destination into the camera.
@@ -39,10 +45,22 @@ export function driverNavigationCamera(position: DriverMapPosition, previous: Dr
     ? options.usableViewportHeight! : 360;
   const mercatorLatitude = Math.max(-85.05112878, Math.min(85.05112878, position.latitude));
   const metersPerPoint = 156543.03392 * Math.cos(mercatorLatitude * Math.PI / 180) / 2 ** zoom;
-  const lookAheadMeters = closeDrivingView ? Math.min(35, usableHeight * 0.18 * metersPerPoint) : 55;
+  // Flat projection makes the point offset predictable. Leave at least 44
+  // logical points above the dock when the actual visible region has room.
+  // Native padding can compress without shrinking physical overlays: frame
+  // within their REAL bounds rather than placing the car behind a tall dock.
+  const finiteOverlap = (value: number | undefined) => typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, Math.min(usableHeight, value)) : 0;
+  const topOverlap = finiteOverlap(options.visibleTopOverlapPoints);
+  const bottomOverlap = finiteOverlap(options.visibleBottomOverlapPoints);
+  const visibleHeight = Math.max(0, usableHeight - topOverlap - bottomOverlap);
+  const forwardPoints = topOverlap + visibleHeight / 2
+    + Math.min(visibleHeight * 0.32, Math.max(0, visibleHeight / 2 - 44)) - usableHeight / 2;
+  const lookAheadMeters = routeForwardView ? forwardPoints * metersPerPoint
+    : closeDrivingView ? Math.min(35, usableHeight * 0.18 * metersPerPoint) : 55;
   const latitude = position.latitude + Math.cos(radians) * lookAheadMeters / 111_320;
   const longitude = position.longitude + Math.sin(radians) * lookAheadMeters / (111_320 * Math.max(0.05, Math.cos(position.latitude * Math.PI / 180)));
-  const camera = { target: { lat: Math.max(-90, Math.min(90, latitude)), lng: ((longitude + 540) % 360) - 180 }, bearing, tilt: 45, zoom };
+  const camera = { target: { lat: Math.max(-90, Math.min(90, latitude)), lng: ((longitude + 540) % 360) - 180 }, bearing, tilt: routeForwardView ? 0 : 45, zoom };
   return { position: { ...position, heading: bearing }, atMs: nowMs, camera };
 }
 

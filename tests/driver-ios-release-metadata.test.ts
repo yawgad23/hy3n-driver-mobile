@@ -152,8 +152,12 @@ test('all unrelated iPhone UI, trip and authenticated GPS publisher source remai
   // Preserve the actual map/banner/provider UI byte-for-byte while its motion
   // and reroute implementation is covered by the actual-component regressions.
   const uiTail = (source: string) => source.slice(source.indexOf('  const visibleGuidance ='));
+  const referenceCameraUi = previous('components/NativeDriverGoogleMap.tsx')
+    .replaceAll('StyleSheet.absoluteFillObject', 'StyleSheet.absoluteFill')
+    .replace('zoom: closeDrivingView ? 18 : hasTarget ? 17 : 16', 'zoom: routeForwardView ? 17.6 : closeDrivingView ? 18 : hasTarget ? 17 : 16')
+    .replace('tilt: hasTarget ? 45 : 0', 'tilt: routeForwardView ? 0 : hasTarget ? 45 : 0');
   assert.equal(uiTail(current('components/NativeDriverGoogleMap.tsx')),
-    uiTail(previous('components/NativeDriverGoogleMap.tsx').replaceAll('StyleSheet.absoluteFillObject', 'StyleSheet.absoluteFill')));
+    uiTail(referenceCameraUi));
 });
 
 test('navigation fixes preserve the released default motion branch and opt in only on iPhone', () => {
@@ -165,7 +169,8 @@ test('navigation fixes preserve the released default motion branch and opt in on
   assert.match(map, /acceptedMovementMeters: now <= cameraMovementRef\.current\.untilMs/);
   const camera = current('lib/driver-navigation-camera.ts');
   assert.match(camera, /\? acceptedMovement : movement/);
-  assert.match(camera, /const zoom = closeDrivingView \? 18 : 17\.2/);
+  assert.match(camera, /const zoom = routeForwardView \? 17\.6 : closeDrivingView \? 18 : 17\.2/);
+  assert.match(map, /const routeForwardView = Platform\.OS === 'ios' && hasTarget && !navigationPaused/);
 });
 
 test('the tab layout contains only the intended document-recovery correction', () => {
