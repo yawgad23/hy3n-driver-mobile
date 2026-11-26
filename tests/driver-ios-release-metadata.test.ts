@@ -5,6 +5,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { execFileSync } from 'node:child_process';
 import ts from 'typescript';
+import { addSdkMatchedPhotoDependencies, withoutDriverPhotoLockAdditions } from './helpers/driver-photo-dependencies';
 
 const root = path.join(__dirname, '..');
 const baseline = '3aed02cdf4dfe02da445e2592112ed894226c59a';
@@ -79,15 +80,16 @@ test('production EAS profile and existing Driver Apple submission destination ar
   assert.equal(eas.submit.production.ios.appleTeamId, '49Q5ZSPMZ9');
 });
 
-test('the approved Apple sign-in pin is the only dependency manifest change', () => {
+test('only the approved Apple sign-in pin and SDK-matched photo modules change the dependency manifest', () => {
   const expected = JSON.parse(previous('package.json'));
   expected.dependencies['expo-apple-authentication'] = '8.0.8';
+  addSdkMatchedPhotoDependencies(expected, root);
   assert.deepEqual(JSON.parse(current('package.json')), expected);
   assert.equal(current('plugins/with-google-navigation.js'), previous('plugins/with-google-navigation.js'));
 });
 
 test('every other lock resolution, including the backend Git pin, remains unchanged', () => {
-  const withoutApple = (source: string) => source
+  const withoutApple = (source: string) => withoutDriverPhotoLockAdditions(source)
     .replace(/^      expo-apple-authentication:\n.*?(?=^      \S|^    \S|^\S|$(?![\s\S]))/gms, '')
     .replace(/^  expo-apple-authentication@[^\n]*:\n.*?(?=^  \S|^\S|$(?![\s\S]))/gms, '');
   assert.equal(withoutApple(current('pnpm-lock.yaml')), withoutApple(previous('pnpm-lock.yaml')));

@@ -5,6 +5,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { execFileSync } from 'node:child_process';
 import ts from 'typescript';
+import { addSdkMatchedPhotoDependencies, withoutDriverPhotoLockAdditions } from './helpers/driver-photo-dependencies';
 
 const root = path.join(__dirname, '..');
 const baseline = '1f219aa7c3ef3573d08f265d060409d6a8ad4f59';
@@ -50,11 +51,13 @@ test('iOS, web, and unspecified configs remain identical to clean HEAD', () => {
   }
 });
 
-test('Android native Maps plugin and release dependencies remain unchanged', () => {
+test('Android Maps and existing dependencies remain unchanged except SDK-matched photo modules', () => {
   assert.equal(current('plugins/with-google-navigation.js'), previous('plugins/with-google-navigation.js'));
   assert.equal(current('eas.json'), previous('eas.json'));
-  assert.equal(current('package.json'), previous('package.json'));
-  assert.equal(current('pnpm-lock.yaml'), previous('pnpm-lock.yaml'));
+  const expected = JSON.parse(previous('package.json'));
+  addSdkMatchedPhotoDependencies(expected, root);
+  assert.deepEqual(JSON.parse(current('package.json')), expected);
+  assert.equal(withoutDriverPhotoLockAdditions(current('pnpm-lock.yaml')), withoutDriverPhotoLockAdditions(previous('pnpm-lock.yaml')));
   assert.equal(current('firebase/google-services.json'), previous('firebase/google-services.json'));
   assert.equal(current('firebase/GoogleService-Info.plist'), previous('firebase/GoogleService-Info.plist'));
 

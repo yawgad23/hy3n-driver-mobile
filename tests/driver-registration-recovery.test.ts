@@ -219,11 +219,17 @@ async function mountRegistration(options: { count?: number; savedDraft?: DriverR
     currentUser: options.anonymous ? null : user, routes: [] as string[], submits: [] as unknown[], clears: storage.calls,
     submit: async () => {}, refresh: options.refresh ?? (async () => {}), check: async () => env.snapshot.manifest,
     upload: async (_blob: unknown, key: string) => remote(env.currentUser.uid, key.split('/').at(-1)!.replace('.jpg', '')),
+    preparations: [] as string[], disposed: [] as string[],
+    prepare: async (uri: string, assertCurrent?: () => void) => {
+      assertCurrent?.();
+      return { uri: 'file:///cache/prepared.jpg', blob: new Blob(['converted-jpeg-fixture'], { type: 'image/jpeg' }), contentType: 'image/jpeg',
+        dispose: async () => { env.disposed.push(uri); } };
+    },
     signup: async () => {}, google: async () => {},
   };
   env.snapshot.manifest.approvalStatus = options.approvalStatus ?? 'pending';
   const mocked = new Set(['react-native', 'expo-router', 'react-native-safe-area-context', '@expo/vector-icons/MaterialIcons', 'expo-image-picker',
-    '@/lib/driver-auth-context', '@/lib/firebase', '@react-native-async-storage/async-storage', '@/lib/support-whatsapp', '@/hooks/use-driver-document-manifest', 'firebase/auth']);
+    '@/lib/driver-auth-context', '@/lib/firebase', '@/lib/driver-photo-native', '@react-native-async-storage/async-storage', '@/lib/support-whatsapp', '@/hooks/use-driver-document-manifest', 'firebase/auth']);
   const result = await build({ entryPoints: [path.join(__dirname, '../app/driver/register.tsx')], bundle: true, write: false,
     platform: 'node', format: 'cjs', external: ['react'], plugins: [{ name: 'registration-fixtures', setup(b) {
       b.onResolve({ filter: /.*/ }, args => mocked.has(args.path) ? { path: args.path, external: true } : null);
@@ -232,7 +238,7 @@ async function mountRegistration(options: { count?: number; savedDraft?: DriverR
     ActivityIndicator: 'loader', KeyboardAvoidingView: 'keyboard', Platform: { OS: 'ios' }, Alert: { alert: () => {} }, StyleSheet: { create: (v: any) => v } };
   const firebase = { auth: { get currentUser() { return env.currentUser; } }, firebaseAuth: {
     submitDriverProfile: async (payload: any) => { env.submits.push(payload); return env.submit(); },
-  }, firebaseStorage: { uploadFile: (blob: unknown, key: string) => env.upload(blob, key) } };
+  }, firebaseStorage: { uploadFile: (blob: unknown, key: string, metadata?: { contentType: string }) => env.upload(blob, key, metadata) } };
   const mocks: Record<string, unknown> = {
     'react-native': native, 'expo-router': { useRouter: () => ({ replace: (route: string) => env.routes.push(route), push: () => {} }) },
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0 }) },
@@ -243,6 +249,10 @@ async function mountRegistration(options: { count?: number; savedDraft?: DriverR
       storage.calls.push(`read:${key}`); return options.storageRead;
     } } : storage,
     '@/lib/support-whatsapp': { openDriverSupportWhatsApp: async () => {} },
+    '@/lib/driver-photo-native': { prepareDriverDocumentPhoto: async (uri: string, assertCurrent?: () => void) => {
+      env.preparations.push(uri);
+      return env.prepare(uri, assertCurrent);
+    } },
     '@/hooks/use-driver-document-manifest': { useDriverDocumentManifest: (uid: string | null, _profile: unknown, enabled: boolean) => ({
       ...(enabled && env.snapshot.manifest?.userId === uid ? env.snapshot : { status: enabled ? 'checking' : 'idle', manifest: null, error: '' }),
       recheck: () => env.check(),
@@ -263,6 +273,13 @@ async function mountRegistration(options: { count?: number; savedDraft?: DriverR
     input: async (index: number, value: string) => { await act(async () => { tree.root.findAllByType('input')[index].props.onChangeText(value); await flush(); }); },
     press: async (label: string) => { const button = tree.root.findAllByType('button').find(node => childText(node.props.children).includes(label));
       assert.ok(button, `button ${label} exists`); await act(async () => { await button.props.onPress(); await flush(); }); },
+    startPress: async (label: string) => {
+      const button = tree.root.findAllByType('button').find(node => childText(node.props.children).includes(label));
+      assert.ok(button, `button ${label} exists`);
+      let completion!: Promise<void>;
+      await act(async () => { completion = Promise.resolve(button.props.onPress()); await flush(); });
+      return { completion };
+    },
   };
 }
 
@@ -437,7 +454,10 @@ test('initial local upload failure is fail-closed and retains camera selection a
     assert.equal(uploadPath, 'drivers/driver-a/ghana-card-front.jpg');
     assert.equal(app.env.submits.length, 0);
     assert.doesNotMatch(app.rendered(), /Application Submitted!/);
-    assert.match(app.rendered(), /initial upload failed/);
+    assert.match(app.rendered(), /Ghana Card \(Front\)/);
+    assert.doesNotMatch(app.rendered(), /initial upload failed/);
+    assert.deepEqual(app.env.preparations, [form.ghanaCardFront]);
+    assert.deepEqual(app.env.disposed, [form.ghanaCardFront]);
     assert.equal(JSON.parse(app.storage.values.get(driverRegistrationDraftKey('driver-a'))!).form.ghanaCardFront, form.ghanaCardFront);
   } finally { globalThis.fetch = originalFetch; await app.dispose(); }
 });
@@ -546,6 +566,7 @@ test('partial concurrent upload failure retains all six local picks, never posts
   const late = deferred<string>();
   let completed = 0;
   const uploads: string[] = [];
+  let submission: Promise<void> | undefined;
   try {
     globalThis.fetch = (async () => ({ blob: async () => ({ fixture: true }) })) as unknown as typeof fetch;
     app.env.upload = async (_blob: unknown, key: string) => {
@@ -555,20 +576,91 @@ test('partial concurrent upload failure retains all six local picks, never posts
       completed++;
       return remote('driver-a', key.split('/').at(-1)!.replace('.jpg', ''));
     };
-    await app.press('Submit Application');
+    ({ completion: submission } = await app.startPress('Submit Application'));
     assert.equal(uploads.length, 6);
     assert.equal(completed, 4);
     assert.equal(app.env.submits.length, 0);
-    assert.match(app.rendered(), /partial upload failed/);
+    assert.match(app.rendered(), /Preparing & uploading/);
+    const busy = app.tree.root.findAllByType('button').find(node => childText(node.props.children).includes('Preparing & uploading'));
+    assert.equal(busy?.props.disabled, true);
     late.resolve(remote('driver-a', 'vehicle-photo'));
+    await act(async () => { await submission; });
     await app.flush();
+    assert.match(app.rendered(), /Driver's License \(Back\)/);
+    assert.doesNotMatch(app.rendered(), /partial upload failed/);
     assert.doesNotMatch(app.rendered(), /Application Submitted!/);
     assert.equal(app.env.submits.length, 0);
     const saved = JSON.parse(app.storage.values.get(driverRegistrationDraftKey('driver-a'))!);
     for (const field of localDocumentFields) assert.equal(saved.form[field], form[field]);
     assert.equal(saved.pendingEdits, true);
     assert.equal(app.storage.calls.filter(v => v.startsWith('clear')).length, 0);
-  } finally { late.resolve(remote('driver-a', 'vehicle-photo')); globalThis.fetch = originalFetch; await app.dispose(); }
+  } finally { late.resolve(remote('driver-a', 'vehicle-photo')); await act(async () => { await submission; }); globalThis.fetch = originalFetch; await app.dispose(); }
+});
+
+test('a failed batch drains old writes before a replacement-photo retry can upload or save', async () => {
+  const form = localUploadForm();
+  const app = await mountRegistration({ count: 0, savedDraft: draftFor('driver-a', { pendingEdits: true, form }) });
+  const heldFront = deferred<void>();
+  const stored = new Map<string, string>();
+  const frontPath = 'drivers/driver-a/ghana-card-front.jpg';
+  let holdFront = true;
+  let failBack = true;
+  let uploads = 0;
+  let submission: Promise<void> | undefined;
+  try {
+    app.env.prepare = async (uri: string, assertCurrent: () => void) => {
+      assertCurrent();
+      return { uri: 'file:///cache/prepared.jpg', blob: new Blob([uri], { type: 'image/jpeg' }),
+        contentType: 'image/jpeg', dispose: async () => {} };
+    };
+    app.env.upload = async (blob: Blob, key: string) => {
+      uploads++;
+      const contents = await blob.text();
+      if (key === frontPath && holdFront) { holdFront = false; await heldFront.promise; }
+      if (key.endsWith('ghana-card-back.jpg') && failBack) { failBack = false; throw new Error('private provider failure'); }
+      stored.set(key, contents);
+      return remote('driver-a', key.split('/').at(-1)!.replace('.jpg', ''));
+    };
+    ({ completion: submission } = await app.startPress('Submit Application'));
+    assert.match(app.rendered(), /Preparing & uploading/);
+    assert.equal(uploads, 6);
+    assert.equal(stored.has(frontPath), false);
+    // Even invoking the disabled button's handler cannot start a second batch.
+    await app.press('Preparing & uploading');
+    assert.equal(uploads, 6);
+    assert.equal(app.env.submits.length, 0);
+    heldFront.resolve();
+    await act(async () => { await submission; });
+    await app.flush();
+    assert.equal(stored.get(frontPath), form.ghanaCardFront);
+    assert.match(app.rendered(), /Ghana Card \(Back\)/);
+    assert.doesNotMatch(app.rendered(), /private provider failure/);
+    assert.equal(app.env.submits.length, 0);
+    const replacement = 'file:///gallery/replacement-front.png';
+    const frontField = app.tree.root.findAll(node => typeof node.type === 'function'
+      && node.props.label === 'Ghana Card (Front)' && typeof node.props.onPick === 'function')[0];
+    assert.ok(frontField);
+    await act(async () => { frontField.props.onPick(replacement); });
+    await app.flush();
+    app.env.submit = async () => {
+      const payload = app.env.submits.at(-1);
+      const checked = fixture('driver-a', 6);
+      checked.documentRevision = 'replacement-save';
+      for (const key of REQUIRED_DRIVER_DOCUMENT_KEYS) checked.documents[key].reference = payload.documents[key];
+      app.env.snapshot = { manifest: checked, status: 'ready', error: '' };
+    };
+    await app.press('Submit Application');
+    assert.equal(uploads, 12);
+    assert.equal(stored.get(frontPath), replacement);
+    assert.equal(app.env.submits.length, 1);
+    assert.equal(app.env.snapshot.manifest.approvalStatus, 'pending');
+    assert.match(app.rendered(), /Application Submitted!/);
+    assert.equal(app.storage.values.has(driverRegistrationDraftKey('driver-a')), false);
+  } finally {
+    heldFront.resolve();
+    await act(async () => { await submission; });
+    await app.dispose();
+  }
 });
 
 for (const stage of ['reload', 'refresh'] as const) {
@@ -651,3 +743,69 @@ test('initial email recovery has one whole-chain twenty-second deadline across r
     assert.equal(clock.countTimers(), 0);
   } finally { reload.resolve(); refresh.resolve(); await app.dispose(); clock.uninstall(); }
 });
+
+for (const uri of ['content://gallery/license-front.heic', 'file:///gallery/license-front.png', 'file:///camera/license-front.jpg']) {
+  test(`actual screen automatically prepares selected ${uri.split('/').at(-1)} before sending JPEG metadata`, async () => {
+    const form = restoreDriverRegistrationForm(emptyDriverRegistrationForm(), null, fixture('driver-a', 6), false);
+    form.licenseFront = uri;
+    const app = await mountRegistration({ count: 6, savedDraft: draftFor('driver-a', { pendingEdits: true, form }) });
+    const preparedBlob = new Blob(['actual-encoder-output-fixture'], { type: '' });
+    const calls: string[] = [];
+    try {
+      app.env.prepare = async (selected: string, assertCurrent: () => void) => {
+        assertCurrent();
+        assert.equal(selected, uri);
+        calls.push('prepare');
+        return { uri: 'file:///cache/converted.jpg', blob: preparedBlob, contentType: 'image/jpeg', dispose: async () => { calls.push('dispose'); } };
+      };
+      app.env.upload = async (blob: Blob, objectPath: string, metadata: { contentType: string }) => {
+        calls.push('upload');
+        assert.equal(blob, preparedBlob);
+        assert.equal(objectPath, 'drivers/driver-a/drivers-license-front.jpg');
+        assert.deepEqual(metadata, { contentType: 'image/jpeg' });
+        return remote('driver-a', 'drivers-license-front');
+      };
+      await app.press('Submit Application');
+      assert.deepEqual(calls, ['prepare', 'upload', 'dispose']);
+      assert.deepEqual(app.env.preparations, [uri]);
+      assert.match(app.rendered(), /prepare and resize your photos automatically/);
+    } finally { await app.dispose(); }
+  });
+}
+
+test('actual gallery preparation failure retains the original selection and never uploads or submits', async () => {
+  const form = restoreDriverRegistrationForm(emptyDriverRegistrationForm(), null, fixture('driver-a', 6), false);
+  form.licenseFront = 'content://gallery/license-front.tiff';
+  const app = await mountRegistration({ count: 6, savedDraft: draftFor('driver-a', { pendingEdits: true, form }) });
+  let uploads = 0;
+  try {
+    app.env.prepare = async () => { throw new Error('Decoder failed for private account and file URI'); };
+    app.env.upload = async () => { uploads++; return ''; };
+    await app.press('Submit Application');
+    assert.equal(uploads, 0);
+    assert.equal(app.env.submits.length, 0);
+    assert.match(app.rendered(), /Driver's License \(Front\)/);
+    assert.doesNotMatch(app.rendered(), /Decoder failed|private account/);
+    assert.equal(JSON.parse(app.storage.values.get(driverRegistrationDraftKey('driver-a'))!).form.licenseFront, form.licenseFront);
+    assert.doesNotMatch(app.rendered(), /Application Submitted!/);
+  } finally { await app.dispose(); }
+});
+
+for (const stage of ['upload', 'confirm'] as const) {
+  test(`actual ${stage} denial shows friendly slot error with no Firebase, UID or private URL`, async () => {
+    const form = restoreDriverRegistrationForm(emptyDriverRegistrationForm(), null, fixture('driver-a', 6), false);
+    form.licenseFront = 'file:///gallery/license-front.jpg';
+    const app = await mountRegistration({ count: 6, savedDraft: draftFor('driver-a', { pendingEdits: true, form }) });
+    try {
+      app.env.upload = async () => { throw Object.assign(new Error('Firebase Storage: drivers/PRIVATE_UID/file.jpg?token=SECRET (storage/unauthorized)'), {
+        code: 'storage/unauthorized', driverDocumentStage: stage,
+      }); };
+      await app.press('Submit Application');
+      assert.equal(app.env.submits.length, 0);
+      assert.match(app.rendered(), /Driver's License \(Front\)/);
+      assert.doesNotMatch(app.rendered(), /Firebase|PRIVATE_UID|SECRET|storage\/unauthorized/);
+      assert.deepEqual(app.env.disposed, [form.licenseFront]);
+      assert.equal(JSON.parse(app.storage.values.get(driverRegistrationDraftKey('driver-a'))!).form.licenseFront, form.licenseFront);
+    } finally { await app.dispose(); }
+  });
+}
