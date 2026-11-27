@@ -4,12 +4,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { REQUEST_STOP_BASELINE, withoutAndroidRequestStopAdditions, assertReviewedRequestAudio } from './helpers/driver-android-request-stop-scope';
+import { without57029Metadata } from './helpers/driver-android-57029-metadata';
 
 const root = path.join(__dirname, '..');
 const previous = (file: string) => execFileSync('git', ['show', `${REQUEST_STOP_BASELINE}:${file}`], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
 const current = (file: string) => fs.readFileSync(path.join(root, file));
 // Every exception is a named audio/server-read implementation or regression path.
-// No native plugin, asset, dependency, config, documentation or unrelated UI path.
+// Release preparation additionally permits only exact metadata/test/doc paths; no native, asset, dependency or unrelated UI exceptions.
 const allowed = new Set([
   'app/(tabs)/home.tsx', 'lib/driver-request-audio.ts', 'lib/driver-request-audio-diagnostics.ts', 'lib/firebase.ts',
   'tests/driver-accept-server-read.test.ts', 'tests/driver-request-audio-android-global-stop.test.ts',
@@ -20,6 +21,9 @@ const allowed = new Set([
   'tests/driver-android-home-layout.test.ts', 'tests/driver-android-release-metadata.test.ts',
   'tests/driver-android-datastore-16kb.test.ts', 'tests/driver-android-57028-release-metadata.test.ts',
   'tests/driver-android-request-stop-preservation.test.ts',
+  'app.config.ts', 'tests/helpers/driver-android-57029-metadata.ts',
+  'tests/driver-android-57029-release-metadata.test.ts',
+  'docs/driver-android-1.0.9-57029-request-stop-20261127.md',
 ]);
 
 test('Android request-stop implementation changes exactly its named source/regression paths, including untracked additions', () => {
@@ -42,6 +46,7 @@ test('Home UI/map/other handlers and Firebase auth/registration remain byte-iden
     const scopedToken = file === 'lib/firebase.ts' ? 'getDocFromServer' : 'stopAllDriverRequestAudio';
     assert.throws(() => withoutAndroidRequestStopAdditions(file, current(file).toString('utf8').replace(scopedToken, 'unreviewedAddition')), /exact reviewed addition/);
   }
+  assert.equal(without57029Metadata(current('app.config.ts').toString('utf8')), previous('app.config.ts').toString('utf8'), 'only exact Android metadata normalized');
   assertReviewedRequestAudio(current('lib/driver-request-audio.ts'));
   assert.throws(() => assertReviewedRequestAudio(Buffer.concat([current('lib/driver-request-audio.ts'), Buffer.from('\n')])), /exact reviewed implementation/);
 });

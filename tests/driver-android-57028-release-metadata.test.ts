@@ -5,11 +5,15 @@ import path from 'node:path';
 import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { without57029Metadata } from './helpers/driver-android-57029-metadata';
 
 const root = path.join(__dirname, '..');
 const releaseBase = 'ddc51e85fd38bac97b416103678aa4eaaf61b9a6';
 const previous = (file: string) => execFileSync('git', ['show', `${releaseBase}:${file}`], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
-const current = (file: string) => fs.readFileSync(path.join(root, file));
+const current = (file: string) => {
+  const raw = fs.readFileSync(path.join(root, file));
+  return file === 'app.config.ts' ? Buffer.from(without57029Metadata(raw.toString('utf8'))) : raw;
+};
 const allowed = new Set([
   'app.config.ts',
   'tests/driver-android-datastore-16kb.test.ts',

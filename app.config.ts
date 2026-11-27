@@ -46,7 +46,7 @@ const env = {
 const buildPlatform = process.env.EAS_BUILD_PLATFORM;
 const appVersion =
   buildPlatform === "android"
-    ? "1.0.8"
+    ? "1.0.9"
     : buildPlatform === "ios"
       ? "1.0.3"
       : "1.0.2";
@@ -88,9 +88,9 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    // 1.0.8 (57028) tentatively packages the reviewed Gold Chime and approved selfie;
-    // preserve DataStore 16 KB and all other config; confirm Play counter before build.
-    versionCode: buildPlatform === "android" ? 57028 : 57023,
+    // 1.0.9 (57029) adds session-wide request-audio stop safeguards;
+    // retain Gold Chime, approved selfie, DataStore 16 KB and all other config.
+    versionCode: buildPlatform === "android" ? 57029 : 57023,
     googleServicesFile: "./firebase/google-services.json",
     permissions: [
       "POST_NOTIFICATIONS",
