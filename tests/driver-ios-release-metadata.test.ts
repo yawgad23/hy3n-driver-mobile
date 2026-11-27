@@ -28,7 +28,11 @@ const approvedSelfie = 'afaecc548b9e1f2c51b71f9788a331c5207b60a6';
 const release133Note = 'docs/driver-ios-1.4-133-gold-selfie-20261127.md';
 const build133 = 'f4c4649f44f0030248dd8e26f4821f901ca9e9fb';
 const delivered133 = (file: string) => historical(build133, file);
-const current = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
+import { withoutDriverIos134Counter } from './helpers/driver-ios134-counter';
+const current = (file: string) => {
+  const source = fs.readFileSync(path.join(root, file), 'utf8');
+  return file === 'app.config.ts' ? withoutDriverIos134Counter(source) : source;
+};
 const clientKeys = { GOOGLE_MAPS_IOS_API_KEY: 'ios-client-test-key', GOOGLE_MAPS_ANDROID_API_KEY: 'android-client-test-key' };
 
 function config(source: string, platform?: string, keys: Record<string, string> = clientKeys) {

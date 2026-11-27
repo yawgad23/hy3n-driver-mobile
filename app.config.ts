@@ -60,7 +60,7 @@ const config: ExpoConfig = {
     bundleIdentifier: env.iosBundleId,
     // 1.4 (133) includes the approved profile selfie and louder Gold Chime.
     // Preserve SDK 27, automatic photos, request stop and camera stability.
-    buildNumber: buildPlatform === "ios" ? "133" : "124",
+    buildNumber: buildPlatform === "ios" ? "134" : "124",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,

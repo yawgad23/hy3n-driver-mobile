@@ -14,7 +14,11 @@ const build133 = 'f4c4649f44f0030248dd8e26f4821f901ca9e9fb';
 const assetPath = 'assets/audio/incoming-trip-alert.wav';
 const selectedMasterSHA256 = '1314bc6b6424a7461254d847b2a95d7742dc745cbf43cafe01e3bfd1fed46240';
 const historicalAssetSHA256 = 'ac1d846ffa152b25729cc97c30144d42219264afd68c642604f71a76dded0886';
-const current = (file: string) => fs.readFileSync(path.join(root, file));
+import { withoutDriverIos134Counter } from './helpers/driver-ios134-counter';
+const current = (file: string) => {
+  const bytes = fs.readFileSync(path.join(root, file));
+  return file === 'app.config.ts' ? Buffer.from(withoutDriverIos134Counter(bytes.toString('utf8'))) : bytes;
+};
 const historical = (revision: string, file: string) => execFileSync('git', ['show', `${revision}:${file}`], { cwd: root, maxBuffer: 4 * 1024 * 1024 });
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 
