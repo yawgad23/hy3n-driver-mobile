@@ -8,6 +8,7 @@ import ts from 'typescript';
 
 const root = path.join(__dirname, '..');
 const submitted = 'e3e7b3f17c472fd7971fbc708dcbbcc1a7222165';
+const compatibilityRelease = '7c476da16724e22d2e1c11d49cde2806b3650a65';
 const original = (file: string) => execFileSync('git', ['show', `${submitted}:${file}`], { cwd: root, encoding: 'utf8' });
 const current = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
 const pluginPath = './plugins/with-android-datastore-16kb';
@@ -101,17 +102,13 @@ test('DataStore plugin registers only Android appBuildGradle and does not remove
   assert.equal(source.split("implementation('androidx.datastore:").length - 1, 1);
 });
 
-test('current compatibility release changes only explicit config/plugin/test/release-note paths', () => {
-  const changed = execFileSync('git', ['diff', '--name-only', submitted, '--'], { cwd: root, encoding: 'utf8' });
-  const untracked = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' });
-  for (const file of `${changed}\n${untracked}`.split('\n').filter(Boolean)) {
-    assert.ok(allowed.has(file), `unrelated current source change: ${file}`);
-  }
+test('published 57027 compatibility release changes exactly the explicit config/plugin/test/release-note paths', () => {
+  // Audit that release's immutable commit, not unrelated features added later.
+  const changed = execFileSync('git', ['diff', '--name-only', submitted, compatibilityRelease, '--'], { cwd: root, encoding: 'utf8' });
+  assert.deepEqual(new Set(changed.split('\n').filter(Boolean)), allowed);
 });
 
 test('navigation, Home, audio/song, registration and native/dependency configuration remain byte-exact', () => {
-  const changed = execFileSync('git', ['diff', '--name-only', submitted, '--'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
-  assert.ok(changed.every((file) => allowed.has(file)));
   for (const file of [
     'app/(tabs)/home.tsx', 'app/driver/register.tsx', 'lib/driver-request-audio.ts', 'assets/audio/incoming-trip-alert.wav',
     'plugins/with-google-navigation.js', 'package.json', 'pnpm-lock.yaml', 'eas.json',
