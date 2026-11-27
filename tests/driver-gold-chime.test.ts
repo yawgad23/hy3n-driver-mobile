@@ -10,11 +10,13 @@ import { INCOMING_TRIP_ALERT_PLAYBACK, INCOMING_TRIP_NOTIFICATION } from '../lib
 
 const root = path.join(__dirname, '..');
 const baseline = 'fb9d29c9099e3561039bfbce5ab756b981e50730';
+const feature = 'ddc51e85fd38bac97b416103678aa4eaaf61b9a6';
 const assetPath = 'assets/audio/incoming-trip-alert.wav';
 const assetRequirePath = '@/assets/audio/incoming-trip-alert.wav';
 const approvedMasterSha256 = '1314bc6b6424a7461254d847b2a95d7742dc745cbf43cafe01e3bfd1fed46240';
 const current = (file: string) => fs.readFileSync(path.join(root, file));
 const previous = (file: string) => execFileSync('git', ['show', `${baseline}:${file}`], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
+const featureSource = (file: string) => execFileSync('git', ['show', `${feature}:${file}`], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
 
 // RIFF chunks may include metadata and odd-byte padding. Never assume data
 // begins at byte 44 (the approved master has a LIST chunk before its data).
@@ -64,6 +66,7 @@ function pcmLevels(data: Buffer) {
 
 test('Gold Chime bundled WAV is the exact selected louder master, not a replacement track', () => {
   assert.equal(createHash('sha256').update(current(assetPath)).digest('hex'), approvedMasterSha256);
+  assert.equal(createHash('sha256').update(featureSource(assetPath)).digest('hex'), approvedMasterSha256);
 });
 
 test('Gold Chime RIFF/WAVE is PCM1 s16le mono 44100Hz, with exactly eight seconds of data', () => {
@@ -111,6 +114,7 @@ test('incoming-trip-alert production diff is ONLY the exact approved volume lite
   const before = previous('lib/incoming-trip-alert.ts').toString('utf8');
   const oldVolume = '  volume: 0.92,\n';
   assert.equal(before.split(oldVolume).length - 1, 1, 'baseline volume must occur exactly once');
+  assert.equal(featureSource('lib/incoming-trip-alert.ts').toString('utf8'), before.replace(oldVolume, '  volume: 1.0,\n'));
   assert.equal(current('lib/incoming-trip-alert.ts').toString('utf8'), before.replace(oldVolume, '  volume: 1.0,\n'));
 });
 
@@ -153,11 +157,21 @@ test('actual Android Home native factory loads the same existing WAV path and un
   assert.equal(p.playing, false); assert.equal(p.loop, false); assert.equal(p.muted, true); assert.equal(p.volume, 0);
 });
 
-test('all other baseline production/native/config/dependency files remain byte-exact, including approved selfie, Home/controller/maps/auth/calls', () => {
+test('immutable Gold Chime feature changes exactly its approved asset, volume, test and documentation paths', () => {
+  const allowed = new Set([
+    assetPath, 'lib/incoming-trip-alert.ts', 'docs/driver-gold-chime-20261127.md',
+    'tests/driver-android-datastore-16kb.test.ts', 'tests/driver-android-release-metadata.test.ts',
+    'tests/driver-gold-chime.test.ts', 'tests/driver-request-audio-home-lifecycle.test.ts',
+    'tests/driver-request-audio-native-retirement.test.ts', 'tests/driver-request-audio-runtime.test.ts',
+    'tests/driver-request-audio-start-boundary.test.ts',
+  ]);
+  const changed = execFileSync('git', ['diff', '--name-only', baseline, feature, '--'], { cwd: root, encoding: 'utf8' });
+  assert.deepEqual(new Set(changed.split('\n').filter(Boolean)), allowed);
   const files = execFileSync('git', ['ls-tree', '-r', '--name-only', '-z', baseline], { cwd: root, encoding: 'utf8' }).split('\0').filter(Boolean);
-  const permittedProductionChanges = new Set([assetPath, 'lib/incoming-trip-alert.ts']);
   for (const file of files) {
-    if (file.startsWith('tests/') || file.startsWith('docs/') || permittedProductionChanges.has(file)) continue;
-    assert.deepEqual(current(file), previous(file), `${file} must remain byte-exact to the approved Android baseline`);
+    if (allowed.has(file)) continue;
+    assert.deepEqual(featureSource(file), previous(file), `${file} must remain byte-exact in the immutable Gold Chime feature`);
   }
+  // Current release-source preservation, including every historical test/doc,
+  // is separately enforced against this feature by the exact 57028 path guard.
 });

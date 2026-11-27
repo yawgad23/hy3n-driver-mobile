@@ -10,6 +10,7 @@ const root = path.join(__dirname, '..');
 const submitted = 'e3e7b3f17c472fd7971fbc708dcbbcc1a7222165';
 const compatibilityRelease = '7c476da16724e22d2e1c11d49cde2806b3650a65';
 const original = (file: string) => execFileSync('git', ['show', `${submitted}:${file}`], { cwd: root, encoding: 'utf8' });
+const compatibilitySource = (file: string) => execFileSync('git', ['show', `${compatibilityRelease}:${file}`], { cwd: root, encoding: 'utf8' });
 const current = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
 const pluginPath = './plugins/with-android-datastore-16kb';
 const plugin = require('../plugins/with-android-datastore-16kb');
@@ -35,11 +36,11 @@ function evaluate(source: string, platform?: string, clientKeys: Record<string, 
   return JSON.parse(JSON.stringify(exports.default));
 }
 
-test('16 KB candidate Android config adds exactly one standalone plugin, with and without Navigation keys', () => {
+test('historical 57027 Android config adds exactly one standalone plugin, with and without Navigation keys', () => {
   const keyScenarios: Record<string, string>[] = [keys, {}, { EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_IOS: 'i', EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID: 'a' }];
   for (const clientKeys of keyScenarios) {
     const before = evaluate(original('app.config.ts'), 'android', clientKeys);
-    const after = evaluate(current('app.config.ts'), 'android', clientKeys);
+    const after = evaluate(compatibilitySource('app.config.ts'), 'android', clientKeys);
     assert.equal(before.version, '1.0.6');
     assert.equal(before.android.versionCode, 57026);
     assert.equal(after.version, '1.0.7');
@@ -60,9 +61,9 @@ test('16 KB candidate leaves iOS, web and unspecified configurations exact', () 
   }
 });
 
-test('app config source changes only exact Android metadata and Android-only plugin registration', () => {
+test('historical 57027 app config source changes only exact Android metadata and Android-only plugin registration', () => {
   const registration = '    // Android-only DataStore infrastructure patch; independent of Maps keys.\n    ...(buildPlatform === "android" ? ["./plugins/with-android-datastore-16kb"] : []),\n';
-  assert.equal(current('app.config.ts').split(registration).length - 1, 1);
+  assert.equal(compatibilitySource('app.config.ts').split(registration).length - 1, 1);
   let expected = original('app.config.ts');
   for (const [before, after] of [
     ['buildPlatform === "android"\n    ? "1.0.6"', 'buildPlatform === "android"\n    ? "1.0.7"'],
@@ -72,7 +73,7 @@ test('app config source changes only exact Android metadata and Android-only plu
     assert.equal(expected.split(before).length - 1, 1, 'exact baseline metadata must occur once');
     expected = expected.replace(before, after);
   }
-  assert.equal(current('app.config.ts').replace(registration, ''), expected);
+  assert.equal(compatibilitySource('app.config.ts').replace(registration, ''), expected);
 });
 
 test('DataStore plugin appends the exact scoped constraint once and is idempotent', () => {
