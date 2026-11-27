@@ -44,7 +44,7 @@ const env = {
 // either native release command too, so CLI metadata and the binary agree.
 // Preserve unspecified/web and the released Android configuration unchanged.
 const buildPlatform = process.env.EAS_BUILD_PLATFORM;
-const appVersion = buildPlatform === "ios" ? "1.3" : buildPlatform === "android" ? "1.0.3" : "1.0.2";
+const appVersion = buildPlatform === "ios" ? "1.4" : buildPlatform === "android" ? "1.0.3" : "1.0.2";
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
@@ -58,9 +58,9 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
-    // 1.3 (132) adds the request-song terminal-stop fix while preserving
-    // SDK 27, automatic registration photos and camera/heading stability.
-    buildNumber: buildPlatform === "ios" ? "132" : "124",
+    // 1.4 (133) includes the approved profile selfie and louder Gold Chime.
+    // Preserve SDK 27, automatic photos, request stop and camera stability.
+    buildNumber: buildPlatform === "ios" ? "133" : "124",
     googleServicesFile: "./firebase/GoogleService-Info.plist",
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,

@@ -9,6 +9,7 @@ import { INCOMING_TRIP_ALERT_PLAYBACK, INCOMING_TRIP_NOTIFICATION } from '../lib
 const root = path.join(__dirname, '..');
 const baseline = 'afaecc548b9e1f2c51b71f9788a331c5207b60a6';
 const build132 = 'cc722a6f16b9c9b17be4752a7e8cd2ed0c44061c';
+const goldFeature = '8c3610302610b0578d4787b9b92d085a6be97493';
 const assetPath = 'assets/audio/incoming-trip-alert.wav';
 const selectedMasterSHA256 = '1314bc6b6424a7461254d847b2a95d7742dc745cbf43cafe01e3bfd1fed46240';
 const historicalAssetSHA256 = 'ac1d846ffa152b25729cc97c30144d42219264afd68c642604f71a76dded0886';
@@ -158,7 +159,7 @@ test('actual Home continues to reference the same bundled asset in its unchanged
   assert.deepEqual(current('lib/driver-request-audio.ts'), historical(baseline, 'lib/driver-request-audio.ts'));
 });
 
-test('Gold Chime leaves native configuration, notifications, registration, approved selfie, auth, and map/camera source byte-exact', () => {
+test('immutable Gold Chime feature leaves native configuration, notifications, registration, approved selfie, auth, and map/camera source byte-exact', () => {
   for (const file of [
     'app.config.ts', 'eas.json', 'package.json', 'pnpm-lock.yaml',
     'plugins/with-driver-ios-sdk27.js', 'plugins/with-google-navigation.js',
@@ -168,11 +169,44 @@ test('Gold Chime leaves native configuration, notifications, registration, appro
     'app/driver/register.tsx', 'app/register.tsx', 'app/(tabs)/profile.tsx', 'hooks/use-auth.ts',
     'components/NativeDriverGoogleMap.tsx', 'lib/driver-map-motion.ts',
     'lib/driver-navigation-camera.ts', 'lib/native-map-camera.ts',
-  ]) assert.deepEqual(current(file), historical(baseline, file), `${file}: unrelated production/native change`);
-  // All tracked production files are protected, including Home's Call handler,
-  // push payloads and prices, not merely the explicitly named examples above.
-  const changed = execFileSync('git', ['diff', '--name-only', baseline, '--', '.', ':!tests/**', ':!docs/**'], { cwd: root, encoding: 'utf8' });
+  ]) assert.deepEqual(historical(goldFeature, file), historical(baseline, file), `${file}: unrelated immutable feature change`);
+  // Audit the immutable feature, not a rolling baseline that silently permits
+  // future changes. Current native/production bytes are protected separately.
+  const changed = execFileSync('git', ['diff', '--name-only', baseline, goldFeature, '--', '.', ':!tests/**', ':!docs/**'], { cwd: root, encoding: 'utf8' });
   assert.deepEqual(changed.trim().split('\n').filter(Boolean).sort(), [assetPath, 'lib/incoming-trip-alert.ts'].sort());
+});
+
+test('current Gold Chime release preserves unrelated native bytes with only exact iPhone 1.4/133 metadata and comment changes', () => {
+  for (const file of [
+    'eas.json', 'package.json', 'pnpm-lock.yaml',
+    'plugins/with-driver-ios-sdk27.js', 'plugins/with-google-navigation.js',
+    'plugins/driver-navigation-feed-patch.js', 'plugins/driver-navigation-polyline-patch.js',
+    'lib/notifications.ts', 'lib/driver-auth-context.tsx', 'lib/firebase.ts',
+    'lib/driver-photo-native.ts', 'lib/driver-photo-preparation.ts', 'lib/driver-profile-photo.ts',
+    'app/driver/register.tsx', 'app/register.tsx', 'app/(tabs)/profile.tsx', 'hooks/use-auth.ts',
+    'components/DriverProfilePhoto.tsx', 'components/NativeDriverGoogleMap.tsx', 'lib/driver-map-motion.ts',
+    'lib/driver-navigation-camera.ts', 'lib/native-map-camera.ts',
+  ]) assert.deepEqual(current(file), historical(baseline, file), `${file}: unrelated current production/native change`);
+  let expected = historical(goldFeature, 'app.config.ts').toString('utf8');
+  assert.deepEqual(historical(goldFeature, 'app.config.ts'), historical(baseline, 'app.config.ts'));
+  for (const [before, after] of [
+    ['const appVersion = buildPlatform === "ios" ? "1.3"', 'const appVersion = buildPlatform === "ios" ? "1.4"'],
+    ['    buildNumber: buildPlatform === "ios" ? "132" : "124",', '    buildNumber: buildPlatform === "ios" ? "133" : "124",'],
+    [
+      '    // 1.3 (132) adds the request-song terminal-stop fix while preserving\n    // SDK 27, automatic registration photos and camera/heading stability.',
+      '    // 1.4 (133) includes the approved profile selfie and louder Gold Chime.\n    // Preserve SDK 27, automatic photos, request stop and camera stability.',
+    ],
+  ]) {
+    assert.equal(expected.split(before).length - 1, 1, `exactly one reviewed metadata/comment replacement: ${before}`);
+    expected = expected.replace(before, after);
+  }
+  assert.deepEqual(current('app.config.ts'), Buffer.from(expected));
+  // No production allowances for mandatory-update gates, Call, prices, push,
+  // audio-controller, Home, maps or any unlisted native changes.
+  const changed = execFileSync('git', ['diff', '--name-only', goldFeature, '--', '.', ':!tests/**', ':!docs/**'], { cwd: root, encoding: 'utf8' });
+  assert.deepEqual(changed.trim().split('\n').filter(Boolean), ['app.config.ts']);
+  const untracked = execFileSync('git', ['ls-files', '--others', '--exclude-standard', '--', '.', ':!tests/**', ':!docs/**'], { cwd: root, encoding: 'utf8' });
+  assert.equal(untracked, '', 'no untracked production files are allowed');
 });
 
 test('immutable build 132 release asset audit stays exact; the current selected asset has its separate fixed digest', () => {
