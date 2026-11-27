@@ -9,6 +9,8 @@ import { useDriverAuth } from '@/lib/driver-auth-context';
 import { router } from 'expo-router';
 import { useColors } from '@/hooks/use-colors';
 import { openDriverSupportWhatsApp } from '@/lib/support-whatsapp';
+import { getApprovedDriverProfilePhoto } from '@/lib/driver-profile-photo';
+import { DriverProfilePhoto } from '@/components/DriverProfilePhoto';
 
 const GOLD = '#D4AF37';
 const BG = '#0A0A0A';
@@ -37,6 +39,8 @@ export default function DriverProfileScreen() {
   const insets = useSafeAreaInsets();
   const colors = useColors();
   const [signingOut, setSigningOut] = useState(false);
+  const driverName = driverProfile?.full_name || user?.displayName || 'Driver';
+  const profilePhotoUri = getApprovedDriverProfilePhoto(driverProfile);
 
   const handleSignOut = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
@@ -101,11 +105,13 @@ export default function DriverProfileScreen() {
         {/* Profile Hero */}
         <View style={[styles.heroGradient, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
           <View style={styles.heroContent}>
-            <View style={styles.avatar}>
-              <MaterialIcons name="person" size={44} color={GOLD} />
-            </View>
+            <DriverProfilePhoto
+              uri={profilePhotoUri}
+              identity={`${user?.uid || ''}:${driverProfile?.id || ''}`}
+              driverName={driverName}
+            />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.driverName, { color: colors.foreground }]}>{driverProfile?.full_name || user?.displayName || 'Driver'}</Text>
+              <Text style={[styles.driverName, { color: colors.foreground }]}>{driverName}</Text>
               <View style={styles.tierBadge}>
                 <MaterialIcons name="star" size={13} color={tier.color} />
                 <Text style={[styles.tierText, { color: tier.color }]}>{tier.label} Driver</Text>
@@ -294,7 +300,6 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 22, fontWeight: '800', color: TEXT },
   heroGradient: { backgroundColor: '#0D0D0D', borderBottomWidth: 0.5, borderBottomColor: BORDER, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 16, marginBottom: 16 },
   heroContent: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 16 },
-  avatar: { width: 72, height: 72, borderRadius: 20, backgroundColor: '#1A1200', alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: GOLD + '40' },
   driverName: { fontSize: 20, fontWeight: '800', color: TEXT, marginBottom: 6 },
   tierBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', backgroundColor: '#1A1200', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   tierText: { fontSize: 12, fontWeight: '700' },

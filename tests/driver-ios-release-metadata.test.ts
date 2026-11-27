@@ -19,6 +19,7 @@ const build131 = 'e4fd60fef058866ea57ad65295ca33a89893f90a';
 const delivered131 = (file: string) => historical(build131, file);
 const soundFix = '05754fe2ccc966c096000c42b8d20e574991ec1f';
 const soundSource = (file: string) => historical(soundFix, file);
+const build132 = 'cc722a6f16b9c9b17be4752a7e8cd2ed0c44061c';
 const releaseNote = 'docs/driver-ios-1.3-132-request-sound-20261126.md';
 const current = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
 const clientKeys = { GOOGLE_MAPS_IOS_API_KEY: 'ios-client-test-key', GOOGLE_MAPS_ANDROID_API_KEY: 'android-client-test-key' };
@@ -85,11 +86,9 @@ test('current iOS 1.3 (132) changes only buildNumber from the reviewed request-s
 
 test('132 preparation preserves every reviewed request-sound source file outside the exact metadata/test/new-note paths', () => {
   const allowed = new Set(['app.config.ts', 'tests/driver-ios-release-metadata.test.ts', 'tests/driver-android-home-layout.test.ts', releaseNote]);
-  const changed = execFileSync('git', ['diff', '--name-only', soundFix, '--'], { cwd: root, encoding: 'utf8' });
-  const added = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' });
-  for (const file of `${changed}\n${added}`.split('\n').filter(Boolean)) {
-    assert.ok(allowed.has(file), `non-metadata request-sound source changed: ${file}`);
-  }
+  // Keep this historical release audit exact without rejecting later features.
+  const changed = execFileSync('git', ['diff', '--name-only', soundFix, build132, '--'], { cwd: root, encoding: 'utf8' });
+  assert.deepEqual(new Set(changed.split('\n').filter(Boolean)), allowed);
 });
 
 test('132 retains delivered 131 camera/navigation source and regressions byte-for-byte', () => {
@@ -139,7 +138,7 @@ test('version-train correction changes only iOS release metadata and retains all
   }
 });
 
-test('current changes since build 130 stay in enumerated camera/heading, request-audio and release-preparation scope', () => {
+test('build 132 changes since build 130 stay in enumerated camera/heading, request-audio and release-preparation scope', () => {
   const allowed = new Set([
     'components/NativeDriverGoogleMap.tsx', 'lib/driver-map-motion.ts', 'lib/driver-navigation-camera.ts',
     'app/(tabs)/home.tsx', 'lib/driver-request-audio.ts',
@@ -152,13 +151,10 @@ test('current changes since build 130 stay in enumerated camera/heading, request
     'tests/driver-ios-reroute-runtime.test.ts', 'tests/driver-android-home-layout.test.ts',
     releaseNote,
   ]);
-  // Include staged, unstaged and newly added files. The exact candidate config
-  // comparison protects SDK/plugins. This historical scope does not authorize
-  // fresh source changes: the stricter soundFix guard allows only four paths,
-  // and the exact delivered131 camera guard freezes the previous camera fix.
-  const changed = execFileSync('git', ['diff', '--name-only', build130, '--'], { cwd: root, encoding: 'utf8' });
-  const added = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' });
-  for (const file of `${changed}\n${added}`.split('\n').filter(Boolean)) {
+  // Audit immutable release history. Current SDK/native configuration and
+  // camera behavior still have their own byte-exact checks below.
+  const changed = execFileSync('git', ['diff', '--name-only', build130, build132, '--'], { cwd: root, encoding: 'utf8' });
+  for (const file of changed.split('\n').filter(Boolean)) {
     assert.ok(allowed.has(file), `unrelated release source changed: ${file}`);
   }
 

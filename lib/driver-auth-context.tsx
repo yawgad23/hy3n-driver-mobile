@@ -15,7 +15,9 @@ export interface DriverProfile {
   full_name: string;
   email?: string;
   phone?: string;
+  profile_photo_url?: string;
   avatar_url?: string;
+  photo_url?: string;
   vehicle_make?: string;
   vehicle_model?: string;
   vehicle_color?: string;
