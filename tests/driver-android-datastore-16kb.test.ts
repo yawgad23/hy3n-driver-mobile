@@ -1,3 +1,4 @@
+import { withoutAndroidRequestStopAdditions, REQUEST_STOP_BASELINE, assertReviewedRequestAudio } from './helpers/driver-android-request-stop-scope';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
@@ -116,7 +117,12 @@ test('current navigation, Home, audio controller, registration and native/depend
     'firebase/google-services.json', 'firebase/GoogleService-Info.plist',
   ]) {
     const bytes = execFileSync('git', ['show', `${submitted}:${file}`], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
-    assert.deepEqual(fs.readFileSync(path.join(root, file)), bytes, `${file} must remain exact`);
+    if (file === 'app/(tabs)/home.tsx' || file === 'lib/driver-request-audio.ts') {
+      const delivered = execFileSync('git', ['show', `${REQUEST_STOP_BASELINE}:${file}`], { cwd: root });
+      assert.deepEqual(delivered, bytes, `${file}: immutable delivered audio/Home audit remains exact`);
+      if (file === 'app/(tabs)/home.tsx') assert.equal(withoutAndroidRequestStopAdditions(file, current(file)), bytes.toString('utf8'));
+      else assertReviewedRequestAudio(fs.readFileSync(path.join(root, file)));
+    } else assert.deepEqual(fs.readFileSync(path.join(root, file)), bytes, `${file} must remain exact`);
   }
   // Preserve the historical compatibility-release audio audit, not a rolling old-song requirement.
   const song = 'assets/audio/incoming-trip-alert.wav';

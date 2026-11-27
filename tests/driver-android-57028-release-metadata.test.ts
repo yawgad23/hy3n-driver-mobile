@@ -94,16 +94,16 @@ test('57028 keeps SDK54, DataStore1.2.1, Android Production identity and untouch
   }
 });
 
-test('57028 preparation changes exactly five named metadata/test/doc files, including untracked additions', () => {
-  const changed = execFileSync('git', ['diff', '--name-only', '-z', releaseBase, '--'], { cwd: root, encoding: 'utf8' });
-  const untracked = execFileSync('git', ['ls-files', '--others', '--exclude-standard', '-z'], { cwd: root, encoding: 'utf8' });
-  assert.deepEqual(new Set(`${changed}${untracked}`.split('\0').filter(Boolean)), allowed);
+test('immutable delivered 57028 preparation changes exactly five named metadata/test/doc files', () => {
+  const changed = execFileSync('git', ['diff', '--name-only', '-z', releaseBase, 'd2d376e9842f93e19e2ca55adcf1aac15fe0cbd2', '--'], { cwd: root, encoding: 'utf8' });
+  assert.deepEqual(new Set(changed.split('\0').filter(Boolean)), allowed);
 });
 
 test('every other immutable Gold Chime/selfie base file stays byte-exact, including all other tests/docs and native/dependency sources', () => {
   const files = execFileSync('git', ['ls-tree', '-r', '--name-only', '-z', releaseBase], { cwd: root, encoding: 'utf8' }).split('\0').filter(Boolean);
   for (const file of files) {
     if (allowed.has(file)) continue;
-    assert.deepEqual(current(file), previous(file), `${file} changed outside the exact release-source exceptions`);
+    const delivered = execFileSync('git', ['show', `d2d376e9842f93e19e2ca55adcf1aac15fe0cbd2:${file}`], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
+    assert.deepEqual(delivered, previous(file), `${file}: immutable 57028 release changed outside its exact exceptions`);
   }
 });

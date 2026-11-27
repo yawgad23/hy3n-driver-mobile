@@ -1,3 +1,4 @@
+import { withoutAndroidRequestStopAdditions, REQUEST_STOP_BASELINE, assertReviewedRequestAudio } from './helpers/driver-android-request-stop-scope';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
@@ -126,7 +127,10 @@ test('submitted 57026 release changes only the exact Android config, metadata te
 test('current Home/controller remain exact and submitted 57026 song matches its reviewed sound fix', () => {
   for (const file of ['app/(tabs)/home.tsx', 'lib/driver-request-audio.ts']) {
     const expected = execFileSync('git', ['show', `${soundFix}:${file}`], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
-    assert.deepEqual(fs.readFileSync(path.join(root, file)), expected, `${file} must remain byte-identical`);
+    const delivered = execFileSync('git', ['show', `${REQUEST_STOP_BASELINE}:${file}`], { cwd: root });
+    assert.deepEqual(delivered, expected, `${file}: pinned delivered 57028 preserves the historical sound-fix source`);
+    if (file === 'app/(tabs)/home.tsx') assert.equal(withoutAndroidRequestStopAdditions(file, current(file)), expected.toString('utf8'));
+    else assertReviewedRequestAudio(fs.readFileSync(path.join(root, file)));
   }
   // Audit immutable release audio; the current chosen Gold Chime has its own exact-asset tests.
   const song = 'assets/audio/incoming-trip-alert.wav';

@@ -37,6 +37,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocFromServer,
   getDocs,
   addDoc,
   updateDoc,
@@ -490,6 +491,16 @@ export const firestoreDB = {
   async get(collectionName: string, id: string) {
     const docRef = doc(db, collectionName, id);
     const docSnap = await getDoc(docRef);
+    return docToObj(docSnap);
+  },
+
+  /** Never use cached/local-pending data as proof that an Accept did not commit. */
+  async getFromServer(collectionName: string, id: string) {
+    const docRef = doc(db, collectionName, id);
+    const docSnap = await getDocFromServer(docRef);
+    if (docSnap.metadata.fromCache || docSnap.metadata.hasPendingWrites) {
+      throw new Error('Server trip state is not confirmed.');
+    }
     return docToObj(docSnap);
   },
 

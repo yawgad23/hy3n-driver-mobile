@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
-import { createDriverRequestAudio, DRIVER_REQUEST_AUDIO_MODE } from '../lib/driver-request-audio';
+import { createDriverRequestAudio, createDriverRequestAudioSession, DRIVER_REQUEST_AUDIO_MODE } from '../lib/driver-request-audio';
 import { INCOMING_TRIP_ALERT_PLAYBACK } from '../lib/incoming-trip-alert';
 
 // Execute Home's actual handlers, stop callback, and native player factory.
@@ -56,6 +56,7 @@ function setup(platform: Platform) {
   const events: string[] = [];
   const registered = new Set<NativePlayer>();
   const players: NativePlayer[] = [];
+  const session = createDriverRequestAudioSession();
   const factoryCalls: Array<{ asset: string; options: any }> = [];
   let seek = async (_seconds: number) => {};
   let configure = async (_mode: typeof DRIVER_REQUEST_AUDIO_MODE) => {};
@@ -120,7 +121,8 @@ function setup(platform: Platform) {
     tripStartedAt: null, tripDistanceKm: 2.5, arrivedAt: 'arrival-time',
     lastTripLocationRef: { current: null }, lastTripMeterPublishedAtRef: { current: 42 },
     incomingTripAlertPlayer: placeholder,
-    createDriverRequestAudio,
+    createDriverRequestAudio: (options: Parameters<typeof createDriverRequestAudio>[0]) => createDriverRequestAudio({ ...options, session }),
+    stopAllDriverRequestAudio: session.stopAll,
     require(asset: string) { assert.equal(asset, WAV, 'request player must use the SAME bundled WAV'); return asset; },
     createAudioPlayer(asset: string, options: any) {
       factoryCalls.push({ asset, options });
@@ -201,7 +203,7 @@ function setup(platform: Platform) {
     const p = players[0];
     assert.equal(p.nativePlaying, true, 'fixture starts with a continuously playing native request');
     p.playing = false; // Expo's last JS status is stale, native audio is NOT paused.
-    assert.equal(p.muted, false); assert.equal(p.volume, INCOMING_TRIP_ALERT_PLAYBACK.volume); assert.equal(p.loop, true);
+    assert.equal(p.muted, false); assert.equal(p.volume, 1.0); assert.equal(p.loop, true);
   }
   function nativeResume() {
     // A queued iOS loop completion or Android lifecycle/focus callback can only
@@ -226,13 +228,13 @@ for (const platform of ['ios', 'android'] as const) {
     assert.equal(h.factoryCalls.length, 1, 'iOS and Android must both use the real native request factory');
     assert.equal(h.factoryCalls[0].asset, WAV);
     assert.deepEqual(h.factoryCalls[0].options, { keepAudioSessionActive: false });
-    assert.deepEqual(INCOMING_TRIP_ALERT_PLAYBACK, { loop: true, volume: 1 });
+    assert.deepEqual(INCOMING_TRIP_ALERT_PLAYBACK, { loop: true, volume: 1.0 });
     assert.equal(h.modes.length, 1);
     assert.deepEqual(h.modes[0], {
       playsInSilentMode: true, interruptionMode: 'duckOthers', allowsRecording: false,
       shouldPlayInBackground: false, shouldRouteThroughEarpiece: false,
     });
-    assert.equal(h.players[0].volume, INCOMING_TRIP_ALERT_PLAYBACK.volume); assert.equal(h.players[0].loop, true);
+    assert.equal(h.players[0].volume, 1.0); assert.equal(h.players[0].loop, true);
     assert.deepEqual(h.players[0].seekCalls, [0]);
     h.runtime.stop(h.placeholder, { force: true });
     assert.equal(h.playing(), false);
@@ -370,4 +372,42 @@ for (const platform of ['ios', 'android'] as const) {
       h.runtime.stop(h.placeholder, { force: true });
     });
   }
+}
+
+for (const handler of ['beginTrip', 'handleStartTrip', 'handleVerifyPickupCode'] as const) {
+  test(`ios: actual ${handler} retires request players owned by two retained controllers`, async () => {
+    const h = setup('ios'); await h.playRequest();
+    const retained = h.env.createDriverRequestAudio({ platform: 'ios', createPlayer: () => h.env.createAudioPlayer(WAV, { keepAudioSessionActive: false }) });
+    await retained.play('second-retained-offer', h.placeholder, async () => {});
+    assert.equal(h.players.length, 2); assert.equal(h.playing(), true);
+    const pending = h.invoke(handler);
+    for (const player of h.players) {
+      assert.equal(player.nativePlaying, false); assert.equal(player.loop, false);
+      assert.equal(player.removed, true); assert.equal(player.released, true);
+    }
+    assert.equal(h.placeholder.released, false, 'request-only global stop does not dispose the empty hook');
+    if (handler === 'beginTrip') h.startResponse.resolve({ ride: startedRide() });
+    if (handler === 'handleVerifyPickupCode') h.verifyResponse.resolve({ ride: startedRide() });
+    await pending;
+    h.nativeResume(); await flush(); assert.equal(h.playing(), false);
+  });
+}
+
+for (const handler of ['beginTrip', 'handleStartTrip', 'handleVerifyPickupCode'] as const) {
+  test(`android: actual ${handler} retires request players owned by two retained controllers`, async () => {
+    const h = setup('android'); await h.playRequest();
+    const retained = h.env.createDriverRequestAudio({ platform: 'android', createPlayer: () => h.env.createAudioPlayer(WAV, { keepAudioSessionActive: false }) });
+    await retained.play('second-retained-offer', h.placeholder, async () => {});
+    assert.equal(h.players.length, 2); assert.equal(h.playing(), true);
+    const pending = h.invoke(handler);
+    for (const player of h.players) {
+      assert.equal(player.nativePlaying, false); assert.equal(player.loop, false);
+      assert.equal(player.removed, true); assert.equal(player.released, true);
+    }
+    assert.equal(h.placeholder.released, false, 'request-only global stop does not dispose the empty hook');
+    if (handler === 'beginTrip') h.startResponse.resolve({ ride: startedRide() });
+    if (handler === 'handleVerifyPickupCode') h.verifyResponse.resolve({ ride: startedRide() });
+    await pending;
+    h.nativeResume(); await flush(); assert.equal(h.playing(), false);
+  });
 }

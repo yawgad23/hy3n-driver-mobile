@@ -136,12 +136,12 @@ test('iOS failed-Accept rearm only clears the matching played-ride latch once', 
 });
 
 for (const platform of ['android', 'web', undefined]) {
-  test(`failed-Accept explicit iOS rearm does not alter ${String(platform)} controller behavior`, async () => {
+  test(`failed-Accept explicit native rearm supports Android but preserves ${String(platform)} legacy local stop behavior`, async () => {
     const runtime = createDriverRequestAudio({ platform }); const p = player();
     assert.equal(await runtime.play('offer-A', p, async () => {}), true);
     runtime.stop(p, { force: true });
-    assert.equal(runtime.rearmAfterFailedAccept('offer-A'), false);
-    assert.equal(await runtime.play('offer-A', p, async () => {}), false);
+    assert.equal(runtime.rearmAfterFailedAccept('offer-A'), platform === 'android');
+    assert.equal(await runtime.play('offer-A', p, async () => {}), platform === 'android');
   });
 }
 

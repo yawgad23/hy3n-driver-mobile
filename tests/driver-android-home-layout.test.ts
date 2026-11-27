@@ -1,3 +1,4 @@
+import { withoutAndroidRequestStopAdditions } from './helpers/driver-android-request-stop-scope';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
@@ -383,7 +384,7 @@ test('Android preserves every label, handler and disabled-state contract includi
 });
 
 test('scope proof: current Home is the reviewed sound fix; historical layout/handler proof and current styles/modals remain protected', () => {
-  assert.equal(current, reviewedSoundHome, 'current Home must remain byte-identical to the separately tested native retirement fix');
+  assert.equal(withoutAndroidRequestStopAdditions(HOME, current), reviewedSoundHome, 'only exact reviewed audio/server-read additions may differ; UI/map/other logic stays byte-identical');
   const oldFile = parse(baseline), newFile = parse(current);
   const styleProperties = (file: ts.SourceFile) => {
     const node = file.statements.find((s) => ts.isVariableStatement(s) && s.declarationList.declarations.some((d) => d.name.getText(file) === 'styles')) as ts.VariableStatement;

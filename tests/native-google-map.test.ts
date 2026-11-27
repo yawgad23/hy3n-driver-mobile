@@ -107,7 +107,7 @@ test('Driver active map re-routes for each pickup or drop-off and cleans up safe
   assert.match(component, /navigationController\.cleanup\(\)/);
   assert.match(screen, /locationAccuracy=\{location\?\.coords\.accuracy \?\? null\}/);
   assert.match(screen, /DRIVER_ACCEPT_RECONCILIATION_DELAYS_MS/);
-  assert.match(screen, /firestoreDB\.get\(COLLECTIONS\.RIDES, rideId\)/);
+  assert.match(screen, /firestoreDB\.getFromServer\(COLLECTIONS\.RIDES, rideId\)/);
   assert.match(screen, /driverOfferAcceptedByServer/);
 });
 
