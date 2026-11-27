@@ -56,16 +56,26 @@ function offer(id = 'offer-A', expiresAt = Date.now() + 60_000) { return { id, d
 function setup(platform: 'ios' | 'android') {
   const players: any[] = [];
   const configurationModes: any[] = [];
+  const events: string[] = [];
+  const registered = new Set<any>();
   let configure = async () => {};
   let seek = async () => {};
   let nextPlayerLoaded = true;
   const factory = () => {
     const listeners = new Set<(status: { isLoaded: boolean }) => void>();
-    const p = { isLoaded: nextPlayerLoaded, playing: false, muted: true, volume: 0, loop: false, released: false, removes: 0, plays: 0,
-      play() { this.playing = true; this.plays++; }, pause() { this.playing = false; }, seekTo: () => seek(),
+    const name = `player-${players.length}`;
+    let muted = true; let volume = 0; let loop = false;
+    const p = { isLoaded: nextPlayerLoaded, playing: false, nativePlaying: false, released: false, removes: 0, plays: 0, listeners,
+      get muted() { return muted; }, set muted(value: boolean) { muted = value; events.push(`${name}:muted:${value}`); },
+      get volume() { return volume; }, set volume(value: number) { volume = value; events.push(`${name}:volume:${value}`); },
+      get loop() { return loop; }, set loop(value: boolean) { loop = value; events.push(`${name}:loop:${value}`); },
+      play() { this.playing = true; this.nativePlaying = true; this.plays++; events.push(`${name}:play`); },
+      pause() { this.playing = false; this.nativePlaying = false; events.push(`${name}:pause`); }, seekTo: () => seek(),
       addListener: (_event: string, listener: (status: { isLoaded: boolean }) => void) => { listeners.add(listener); return { remove() { listeners.delete(listener); } }; },
       load() { this.isLoaded = true; for (const listener of [...listeners]) listener({ isLoaded: true }); },
-      remove() { this.removes++; }, release() { this.released = true; this.playing = false; } };
+      remove() { this.removes++; registered.delete(this); events.push(`${name}:remove`); },
+      release() { this.released = true; this.playing = false; this.nativePlaying = false; events.push(`${name}:release`); } };
+    registered.add(p);
     players.push(p); return p;
   };
   const placeholder = factory();
@@ -95,12 +105,27 @@ function setup(platform: 'ios' | 'android') {
     setTripActionPending(value: boolean) { env.tripActionPending = value; syncEligibility(); },
     setActiveTrip(value: any) { env.activeTrip = value; syncEligibility(); },
     setIncomingRide(value: any) { env.incomingRide = value; syncEligibility(); },
-    setRideOfferSeconds() {}, stopIncomingTripAlert(force = false) { runtime.stop(placeholder, { force }); },
+    setRideOfferSeconds() {},
     incomingTripAlertPlayer: placeholder, useCallback: (callback: any) => callback,
     setAudioModeAsync: async (mode: any) => { configurationModes.push(mode); await configure(); },
     playIncomingTripAlert(id: string) { evaluate(expression('playIncomingTripAlert'), env)(id); },
-    respondToOffer: { mutateAsync() { requests++; assert.equal(players.every(p => !p.playing), true, 'request audio stops before server mutation'); return response.promise; } },
+    respondToOffer: { mutateAsync() {
+      requests++; events.push('server:accept');
+      assertOwnedStopped();
+      return response.promise;
+    } },
   };
+  // Execute Home's actual stop callback too; no render/effect is required on tap.
+  env.stopIncomingTripAlert = evaluate(expression('stopIncomingTripAlert'), env);
+  function assertOwnedStopped() {
+    for (const p of players.slice(1)) {
+      assert.equal(p.nativePlaying, false, 'native audio must be paused before server acceptance');
+      assert.equal(p.playing, false); assert.equal(p.loop, false); assert.equal(p.muted, true); assert.equal(p.volume, 0);
+      assert.equal(p.removes, 1); assert.equal(p.released, true); assert.equal(registered.has(p), false);
+      assert.equal(p.listeners.size, 0, 'pending readiness listener must be canceled');
+    }
+    assert.equal(placeholder.released, false); assert.equal(placeholder.removes, 0);
+  }
   function syncEligibility() {
     env.incomingOfferAudioEligibilityRef.current = evaluate(assignment('incomingOfferAudioEligibilityRef.current'), { ...env });
   }
@@ -114,15 +139,58 @@ function setup(platform: 'ios' | 'android') {
     }
   }
   const accept = () => { syncEligibility(); return evaluate(expression('handleAcceptRide'), { ...env })() as Promise<void>; };
-  return { env, players, placeholder, response, accept, effect, runtime, rearmCalls, configurationModes,
+  return { env, players, placeholder, response, accept, effect, runtime, rearmCalls, configurationModes, events, assertOwnedStopped,
     setServerRide: (ride: any) => { serverRide = ride; }, setServerReadError: (error: Error) => { serverReadError = error; },
     setServerRead: (read: () => Promise<any>) => { serverRead = read; }, requestCount: () => requests,
     setConfigure: (fn: () => Promise<void>) => { configure = fn; }, setSeek: (fn: () => Promise<void>) => { seek = fn; },
     setNextPlayerLoaded: (loaded: boolean) => { nextPlayerLoaded = loaded; },
-    plays: () => players.reduce((sum, p) => sum + p.plays, 0), playing: () => players.some(p => p.playing) };
+    plays: () => players.reduce((sum, p) => sum + p.plays, 0), playing: () => players.some(p => p.nativePlaying) };
 }
 
 for (const platform of ['ios', 'android'] as const) {
+  test(`${platform}: actual Accept immediately silences/unloops/mutes/zeros/removes/releases despite stale JS status, before unresolved server acceptance`, async () => {
+    const h = setup(platform); h.effect(); await flush(); assert.equal(h.plays(), 1);
+    h.players[1].playing = false; // Native playback is still audible; Expo status is stale.
+    assert.equal(h.playing(), true);
+    let settled = false;
+    const pending = h.accept(); void pending.then(() => { settled = true; });
+    // No playback effect or additional render has occurred after the tap.
+    assert.equal(h.requestCount(), 1); h.assertOwnedStopped(); assert.equal(h.playing(), false);
+    const boundary = h.events.indexOf('server:accept');
+    const retirement = ['pause', 'loop:false', 'muted:true', 'volume:0', 'remove', 'release'];
+    const positions = retirement.map(operation => h.events.lastIndexOf(`player-1:${operation}`));
+    assert.ok(positions.every((position, i) => position >= 0 && position < boundary && (i === 0 || position > positions[i - 1])), 'complete ordered native retirement must precede the server request');
+    await flush(); assert.equal(settled, false, 'server acceptance remains unresolved while request audio is already silent');
+    assert.equal(h.env.activeTrip, null);
+    h.response.resolve({ ride: assignedRide() }); await pending; h.effect(); await flush();
+    h.assertOwnedStopped(); assert.equal(h.plays(), 1); assert.equal(h.playing(), false);
+  });
+
+  for (const readiness of ['initial', 'after-seek'] as const) {
+    test(`${platform}: actual Accept during native ${readiness} readiness cancels late loading and accepted stale-offer/background resume`, async () => {
+      const h = setup(platform);
+      if (readiness === 'initial') h.setNextPlayerLoaded(false);
+      else h.setSeek(async () => { h.players[1].isLoaded = false; });
+      h.effect(); await flush();
+      const p = h.players[1]; assert.equal(p.isLoaded, false); assert.equal(p.listeners.size, 1, 'fixture must reach native readiness, not only configure/seek');
+      assert.equal(h.plays(), 0);
+      let settled = false;
+      const pending = h.accept(); void pending.then(() => { settled = true; });
+      assert.equal(h.requestCount(), 1); h.assertOwnedStopped();
+      p.load(); await flush(); // Late native readiness must not revive the retired generation.
+      assert.equal(settled, false); assert.equal(h.env.activeTrip, null); assert.equal(h.plays(), 0);
+      const change = installActualAppStateHandler(h.env);
+      h.env.incomingRide = offer('offer-A'); h.effect();
+      change('background'); h.effect(); change('active'); h.effect(); await flush();
+      assert.equal(h.plays(), 0); assert.equal(h.players.length, 2);
+      h.response.resolve({ ride: assignedRide() }); await pending; h.effect();
+      // Even an old accepted offer query after clearing the active trip cannot re-ring.
+      h.env.activeTrip = null; h.env.incomingRide = offer('offer-A'); h.effect();
+      change('background'); h.effect(); change('active'); h.effect(); p.load(); await flush();
+      h.assertOwnedStopped(); assert.equal(h.plays(), 0); assert.equal(h.playing(), false); assert.equal(h.players.length, 2);
+    });
+  }
+
   test(`${platform}: actual Home keeps refreshed DIFFERENT offer B silent while accepting A`, async () => {
     const h = setup(platform); h.effect(); await flush(); assert.equal(h.plays(), 1);
     const pending = h.accept();

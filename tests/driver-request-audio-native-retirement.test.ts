@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createDriverRequestAudio, type OwnedDriverRequestAudioPlayer } from '../lib/driver-request-audio';
+import { INCOMING_TRIP_ALERT_PLAYBACK } from '../lib/incoming-trip-alert';
 
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 function deferred() { let resolve!: () => void; const promise = new Promise<void>(r => { resolve = r; }); return { promise, resolve }; }
@@ -64,7 +65,7 @@ for (const platform of ['ios', 'android'] as const) {
     test(`${platform}: terminal stop prevents future native ${resume} from replaying the request song`, async () => {
       const { n, runtime, placeholder } = setup();
       assert.equal(await runtime.play('accepted-A', placeholder, async () => {}), true);
-      const p = n.created[0]; assert.equal(p.loop, true); assert.equal(p.volume, 0.92);
+      const p = n.created[0]; assert.equal(p.loop, true); assert.equal(p.volume, INCOMING_TRIP_ALERT_PLAYBACK.volume);
       n.background(); assert.equal(p.wasPlaying, true);
       runtime.stop(placeholder, { force: true }); n[resume]();
       assert.equal(n.registered.size, 0); assert.equal(p.released, true);

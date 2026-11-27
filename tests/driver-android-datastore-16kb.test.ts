@@ -108,13 +108,18 @@ test('published 57027 compatibility release changes exactly the explicit config/
   assert.deepEqual(new Set(changed.split('\n').filter(Boolean)), allowed);
 });
 
-test('navigation, Home, audio/song, registration and native/dependency configuration remain byte-exact', () => {
+test('current navigation, Home, audio controller, registration and native/dependency configuration remain byte-exact', () => {
   for (const file of [
-    'app/(tabs)/home.tsx', 'app/driver/register.tsx', 'lib/driver-request-audio.ts', 'assets/audio/incoming-trip-alert.wav',
+    'app/(tabs)/home.tsx', 'app/driver/register.tsx', 'lib/driver-request-audio.ts',
     'plugins/with-google-navigation.js', 'package.json', 'pnpm-lock.yaml', 'eas.json',
     'firebase/google-services.json', 'firebase/GoogleService-Info.plist',
   ]) {
     const bytes = execFileSync('git', ['show', `${submitted}:${file}`], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
     assert.deepEqual(fs.readFileSync(path.join(root, file)), bytes, `${file} must remain exact`);
   }
+  // Preserve the historical compatibility-release audio audit, not a rolling old-song requirement.
+  const song = 'assets/audio/incoming-trip-alert.wav';
+  const submittedSong = execFileSync('git', ['show', `${submitted}:${song}`], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
+  const compatibilitySong = execFileSync('git', ['show', `${compatibilityRelease}:${song}`], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
+  assert.deepEqual(compatibilitySong, submittedSong, 'published 57027 song must match submitted 57026');
 });

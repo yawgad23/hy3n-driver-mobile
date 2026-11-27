@@ -123,11 +123,16 @@ test('submitted 57026 release changes only the exact Android config, metadata te
   }
 });
 
-test('Home, request-audio source and the existing song remain byte-identical to the reviewed sound fix', () => {
-  for (const file of ['app/(tabs)/home.tsx', 'lib/driver-request-audio.ts', 'assets/audio/incoming-trip-alert.wav']) {
+test('current Home/controller remain exact and submitted 57026 song matches its reviewed sound fix', () => {
+  for (const file of ['app/(tabs)/home.tsx', 'lib/driver-request-audio.ts']) {
     const expected = execFileSync('git', ['show', `${soundFix}:${file}`], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
     assert.deepEqual(fs.readFileSync(path.join(root, file)), expected, `${file} must remain byte-identical`);
   }
+  // Audit immutable release audio; the current chosen Gold Chime has its own exact-asset tests.
+  const song = 'assets/audio/incoming-trip-alert.wav';
+  const reviewedSong = execFileSync('git', ['show', `${soundFix}:${song}`], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
+  const submittedSong = execFileSync('git', ['show', `${submitted57026}:${song}`], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
+  assert.deepEqual(submittedSong, reviewedSong, 'submitted 57026 song must match its reviewed sound fix');
   assert.equal(current('package.json'), soundFixSource('package.json'));
   assert.equal(current('pnpm-lock.yaml'), soundFixSource('pnpm-lock.yaml'));
   const dependencies = JSON.parse(current('package.json')).dependencies;

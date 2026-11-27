@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 import { createDriverRequestAudio } from '../lib/driver-request-audio';
-import { shouldPlayIncomingTripAlert } from '../lib/incoming-trip-alert';
+import { INCOMING_TRIP_ALERT_PLAYBACK, shouldPlayIncomingTripAlert } from '../lib/incoming-trip-alert';
 import { driverOfferExpiryMs, isDriverOfferWithinWindow } from '../lib/driver-offer-expiry';
 import { driverOfferLeaseKey, shouldPresentDriverOffer } from '../lib/driver-offer-lease';
 import { offerMatchesDriverPreferences } from '../lib/driver-offer-preferences';
@@ -58,7 +58,7 @@ test('actual Home configures iPhone silent-mode playback before starting its req
   assert.ok(events.indexOf('configure') < events.indexOf('audible-play'));
   assert.equal(mode.allowsRecording, false);
   assert.equal(mode.shouldPlayInBackground, false);
-  assert.equal(player.volume, 0.92);
+  assert.equal(player.volume, INCOMING_TRIP_ALERT_PLAYBACK.volume);
   assert.equal(player.loop, true);
 });
 
