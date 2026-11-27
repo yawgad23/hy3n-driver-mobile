@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
-import { createDriverRequestAudio, DRIVER_REQUEST_AUDIO_MODE } from '../lib/driver-request-audio';
+import { createDriverRequestAudio, createDriverRequestAudioSession, DRIVER_REQUEST_AUDIO_MODE } from '../lib/driver-request-audio';
 import { INCOMING_TRIP_ALERT_PLAYBACK } from '../lib/incoming-trip-alert';
 
 // Execute Home's actual handlers, stop callback, and native player factory.
@@ -56,6 +56,7 @@ function setup(platform: Platform) {
   const events: string[] = [];
   const registered = new Set<NativePlayer>();
   const players: NativePlayer[] = [];
+  const session = createDriverRequestAudioSession();
   const factoryCalls: Array<{ asset: string; options: any }> = [];
   let seek = async (_seconds: number) => {};
   let configure = async (_mode: typeof DRIVER_REQUEST_AUDIO_MODE) => {};
@@ -120,7 +121,8 @@ function setup(platform: Platform) {
     tripStartedAt: null, tripDistanceKm: 2.5, arrivedAt: 'arrival-time',
     lastTripLocationRef: { current: null }, lastTripMeterPublishedAtRef: { current: 42 },
     incomingTripAlertPlayer: placeholder,
-    createDriverRequestAudio,
+    createDriverRequestAudio: (options: Parameters<typeof createDriverRequestAudio>[0]) => createDriverRequestAudio({ ...options, session }),
+    stopAllDriverRequestAudio: session.stopAll,
     require(asset: string) { assert.equal(asset, WAV, 'request player must use the SAME bundled WAV'); return asset; },
     createAudioPlayer(asset: string, options: any) {
       factoryCalls.push({ asset, options });
@@ -370,4 +372,23 @@ for (const platform of ['ios', 'android'] as const) {
       h.runtime.stop(h.placeholder, { force: true });
     });
   }
+}
+
+for (const handler of ['beginTrip', 'handleStartTrip', 'handleVerifyPickupCode'] as const) {
+  test(`ios: actual ${handler} retires request players owned by two retained controllers`, async () => {
+    const h = setup('ios'); await h.playRequest();
+    const retained = h.env.createDriverRequestAudio({ platform: 'ios', createPlayer: () => h.env.createAudioPlayer(WAV, { keepAudioSessionActive: false }) });
+    await retained.play('second-retained-offer', h.placeholder, async () => {});
+    assert.equal(h.players.length, 2); assert.equal(h.playing(), true);
+    const pending = h.invoke(handler);
+    for (const player of h.players) {
+      assert.equal(player.nativePlaying, false); assert.equal(player.loop, false);
+      assert.equal(player.removed, true); assert.equal(player.released, true);
+    }
+    assert.equal(h.placeholder.released, false, 'request-only global stop does not dispose the empty hook');
+    if (handler === 'beginTrip') h.startResponse.resolve({ ride: startedRide() });
+    if (handler === 'handleVerifyPickupCode') h.verifyResponse.resolve({ ride: startedRide() });
+    await pending;
+    h.nativeResume(); await flush(); assert.equal(h.playing(), false);
+  });
 }

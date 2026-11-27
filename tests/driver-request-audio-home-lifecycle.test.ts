@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
-import { createDriverRequestAudio } from '../lib/driver-request-audio';
+import { createDriverRequestAudio, createDriverRequestAudioSession } from '../lib/driver-request-audio';
 import { shouldPlayIncomingTripAlert } from '../lib/incoming-trip-alert';
 import { driverOfferAcceptedByServer } from '../lib/driver-offer-lifecycle';
 import { driverOfferExpiryMs, isDriverOfferWithinWindow } from '../lib/driver-offer-expiry';
@@ -53,7 +53,7 @@ function deferred<T>() { let resolve!: (value: T) => void; let reject!: (error: 
 const assignedRide = () => ({ id: 'offer-A', status: 'driver_arriving', driver_id: 'driver-1' });
 function offer(id = 'offer-A', expiresAt = Date.now() + 60_000) { return { id, driver_offer_expires_at: new Date(expiresAt).toISOString(), distance_km: 20 }; }
 
-function setup(platform: 'ios' | 'android') {
+function setup(platform: 'ios' | 'android', session = createDriverRequestAudioSession()) {
   const players: any[] = [];
   const configurationModes: any[] = [];
   const registered = new Set<any>();
@@ -71,6 +71,7 @@ function setup(platform: 'ios' | 'android') {
       seekTo() { this.seeks++; return seek(); },
       addListener: (_event: string, listener: (status: { isLoaded: boolean }) => void) => { listeners.add(listener); return { remove() { listeners.delete(listener); } }; },
       get listenerCount() { return listeners.size; },
+      terminalStops: 0,
       load() { this.isLoaded = true; for (const listener of [...listeners]) listener({ isLoaded: true }); },
       remove() { this.removes++; registered.delete(this); events.push('remove'); },
       release() { this.released = true; this.playing = false; this.nativePlaying = false; registered.delete(this); events.push('release'); } };
@@ -91,11 +92,15 @@ function setup(platform: 'ios' | 'android') {
     tripActionPending: false, tripActionInFlightRef: { current: false },
     acceptedOfferAudioSuppressionRef: { current: null }, incomingOfferReceivedAtRef: { current: Date.now() },
     incomingOfferAudioEligibilityRef: { current: null }, retiredOfferLeaseRef: { current: null },
-    createDriverRequestAudio, useRef: (current: any) => ({ current }),
+    createDriverRequestAudio: (options: Parameters<typeof createDriverRequestAudio>[0]) => createDriverRequestAudio({ ...options, session }),
+    stopAllDriverRequestAudio: session.stopAll, useRef: (current: any) => ({ current }),
     require(asset: string) { assert.equal(asset, '@/assets/audio/incoming-trip-alert.wav'); return asset; },
     createAudioPlayer(asset: string, options: any) { factoryCalls.push({ asset, options }); return factory(); },
     DRIVER_OFFER_REVIEW_SECONDS: 60, DRIVER_ACCEPT_RECONCILIATION_DELAYS_MS: [],
-    COLLECTIONS: { RIDES: 'rides' }, firestoreDB: { get: async () => { if (serverReadError) throw serverReadError; return serverRead ? serverRead() : serverRide; } },
+    COLLECTIONS: { RIDES: 'rides' }, firestoreDB: {
+      get: async () => { throw Error('Accept reconciliation must never use a cache-capable read'); },
+      getFromServer: async () => { if (serverReadError) throw serverReadError; return serverRead ? serverRead() : serverRide; },
+    },
     driverOfferAcceptedByServer, driverOfferExpiryMs, isDriverOfferWithinWindow,
     isUnavailableDriverOfferError, shouldPresentDriverOffer, offerMatchesDriverPreferences,
     buildVehicleFields: () => ({}), Alert: { alert() {} }, refreshAvailableOffers() {},
@@ -150,7 +155,7 @@ function setup(platform: 'ios' | 'android') {
     }
   }
   const accept = () => { syncEligibility(); return evaluate(expression('handleAcceptRide'), { ...env })() as Promise<void>; };
-  return { env, players, placeholder, response, accept, effect, runtime, rearmCalls, configurationModes, registered, events, factoryCalls, forceStops, assertRetired,
+  return { env, players, placeholder, response, accept, effect, runtime, session, rearmCalls, configurationModes, registered, events, factoryCalls, forceStops, assertRetired,
     setServerRide: (ride: any) => { serverRide = ride; }, setServerReadError: (error: Error) => { serverReadError = error; },
     setServerRead: (read: () => Promise<any>) => { serverRead = read; }, requestCount: () => requests,
     setConfigure: (fn: () => Promise<void>) => { configure = fn; }, setSeek: (fn: () => Promise<void>) => { seek = fn; },
@@ -401,3 +406,142 @@ for (const platform of ['ios', 'android'] as const) {
     assert.equal(h.plays(), 1); assert.equal(h.playing(), false); assert.equal(h.players[1].released, true);
   });
 }
+
+// The existing harness executes actual Home code, not a copied Accept helper.
+// Cached reads deliberately return a plausible old offer so the shipped get()
+// path fails these cases; only a trusted fresh server read may lift suppression.
+for (const stale of [null, { id: 'offer-A', status: 'pending', driver_id: null }]) {
+  for (const authority of ['offline', 'cached', 'pending-write'] as const) {
+    test(`ios: lost Accept response with ${authority} evidence and cached ${stale ? 'unassigned' : 'missing'} trip stays silent`, async () => {
+      const { actualServerTripRead, tripSnapshot } = await import('./helpers/driver-server-trip-read');
+      const h = setup('ios'); h.effect(); await flush();
+      let cacheReads = 0;
+      h.env.firestoreDB.get = async () => { cacheReads++; return stale; };
+      const trustedRead = actualServerTripRead(async () => {
+        if (authority === 'offline') throw Error('server unavailable');
+        return tripSnapshot(stale, { fromCache: authority === 'cached', hasPendingWrites: authority === 'pending-write' });
+      });
+      h.setServerRead(() => trustedRead('rides', 'offer-A'));
+      const pending = h.accept(); h.effect(); await flush();
+      h.response.reject(Error('mutation response lost')); await pending; h.effect(); await flush();
+      assert.equal(cacheReads, 0, 'never use a cache-capable read to prove non-assignment');
+      assert.deepEqual(h.rearmCalls, []);
+      assert.equal(h.env.acceptedOfferAudioSuppressionRef.current, 'offer-A');
+      assert.equal(h.plays(), 1, 'no fresh native looping player is created after ambiguous acceptance');
+      assert.equal(h.playing(), false);
+      assert.equal(h.players.length, 2);
+    });
+  }
+}
+
+test('ios: lost Accept response ignores cached unassigned state and uses fresh server assignment', async () => {
+  const { actualServerTripRead, tripSnapshot } = await import('./helpers/driver-server-trip-read');
+  const h = setup('ios'); h.effect(); await flush();
+  let cacheReads = 0;
+  h.env.firestoreDB.get = async () => { cacheReads++; return { id: 'offer-A', status: 'pending' }; };
+  const trustedRead = actualServerTripRead(async () => tripSnapshot(assignedRide()));
+  h.setServerRead(() => trustedRead('rides', 'offer-A'));
+  const pending = h.accept(); h.response.reject(Error('mutation response lost')); await pending; h.effect(); await flush();
+  assert.equal(cacheReads, 0);
+  assert.equal(h.env.activeTrip.id, 'offer-A');
+  assert.deepEqual(h.rearmCalls, []);
+  assert.equal(h.playing(), false);
+});
+
+test('ios: only a fresh server-confirmed unassigned failure can restart the eligible chime', async () => {
+  const { actualServerTripRead, tripSnapshot } = await import('./helpers/driver-server-trip-read');
+  const h = setup('ios'); h.effect(); await flush();
+  h.env.firestoreDB.get = async () => { throw Error('cached read forbidden'); };
+  const trustedRead = actualServerTripRead(async () => tripSnapshot({ status: 'pending', driver_id: null }));
+  h.setServerRead(() => trustedRead('rides', 'offer-A'));
+  const pending = h.accept(); h.effect(); await flush();
+  h.response.reject(Error('temporary network failure')); await pending; h.effect(); await flush();
+  assert.deepEqual(h.rearmCalls, ['offer-A']);
+  assert.equal(h.plays(), 2);
+  assert.equal(h.playing(), true);
+});
+
+// These exercise the actual Home boundaries with two retained controllers.
+// The native players are controlled doubles, not AVFoundation/device proof.
+test('ios: successful actual Accept retires BOTH retained Home owners and blocks a stale remounted request', async () => {
+  const session = createDriverRequestAudioSession();
+  const visible = setup('ios', session), retained = setup('ios', session);
+  visible.effect(); retained.effect(); await flush();
+  assert.equal(visible.playing(), true); assert.equal(retained.playing(), true);
+  // Model native ref.pause inside the scoped hook, not the exported Expo pause.
+  retained.players[1].hy3nStopRequestAudio = function () {
+    this.terminalStops++; this.pauses++; this.playing = false; this.nativePlaying = false;
+  };
+  const mutate = visible.env.respondToOffer.mutateAsync;
+  visible.env.respondToOffer.mutateAsync = () => {
+    retained.assertRetired(retained.players[1]);
+    assert.equal(retained.players[1].terminalStops, 1, 'request-specific native stop precedes mutation');
+    return mutate();
+  };
+  const pending = visible.accept();
+  visible.assertRetired(visible.players[1]); retained.assertRetired(retained.players[1]);
+  visible.response.resolve({ ride: assignedRide() }); await pending;
+  assert.equal(visible.env.activeTrip.id, 'offer-A');
+  retained.effect(true); await flush(); assert.equal(retained.playing(), false);
+  const remounted = setup('ios', session); remounted.effect(); await flush();
+  assert.equal(remounted.plays(), 0); assert.equal(remounted.factoryCalls.length, 0);
+  assert.equal(visible.placeholder.released, false); assert.equal(retained.placeholder.released, false);
+  remounted.env.incomingRide = offer('genuinely-later'); remounted.effect(); await flush();
+  assert.equal(remounted.plays(), 1, 'a different later request still uses the Gold Chime');
+});
+
+for (const stage of ['configure', 'seek', 'readiness'] as const) {
+  test(`ios: successful actual Accept cancels retained Home ${stage} continuation after the trip appears`, async () => {
+    const session = createDriverRequestAudioSession();
+    const visible = setup('ios', session), retained = setup('ios', session);
+    const wait = deferred<void>();
+    if (stage === 'configure') retained.setConfigure(() => wait.promise);
+    if (stage === 'seek') retained.setSeek(() => wait.promise);
+    if (stage === 'readiness') retained.setNextPlayerLoaded(false);
+    visible.effect(); retained.effect(); await flush();
+    const pending = visible.accept();
+    visible.response.resolve({ ride: assignedRide() }); await pending;
+    assert.equal(visible.env.activeTrip.id, 'offer-A');
+    wait.resolve(); retained.players[1].load(); await flush();
+    retained.assertRetired(retained.players[1]);
+    assert.equal(retained.plays(), 0); assert.equal(retained.playing(), false);
+  });
+}
+
+for (const boundary of ['active-trip', 'signed-out'] as const) {
+  test(`ios: actual ${boundary} playback effect stops request owners retained by another Home`, async () => {
+    const session = createDriverRequestAudioSession();
+    const boundaryHome = setup('ios', session), retained = setup('ios', session);
+    retained.effect(); await flush(); assert.equal(retained.playing(), true);
+    if (boundary === 'active-trip') boundaryHome.env.activeTrip = assignedRide();
+    else boundaryHome.env.user = null;
+    boundaryHome.effect(); await flush(); retained.assertRetired(retained.players[1]);
+    assert.equal(retained.playing(), false); assert.equal(retained.placeholder.released, false);
+    const stale = setup('ios', session); stale.effect(); await flush();
+    assert.equal(stale.plays(), 0, 'auth/assignment cleanup does not erase accepted suppression');
+  });
+}
+
+test('ios: restored active trip stops every request owner BEFORE applying the restored trip', async () => {
+  const session = createDriverRequestAudioSession();
+  const restoring = setup('ios', session), retained = setup('ios', session);
+  restoring.effect(); retained.effect(); await flush();
+  let callback: ts.Expression | undefined;
+  function visit(node: ts.Node) {
+    if (ts.isCallExpression(node) && node.expression.getText(tree) === 'useEffect'
+      && node.arguments[0]?.getText(tree).includes('firestoreDB.list(COLLECTIONS.RIDES')) callback = node.arguments[0];
+    ts.forEachChild(node, visit);
+  }
+  visit(tree); assert.ok(callback, 'actual Home restoration effect must exist');
+  restoring.env.firestoreDB.list = async () => [assignedRide()];
+  restoring.env.setTripStartedAt = () => {};
+  restoring.env.setArrivedAt = () => {};
+  const setActiveTrip = restoring.env.setActiveTrip;
+  restoring.env.setActiveTrip = (ride: any) => {
+    restoring.assertRetired(restoring.players[1]); retained.assertRetired(retained.players[1]);
+    setActiveTrip(ride);
+  };
+  evaluate(callback.getText(tree), restoring.env)(); await flush();
+  assert.equal(restoring.env.activeTrip.id, 'offer-A');
+  assert.equal(restoring.playing(), false); assert.equal(retained.playing(), false);
+});

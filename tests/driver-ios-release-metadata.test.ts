@@ -26,6 +26,8 @@ const goldFeature = '8c3610302610b0578d4787b9b92d085a6be97493';
 const goldSource = (file: string) => historical(goldFeature, file);
 const approvedSelfie = 'afaecc548b9e1f2c51b71f9788a331c5207b60a6';
 const release133Note = 'docs/driver-ios-1.4-133-gold-selfie-20261127.md';
+const build133 = 'f4c4649f44f0030248dd8e26f4821f901ca9e9fb';
+const delivered133 = (file: string) => historical(build133, file);
 const current = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
 const clientKeys = { GOOGLE_MAPS_IOS_API_KEY: 'ios-client-test-key', GOOGLE_MAPS_ANDROID_API_KEY: 'android-client-test-key' };
 
@@ -89,7 +91,7 @@ test('historical iOS 1.3 (132) changes only buildNumber from the reviewed reques
   }
 });
 
-test('current iOS 1.4 (133) changes exactly version/buildNumber from Gold Chime across every platform and native Maps key scenario', () => {
+test('delivered iOS 1.4 (133) changes exactly version/buildNumber; current candidate adds only the iPhone request-stop plugin across every Maps key scenario', () => {
   const keyScenarios: Array<Record<string, string>> = [
     clientKeys,
     {},
@@ -115,12 +117,14 @@ test('current iOS 1.4 (133) changes exactly version/buildNumber from Gold Chime 
         expected.version = '1.4';
         expected.ios.buildNumber = '133';
       }
+      assert.deepEqual(config(delivered133('app.config.ts'), platform, keys), expected, `delivered 133 ${platform ?? 'default'}: native Maps keys ${scenario}`);
+      if (platform === 'ios') expected.plugins.splice(1, 0, './plugins/with-driver-ios-request-audio-stop');
       assert.deepEqual(config(after, platform, keys), expected, `${platform ?? 'default'}: native Maps keys ${scenario}`);
     }
   }
 });
 
-test('current app.config.ts differs byte-exactly by only the two iPhone metadata literals and their release comment', () => {
+test('delivered app.config metadata is exact; current adds only one explicit iPhone-gated request-stop plugin literal', () => {
   const edits: Array<[string, string]> = [
     ['const appVersion = buildPlatform === "ios" ? "1.3"', 'const appVersion = buildPlatform === "ios" ? "1.4"'],
     ['    buildNumber: buildPlatform === "ios" ? "132" : "124",', '    buildNumber: buildPlatform === "ios" ? "133" : "124",'],
@@ -134,17 +138,19 @@ test('current app.config.ts differs byte-exactly by only the two iPhone metadata
     assert.equal(expected.split(before).length - 1, 1, `exactly one reviewed replacement: ${before}`);
     expected = expected.replace(before, after);
   }
-  assert.equal(current('app.config.ts'), expected);
+  assert.equal(delivered133('app.config.ts'), expected);
+  const nativeAddition = '    ...(buildPlatform === "ios" ? ["./plugins/with-driver-ios-request-audio-stop"] : []),\n';
+  assert.equal(current('app.config.ts').split(nativeAddition).length - 1, 1);
+  assert.equal(current('app.config.ts').replace(nativeAddition, ''), expected);
 });
 
-test('current 133 release preparation has an exact four-file scope, including untracked additions before the parent commit', () => {
+test('delivered 133 release preparation has an exact four-file scope at its pinned commit', () => {
   const allowed = new Set([
     'app.config.ts', 'tests/driver-ios-release-metadata.test.ts',
     'tests/driver-gold-chime.test.ts', release133Note,
   ]);
-  const tracked = execFileSync('git', ['diff', '--name-only', goldFeature, '--'], { cwd: root, encoding: 'utf8' });
-  const untracked = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' });
-  assert.deepEqual(new Set(`${tracked}\n${untracked}`.split('\n').filter(Boolean)), allowed);
+  const changed = execFileSync('git', ['diff', '--name-only', goldFeature, build133, '--'], { cwd: root, encoding: 'utf8' });
+  assert.deepEqual(new Set(changed.split('\n').filter(Boolean)), allowed);
 });
 
 test('current 133 preserves every other native/configuration/dependency/lock byte from Gold Chime and the exact SDK 27 production profile', () => {
@@ -164,7 +170,7 @@ test('current 133 preserves every other native/configuration/dependency/lock byt
   assert.equal(ios.extra.eas.projectId, 'd19afe45-8e3d-42f9-ad5e-70b12b2c2ce9');
 });
 
-test('current 133 includes the exact approved selfie and Gold Chime while retaining Home, request controller and feature regressions', () => {
+test('current 133 preserves approved selfie/Gold Chime; pinned delivered 133 retains historical Home and request-controller behavior', () => {
   for (const file of [
     'app/(tabs)/profile.tsx', 'components/DriverProfilePhoto.tsx',
     'lib/driver-profile-photo.ts', 'lib/driver-auth-context.tsx', 'tests/driver-profile-selfie.test.ts',
@@ -177,10 +183,30 @@ test('current 133 includes the exact approved selfie and Gold Chime while retain
   const goldAsset = execFileSync('git', ['show', `${goldFeature}:assets/audio/incoming-trip-alert.wav`], { cwd: root, maxBuffer: 4 * 1024 * 1024 });
   assert.deepEqual(asset, goldAsset);
   for (const file of [
-    'lib/incoming-trip-alert.ts', 'app/(tabs)/home.tsx', 'lib/driver-request-audio.ts',
-    'tests/driver-request-audio-home-lifecycle.test.ts', 'tests/driver-request-audio-native-retirement.test.ts',
-    'tests/driver-request-audio-runtime.test.ts', 'tests/driver-request-audio-start-boundary.test.ts',
+    'lib/incoming-trip-alert.ts', 'tests/driver-request-audio-native-retirement.test.ts',
+    'tests/driver-request-audio-runtime.test.ts',
   ]) assert.equal(current(file), goldSource(file), `${file}: retain tested Gold Chime/Accept behavior`);
+  const startFile = 'tests/driver-request-audio-start-boundary.test.ts';
+  let startCandidate = current(startFile);
+  const extraCases = "\nfor (const handler of ['beginTrip', 'handleStartTrip', 'handleVerifyPickupCode'] as const) {\n  test(`ios: actual ${handler} retires request players owned by two retained controllers`, async () => {";
+  assert.equal(startCandidate.split(extraCases).length - 1, 1);
+  startCandidate = startCandidate.slice(0, startCandidate.indexOf(extraCases));
+  for (const [addition, original] of [
+    ["import { createDriverRequestAudio, createDriverRequestAudioSession, DRIVER_REQUEST_AUDIO_MODE } from '../lib/driver-request-audio';", "import { createDriverRequestAudio, DRIVER_REQUEST_AUDIO_MODE } from '../lib/driver-request-audio';"],
+    ['  const session = createDriverRequestAudioSession();\n', ''],
+    ['    createDriverRequestAudio: (options: Parameters<typeof createDriverRequestAudio>[0]) => createDriverRequestAudio({ ...options, session }),\n    stopAllDriverRequestAudio: session.stopAll,', '    createDriverRequestAudio,'],
+  ]) {
+    assert.equal(startCandidate.split(addition).length - 1, 1);
+    startCandidate = startCandidate.replace(addition, original);
+  }
+  assert.equal(startCandidate, goldSource(startFile), 'all pre-existing Start assertions and test bodies remain byte-exact');
+  assert.equal(delivered133(startFile), goldSource(startFile), 'historical delivered Start test remains exact');
+  // The server-authoritative reconciliation correction has current-specific
+  // regressions; the original release's source audit remains byte-exact here.
+  for (const file of [
+    'app/(tabs)/home.tsx', 'lib/driver-request-audio.ts',
+    'tests/driver-request-audio-home-lifecycle.test.ts',
+  ]) assert.equal(delivered133(file), goldSource(file), `${file}: delivered 133 retains tested Gold Chime/Accept behavior`);
 });
 
 test('132 preparation preserves every reviewed request-sound source file outside the exact metadata/test/new-note paths', () => {
@@ -406,9 +432,9 @@ test('scene-aware Apple sign-in uses the reviewed SDK 57 package and source comp
   assert.match(plugin, /RequestNotInteractiveException/);
 });
 
-test('fixed Home/request audio is preserved from 057, while unrelated iPhone UI/trip/GPS source remains at its existing baseline', () => {
+test('pinned delivered 133 preserves Home/request audio from 057, while current unrelated iPhone UI/trip/GPS source remains at its existing baseline', () => {
   for (const file of ['app/(tabs)/home.tsx', 'lib/driver-request-audio.ts']) {
-    assert.equal(current(file), soundSource(file), `${file}: preserve reviewed request-sound fix`);
+    assert.equal(delivered133(file), soundSource(file), `${file}: delivered 133 preserves reviewed request-sound fix`);
   }
   for (const file of [
     'components/DriverNavigationBanner.tsx',

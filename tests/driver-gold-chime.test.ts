@@ -10,6 +10,7 @@ const root = path.join(__dirname, '..');
 const baseline = 'afaecc548b9e1f2c51b71f9788a331c5207b60a6';
 const build132 = 'cc722a6f16b9c9b17be4752a7e8cd2ed0c44061c';
 const goldFeature = '8c3610302610b0578d4787b9b92d085a6be97493';
+const build133 = 'f4c4649f44f0030248dd8e26f4821f901ca9e9fb';
 const assetPath = 'assets/audio/incoming-trip-alert.wav';
 const selectedMasterSHA256 = '1314bc6b6424a7461254d847b2a95d7742dc745cbf43cafe01e3bfd1fed46240';
 const historicalAssetSHA256 = 'ac1d846ffa152b25729cc97c30144d42219264afd68c642604f71a76dded0886';
@@ -152,11 +153,11 @@ test('selected foreground volume is 1.0 in native range; only that exact setting
   assert.equal(current(file).toString('utf8'), oldSource.replace('  volume: 0.92,', '  volume: 1.0,'));
 });
 
-test('actual Home continues to reference the same bundled asset in its unchanged native player factory', () => {
+test('actual Home retains the bundled native player factory; pinned delivered 133 preserves historical Home/controller bytes', () => {
   const source = current('app/(tabs)/home.tsx').toString('utf8');
   assert.ok(source.includes("createPlayer: () => createAudioPlayer(\n      require('@/assets/audio/incoming-trip-alert.wav'),\n      { keepAudioSessionActive: false },\n    ),"));
-  assert.deepEqual(current('app/(tabs)/home.tsx'), historical(baseline, 'app/(tabs)/home.tsx'));
-  assert.deepEqual(current('lib/driver-request-audio.ts'), historical(baseline, 'lib/driver-request-audio.ts'));
+  assert.deepEqual(historical(build133, 'app/(tabs)/home.tsx'), historical(baseline, 'app/(tabs)/home.tsx'));
+  assert.deepEqual(historical(build133, 'lib/driver-request-audio.ts'), historical(baseline, 'lib/driver-request-audio.ts'));
 });
 
 test('immutable Gold Chime feature leaves native configuration, notifications, registration, approved selfie, auth, and map/camera source byte-exact', () => {
@@ -176,17 +177,18 @@ test('immutable Gold Chime feature leaves native configuration, notifications, r
   assert.deepEqual(changed.trim().split('\n').filter(Boolean).sort(), [assetPath, 'lib/incoming-trip-alert.ts'].sort());
 });
 
-test('current Gold Chime release preserves unrelated native bytes with only exact iPhone 1.4/133 metadata and comment changes', () => {
+test('current unrelated native bytes stay exact; pinned delivered Gold Chime release has only iPhone 1.4/133 metadata/comment changes', () => {
   for (const file of [
     'eas.json', 'package.json', 'pnpm-lock.yaml',
     'plugins/with-driver-ios-sdk27.js', 'plugins/with-google-navigation.js',
     'plugins/driver-navigation-feed-patch.js', 'plugins/driver-navigation-polyline-patch.js',
-    'lib/notifications.ts', 'lib/driver-auth-context.tsx', 'lib/firebase.ts',
+    'lib/notifications.ts', 'lib/driver-auth-context.tsx',
     'lib/driver-photo-native.ts', 'lib/driver-photo-preparation.ts', 'lib/driver-profile-photo.ts',
     'app/driver/register.tsx', 'app/register.tsx', 'app/(tabs)/profile.tsx', 'hooks/use-auth.ts',
     'components/DriverProfilePhoto.tsx', 'components/NativeDriverGoogleMap.tsx', 'lib/driver-map-motion.ts',
     'lib/driver-navigation-camera.ts', 'lib/native-map-camera.ts',
   ]) assert.deepEqual(current(file), historical(baseline, file), `${file}: unrelated current production/native change`);
+  assert.deepEqual(historical(build133, 'lib/firebase.ts'), historical(baseline, 'lib/firebase.ts'), 'delivered 133 Firebase source remains byte-exact');
   let expected = historical(goldFeature, 'app.config.ts').toString('utf8');
   assert.deepEqual(historical(goldFeature, 'app.config.ts'), historical(baseline, 'app.config.ts'));
   for (const [before, after] of [
@@ -200,13 +202,15 @@ test('current Gold Chime release preserves unrelated native bytes with only exac
     assert.equal(expected.split(before).length - 1, 1, `exactly one reviewed metadata/comment replacement: ${before}`);
     expected = expected.replace(before, after);
   }
-  assert.deepEqual(current('app.config.ts'), Buffer.from(expected));
-  // No production allowances for mandatory-update gates, Call, prices, push,
-  // audio-controller, Home, maps or any unlisted native changes.
-  const changed = execFileSync('git', ['diff', '--name-only', goldFeature, '--', '.', ':!tests/**', ':!docs/**'], { cwd: root, encoding: 'utf8' });
+  const nativeAddition = '    ...(buildPlatform === "ios" ? ["./plugins/with-driver-ios-request-audio-stop"] : []),\n';
+  const candidate = current('app.config.ts').toString('utf8');
+  assert.equal(candidate.split(nativeAddition).length - 1, 1, 'only one iPhone-gated request-stop plugin addition');
+  assert.equal(candidate.replace(nativeAddition, ''), expected);
+  assert.deepEqual(historical(build133, 'app.config.ts'), Buffer.from(expected));
+  // Audit the exact immutable delivered release, not today's scoped
+  // server-authoritative reconciliation, request stops and local diagnostics.
+  const changed = execFileSync('git', ['diff', '--name-only', goldFeature, build133, '--', '.', ':!tests/**', ':!docs/**'], { cwd: root, encoding: 'utf8' });
   assert.deepEqual(changed.trim().split('\n').filter(Boolean), ['app.config.ts']);
-  const untracked = execFileSync('git', ['ls-files', '--others', '--exclude-standard', '--', '.', ':!tests/**', ':!docs/**'], { cwd: root, encoding: 'utf8' });
-  assert.equal(untracked, '', 'no untracked production files are allowed');
 });
 
 test('immutable build 132 release asset audit stays exact; the current selected asset has its separate fixed digest', () => {

@@ -77,7 +77,7 @@ import {
   type DriverNavigationPlatform,
 } from '@/lib/driver-navigation-fallback';
 import { shouldPlayIncomingTripAlert } from '@/lib/incoming-trip-alert';
-import { createDriverRequestAudio } from '@/lib/driver-request-audio';
+import { createDriverRequestAudio, stopAllDriverRequestAudio } from '@/lib/driver-request-audio';
 import { offerMatchesDriverPreferences } from '@/lib/driver-offer-preferences';
 import { DriverHomeLayoutRegion, getDriverAndroidHomeLayout, getDriverIosHomeLayout } from '@/lib/driver-android-home-layout';
 
@@ -704,6 +704,10 @@ export default function DriverHomeScreen() {
 
   useEffect(() => {
     const incomingRideId = incomingRide?.id ? String(incomingRide.id) : null;
+    // Stop request owners across retained Home instances, not navigation audio.
+    if (Platform.OS === 'ios' && (activeTrip?.id || !user?.uid)) {
+      stopAllDriverRequestAudio(activeTrip?.id ? String(activeTrip.id) : undefined);
+    }
     if (((Platform.OS === 'android' || Platform.OS === 'ios') && (!requestAudioForeground || tripActionPending)) || acceptedOfferAudioSuppressionRef.current === incomingRideId || !shouldPlayIncomingTripAlert({
       isOnline,
       incomingRideId,
@@ -717,7 +721,7 @@ export default function DriverHomeScreen() {
     if (!incomingRideId || ((Platform.OS !== 'android' && Platform.OS !== 'ios') && !incomingTripAlertStatus.isLoaded)) return;
     playIncomingTripAlert(incomingRideId);
     // Failed mobile Accept re-arms eligibility before pending becomes false.
-  }, [activeTrip?.id, activeTrip?.status, incomingRide?.id, incomingRide?.driver_offer_expires_at, incomingTripAlertStatus.isLoaded, isOnline, playIncomingTripAlert, prefs.soundAlerts, requestAudioForeground, stopIncomingTripAlert, (Platform.OS === 'android' || Platform.OS === 'ios') && tripActionPending]);
+  }, [activeTrip?.id, activeTrip?.status, incomingRide?.id, incomingRide?.driver_offer_expires_at, incomingTripAlertStatus.isLoaded, isOnline, playIncomingTripAlert, prefs.soundAlerts, requestAudioForeground, stopIncomingTripAlert, (Platform.OS === 'android' || Platform.OS === 'ios') && tripActionPending, Platform.OS === 'ios' && user?.uid]);
 
   useEffect(() => () => stopIncomingTripAlert(true), [stopIncomingTripAlert]);
 
@@ -727,6 +731,7 @@ export default function DriverHomeScreen() {
     firestoreDB.list(COLLECTIONS.RIDES, { driver_id: user.uid }, null).then((rides) => {
       const current = rides.find((ride: any) => ['driver_arriving', 'driver_arrived', 'in_progress'].includes(ride.status));
       if (current) {
+        if (Platform.OS === 'ios') stopAllDriverRequestAudio(String(current.id));
         setActiveTrip(current);
         setTripStartedAt(current.trip_started_at || null);
         setArrivedAt(current.driver_arrived_at || null);
@@ -958,6 +963,7 @@ export default function DriverHomeScreen() {
       // The native player status can lag the audible AVPlayer state. Stop the
       // request tone again when assignment is confirmed so it cannot survive
       // the transition from offer card to active trip.
+      if (Platform.OS === 'ios') stopAllDriverRequestAudio(rideId);
       stopIncomingTripAlert(true);
       setActiveTrip(ride);
       incomingOfferReceivedAtRef.current = null;
@@ -970,7 +976,9 @@ export default function DriverHomeScreen() {
     };
     const reconcileAcceptedRide = async (confirmFailedAccept = false) => {
       try {
-        const serverRide = await firestoreDB.get(COLLECTIONS.RIDES, rideId);
+        // A cached pre-Accept document is not proof the server rejected Accept.
+        // Ambiguous/offline reads must keep the consumed request silent.
+        const serverRide = await firestoreDB.getFromServer(COLLECTIONS.RIDES, rideId);
         if (!driverOfferAcceptedByServer(serverRide, user.uid)) {
           if (confirmFailedAccept) failedAcceptConfirmedUnassigned = true;
           return false;
@@ -986,6 +994,7 @@ export default function DriverHomeScreen() {
     acceptedOfferAudioSuppressionRef.current = rideId;
     // Stop on tap, not after the accepted server response. iPhone native
     // playback status can lag the audible request song by a short interval.
+    if (Platform.OS === 'ios') stopAllDriverRequestAudio(rideId);
     stopIncomingTripAlert(true);
     incomingOfferReceivedAtRef.current = null;
     const reconciliationTimers = DRIVER_ACCEPT_RECONCILIATION_DELAYS_MS.map((delay) => setTimeout(() => {
@@ -1238,6 +1247,7 @@ export default function DriverHomeScreen() {
     if (!ride || !user?.uid || tripActionInFlightRef.current) return;
     // Starting the trip is a terminal boundary for any offer audio, including
     // a stale native loop left behind while the pickup code was being verified.
+    if (Platform.OS === 'ios') stopAllDriverRequestAudio(String(ride.id));
     stopIncomingTripAlert(true);
     tripActionInFlightRef.current = true;
     setTripActionPending(true);
@@ -1272,6 +1282,7 @@ export default function DriverHomeScreen() {
       Alert.alert('Arrive first', 'Mark that you have arrived at the pickup point before starting the trip.');
       return;
     }
+    if (Platform.OS === 'ios') stopAllDriverRequestAudio(String(activeTrip.id));
     stopIncomingTripAlert(true);
     if (activeTrip.pickup_code && !activeTrip.pickup_verified_at) {
       setShowOtp(true);
@@ -1282,6 +1293,7 @@ export default function DriverHomeScreen() {
 
   const handleVerifyPickupCode = async () => {
     if (!activeTrip || !user?.uid || !pickupCode.trim() || tripActionInFlightRef.current) return;
+    if (Platform.OS === 'ios') stopAllDriverRequestAudio(String(activeTrip.id));
     stopIncomingTripAlert(true);
     tripActionInFlightRef.current = true;
     setTripActionPending(true);

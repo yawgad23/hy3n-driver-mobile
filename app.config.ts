@@ -124,6 +124,7 @@ const config: ExpoConfig = {
   plugins: [
     // Register first so its AppDelegate action runs after the official scene conversion.
     "./plugins/with-driver-ios-sdk27",
+    ...(buildPlatform === "ios" ? ["./plugins/with-driver-ios-request-audio-stop"] : []),
     "expo-router",
     "expo-apple-authentication",
     "expo-asset",

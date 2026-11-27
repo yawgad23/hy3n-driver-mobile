@@ -17,6 +17,8 @@ const IOS_RELEASE = 'ddd131a4849b1784ff0e83861bf02d00ad42a9de';
 const helperPath = path.resolve('lib/driver-android-home-layout.tsx');
 const SOUND_FIX = '05754fe2ccc966c096000c42b8d20e574991ec1f';
 const reviewedSoundHome = execFileSync('git', ['show', `${SOUND_FIX}:${HOME}`], { encoding: 'utf8' });
+const DELIVERED_133 = 'f4c4649f44f0030248dd8e26f4821f901ca9e9fb';
+const delivered133Home = execFileSync('git', ['show', `${DELIVERED_133}:${HOME}`], { encoding: 'utf8' });
 const beforeNativeRetirement = execFileSync('git', ['show', `${SOUND_FIX}^:${HOME}`], { encoding: 'utf8' });
 const baseline = execFileSync('git', ['show', `${BASELINE}:${HOME}`], { encoding: 'utf8' });
 const iosRelease = execFileSync('git', ['show', `${IOS_RELEASE}:${HOME}`], { encoding: 'utf8' });
@@ -382,8 +384,38 @@ test('Android preserves every label, handler and disabled-state contract includi
   }
 });
 
-test('scope proof: current Home is the reviewed sound fix; historical layout/handler proof and current styles/modals remain protected', () => {
-  assert.equal(current, reviewedSoundHome, 'current Home must remain byte-identical to the separately tested native retirement fix');
+test('scope proof: current Home adds only exact server-read and iPhone request-stop wiring to delivered 133; all UI/map/other handlers remain protected', () => {
+  const nativeStopDeltas: Array<[string, string, number]> = [
+    ["import { createDriverRequestAudio, stopAllDriverRequestAudio } from '@/lib/driver-request-audio';", "import { createDriverRequestAudio } from '@/lib/driver-request-audio';", 1],
+    ["    // Stop request owners across retained Home instances, not navigation audio.\n    if (Platform.OS === 'ios' && (activeTrip?.id || !user?.uid)) {\n      stopAllDriverRequestAudio(activeTrip?.id ? String(activeTrip.id) : undefined);\n    }\n", '', 1],
+    [", Platform.OS === 'ios' && user?.uid]);", ']);', 1],
+    ["        if (Platform.OS === 'ios') stopAllDriverRequestAudio(String(current.id));\n", '', 1],
+    ["      if (Platform.OS === 'ios') stopAllDriverRequestAudio(rideId);\n", '', 1],
+    ["    if (Platform.OS === 'ios') stopAllDriverRequestAudio(rideId);\n", '', 1],
+    ["    if (Platform.OS === 'ios') stopAllDriverRequestAudio(String(ride.id));\n", '', 1],
+    ["    if (Platform.OS === 'ios') stopAllDriverRequestAudio(String(activeTrip.id));\n", '', 2],
+  ];
+  let stopNormalized = current;
+  for (const [addition, original, occurrences] of nativeStopDeltas) {
+    assert.equal(stopNormalized.split(addition).length - 1, occurrences, `exact reviewed request-stop addition: ${addition}`);
+    stopNormalized = stopNormalized.split(addition).join(original);
+  }
+  const scopedServerRead = [
+    '    const reconcileAcceptedRide = async (confirmFailedAccept = false) => {',
+    '      try {',
+    '        // A cached pre-Accept document is not proof the server rejected Accept.',
+    '        // Ambiguous/offline reads must keep the consumed request silent.',
+    '        const serverRide = await firestoreDB.getFromServer(COLLECTIONS.RIDES, rideId);',
+  ].join('\n');
+  const deliveredRead = [
+    '    const reconcileAcceptedRide = async (confirmFailedAccept = false) => {',
+    '      try {',
+    '        const serverRide = await firestoreDB.get(COLLECTIONS.RIDES, rideId);',
+  ].join('\n');
+  assert.equal(stopNormalized.split(scopedServerRead).length - 1, 1, 'exactly one scoped reconciliation read/comment replacement');
+  const normalizedCurrent = stopNormalized.replace(scopedServerRead, deliveredRead);
+  assert.equal(normalizedCurrent, delivered133Home, 'no other current Home changes are permitted');
+  assert.equal(delivered133Home, reviewedSoundHome, 'pinned delivered 133 remains byte-identical to the reviewed native retirement fix');
   const oldFile = parse(baseline), newFile = parse(current);
   const styleProperties = (file: ts.SourceFile) => {
     const node = file.statements.find((s) => ts.isVariableStatement(s) && s.declarationList.declarations.some((d) => d.name.getText(file) === 'styles')) as ts.VariableStatement;
@@ -393,8 +425,8 @@ test('scope proof: current Home is the reviewed sound fix; historical layout/han
   const newStyles = styleProperties(newFile);
   for (const prop of styleProperties(oldFile)) assert.equal(newStyles.find((p) => p.name?.getText(newFile) === prop.name?.getText(oldFile))?.getText(newFile), prop.getText(oldFile));
   // Reverse only these exact separately behavior-tested audio expressions for
-  // the delivered 131 historical layout proof. Current Home is frozen above to
-  // the reviewed sound fix and is still rendered by all current UI tests.
+  // the delivered 131 historical layout proof. Current Home is exact above
+  // except for the scoped server read/iPhone request stops; current UI is rendered.
   // Native-retirement/start-boundary suites test that new audio wiring directly;
   // do not silently whitelist changed handlers or disable this historical proof.
   const audioDeltas = [
