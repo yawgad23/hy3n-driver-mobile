@@ -58,7 +58,7 @@ test('actual Home configures iPhone silent-mode playback before starting its req
   assert.ok(events.indexOf('configure') < events.indexOf('audible-play'));
   assert.equal(mode.allowsRecording, false);
   assert.equal(mode.shouldPlayInBackground, false);
-  assert.equal(player.volume, 0.92);
+  assert.equal(player.volume, 1.0);
   assert.equal(player.loop, true);
 });
 

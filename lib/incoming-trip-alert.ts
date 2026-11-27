@@ -2,7 +2,7 @@ export const INCOMING_TRIP_ALERT_PLAYBACK = Object.freeze({
   // The foreground request card owns the life of this player. It stops when
   // the Driver accepts, declines, goes offline, or the server offer expires.
   loop: true,
-  volume: 0.92,
+  volume: 1.0,
 });
 
 // The trusted server push owns the audible alert. Keeping this as a platform

@@ -64,7 +64,7 @@ for (const platform of ['ios', 'android'] as const) {
     test(`${platform}: terminal stop prevents future native ${resume} from replaying the request song`, async () => {
       const { n, runtime, placeholder } = setup();
       assert.equal(await runtime.play('accepted-A', placeholder, async () => {}), true);
-      const p = n.created[0]; assert.equal(p.loop, true); assert.equal(p.volume, 0.92);
+      const p = n.created[0]; assert.equal(p.loop, true); assert.equal(p.volume, 1.0);
       n.background(); assert.equal(p.wasPlaying, true);
       runtime.stop(placeholder, { force: true }); n[resume]();
       assert.equal(n.registered.size, 0); assert.equal(p.released, true);

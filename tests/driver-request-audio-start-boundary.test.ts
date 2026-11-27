@@ -201,7 +201,7 @@ function setup(platform: Platform) {
     const p = players[0];
     assert.equal(p.nativePlaying, true, 'fixture starts with a continuously playing native request');
     p.playing = false; // Expo's last JS status is stale, native audio is NOT paused.
-    assert.equal(p.muted, false); assert.equal(p.volume, 0.92); assert.equal(p.loop, true);
+    assert.equal(p.muted, false); assert.equal(p.volume, 1.0); assert.equal(p.loop, true);
   }
   function nativeResume() {
     // A queued iOS loop completion or Android lifecycle/focus callback can only
@@ -226,13 +226,13 @@ for (const platform of ['ios', 'android'] as const) {
     assert.equal(h.factoryCalls.length, 1, 'iOS and Android must both use the real native request factory');
     assert.equal(h.factoryCalls[0].asset, WAV);
     assert.deepEqual(h.factoryCalls[0].options, { keepAudioSessionActive: false });
-    assert.deepEqual(INCOMING_TRIP_ALERT_PLAYBACK, { loop: true, volume: 0.92 });
+    assert.deepEqual(INCOMING_TRIP_ALERT_PLAYBACK, { loop: true, volume: 1.0 });
     assert.equal(h.modes.length, 1);
     assert.deepEqual(h.modes[0], {
       playsInSilentMode: true, interruptionMode: 'duckOthers', allowsRecording: false,
       shouldPlayInBackground: false, shouldRouteThroughEarpiece: false,
     });
-    assert.equal(h.players[0].volume, 0.92); assert.equal(h.players[0].loop, true);
+    assert.equal(h.players[0].volume, 1.0); assert.equal(h.players[0].loop, true);
     assert.deepEqual(h.players[0].seekCalls, [0]);
     h.runtime.stop(h.placeholder, { force: true });
     assert.equal(h.playing(), false);
